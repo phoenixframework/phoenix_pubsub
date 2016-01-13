@@ -25,30 +25,6 @@ defmodule Phoenix.Presence.Adapters.Global do
     GenServer.call(@server, :list)
   end
 
-  def request_transfer(name, source_node, topic, registry \\ &Registry.find(&1, &2)) do
-    ref = :erlang.make_ref()
-    case list() do
-      [] -> :no_members
-      nodes ->
-        dest_node = Enum.random(nodes)
-        Node.spawn dest_node, fn ->
-          {:ok, pid} = registry.(name, topic)
-          send(pid, {:request_transfer, ref, source_node, topic})
-        end
-
-        ref
-    end
-  end
-
-  def transfer(name, ref, source_node, destination_node, topic, payload, registry \\ &Registry.find(&1, &2)) do
-    Node.spawn destination_node, fn ->
-      {:ok, pid} = registry.(name, topic)
-      send(pid, {:transfer, ref, source_node, topic, payload})
-    end
-
-    :ok
-  end
-
   ## Server API
 
   def start_link(opts) do

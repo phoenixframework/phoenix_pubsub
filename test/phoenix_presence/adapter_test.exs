@@ -11,8 +11,13 @@ defmodule Phoenix.Presence.AdapterTest do
   }
 
   defp setup_adapter(Adapters.Global, opts) do
-    {:ok, _pid} = Adapters.Global.start_link(opts)
-    {:ok, _pid} = Phoenix.Presence.Tracker.start_link([pubsub_server: :pubsub])
+    {:ok, _} = Adapters.Global.start_link(opts)
+    {:ok, _} = Phoenix.Presence.Tracker.start_link([pubsub_server: :pubsub])
+  end
+
+  setup_all do
+    {:ok, _} = Phoenix.PubSub.PG2.start_link(:pubsub, pool_size: 1)
+    :ok
   end
 
   ## Shared Adapter tests
@@ -20,7 +25,7 @@ defmodule Phoenix.Presence.AdapterTest do
     @adapter adapter
     @adapter_opts opts
 
-    setup do
+    setup_all do
       setup_adapter(@adapter, @adapter_opts)
       :ok
     end
@@ -60,28 +65,6 @@ defmodule Phoenix.Presence.AdapterTest do
       assert_receive {:nodeup, :"some4@node"}
 
       assert Map.keys(subscribers(@adapter)) == [self]
-    end
-
-    test "#{@adapter} requests and receives transfers" do
-      me = node()
-      parent = self()
-      # fake multinode with process registration. TODO find cleaner way
-      child = spawn_link(fn ->
-        send parent, :up
-        receive do
-          {:request_transfer, ref, requesting_node, topic} ->
-            @adapter.transfer(:pubsub, ref, requesting_node, me, topic, :datas, fn _, _->
-              {:ok, parent}
-            end)
-        end
-      end)
-
-      assert_receive :up
-
-      ref = @adapter.request_transfer(:pubsub, me, "lobby", fn _, _->
-        {:ok, child}
-      end)
-      assert_receive {:transfer, ^ref, ^me, "lobby", :datas}
     end
   end
 

@@ -3,6 +3,11 @@ defmodule Phoenix.Presence.Tracker do
 
   @moduledoc """
   What you plug in your app's supervision tree...
+
+  Required options:
+
+    * `:pubsub_server` -
+
   """
 
   def start_link(opts) do

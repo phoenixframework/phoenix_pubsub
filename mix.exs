@@ -16,6 +16,7 @@ defmodule Phoenix.Presence.Mixfile do
   end
 
   defp deps do
-    [{:phoenix, "~> 1.0"}]
+    [{:phoenix, path: "~/Workspace/projects/phoenix"},
+     {:presence, github: "asonge/phoenix_presence"}]
   end
 end

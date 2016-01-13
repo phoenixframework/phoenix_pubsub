@@ -16,14 +16,6 @@ defmodule Phoenix.Presence.NodeChecker do
     adapter().list()
   end
 
-  def request_transfer(from, group_name, info) do
-    adapter().request_transfer(from, group_name, info)
-  end
-
-  def transfer(reference, from_node, dest_node, group_name, payload) do
-    adapter().transfer(reference, from_node, dest_node, group_name, payload)
-  end
-
   defp adapter do
     Application.get_env(:phoenix_presence, :adapter, Phoenix.Presence.Adapters.Global)
   end

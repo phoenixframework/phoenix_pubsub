@@ -12,13 +12,20 @@ defmodule Phoenix.Presence.Registry do
   Finds the presence server ...
   """
   def find(pubsub_server, topic) do
-    # TODO use ets dispatch table to avoid Module.concat
+    pid = dirty_find(pubsub_server, topic)
+    if pid && Process.alive?(pid), do: pid
+  end
+
+  @doc false
+  def dirty_find(pubsub_server, topic) do
     table_name = Module.concat(pubsub_server, Registry)
-    case :ets.lookup(table_name, topic) do
-      {^topic, server_pid} -> server_pid
+    Logger.debug "looking up #{table_name} #{topic} #{node()}"
+    case IO.inspect(:ets.lookup(table_name, topic)) do
+      [{^topic, server_pid}] -> server_pid
       [] -> nil
     end
   end
+
 
   @doc """
   Finds a presence server or spawns one if not already started
@@ -51,8 +58,8 @@ defmodule Phoenix.Presence.Registry do
     if pid = find(state.pubsub_server, topic) do
       {:reply, {:ok, pid}, state}
     else
-      Logger.debug "Spwaning Presence.Server for \"#{topic}\""
-      {:ok, pid} = Supervisor.start_child(state.spawner, [topic: topic])
+      Logger.debug "Spawning Presence.Server for \"#{topic}\""
+      {:ok, pid} = Supervisor.start_child(state.spawner, [topic])
       Process.monitor(pid)
       true = :ets.insert(state.table_name, {topic, pid})
 
