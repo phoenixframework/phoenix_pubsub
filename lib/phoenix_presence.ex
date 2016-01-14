@@ -9,7 +9,8 @@ defmodule Phoenix.Presence do
       supervisor(Phoenix.PubSub.PG2, [Phoenix.Presence.PubSub, [pool_size: 1]]),
       worker(Phoenix.Presence.Adapters.Global, [[]]),
       worker(Task, [fn -> node_connect() end]),
-      supervisor(Phoenix.Presence.Tracker, [[pubsub_server: Phoenix.Presence.PubSub]]),
+      # worker(Phoenix.Presence.Tracker, [[channel: RoomChannel,
+      #                                    pubsub_server: Phoenix.Presence.PubSub]]),
     ]
 
     opts = [strategy: :one_for_one]
@@ -17,6 +18,7 @@ defmodule Phoenix.Presence do
   end
 
   defp node_connect() do
+    if System.get_env("CLUSTER") == "false", do: :timer.sleep(:infinity)
     for n <- 1..5, n != node() do
       Node.connect(:"n#{n}@127.0.0.1")
     end

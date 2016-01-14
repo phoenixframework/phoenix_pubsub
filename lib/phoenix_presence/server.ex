@@ -1,7 +1,6 @@
 defmodule Phoenix.Presence.Server do
   use GenServer
-  alias Phoenix.Presence.NodeChecker
-  alias Phoenix.Presence.Registry
+  alias Phoenix.Presence.{NodeChecker, Registery, VectorClock}
   require Logger
 
   @moduledoc """
@@ -11,8 +10,8 @@ defmodule Phoenix.Presence.Server do
   @join_event "presence_join"
   @leave_event "presence_leave"
 
-  def start_link(opts, topic) do
-    GenServer.start_link(__MODULE__, [opts, topic])
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, [opts])
   end
 
   def track(%Phoenix.Socket{} = socket, user_id, meta) do
@@ -39,11 +38,13 @@ defmodule Phoenix.Presence.Server do
   opts - all from parent + :transfer_timeout...
   """
   # timeout for heatbeat
-  # fetch start heartbeat
+  # collect hearetbeats for interval
+  # fetch best heartbeat
   # replace delta_interval
-  def init([opts, topic]) do
-    namespaced_topic = namespaced_topic(topic)
+  def init([opts]) do
     pubsub_server    = Keyword.fetch!(opts, :pubsub_server)
+    channel          = Keyword.fetch!(opts, :channel)
+    namespaced_topic = namespaced_topic(channel)
     transfer_timeout = opts[:transfer_timeout] || 5_000
     gossip_timeout   = opts[:gossip_timeout] || 5_000
     delta_interval   = opts[:delta_interval] || 3_000
@@ -57,7 +58,7 @@ defmodule Phoenix.Presence.Server do
     # TODO must store node with each presence
     {:ok, %{requeset_timer: nil,
             namespaced_topic: namespaced_topic,
-            topic: topic,
+            channel: channel,
             pubsub_server: pubsub_server,
             transfer_ref: nil,
             transfer_timer: nil,
