@@ -4,9 +4,11 @@ defmodule Phoenix.Presence.Tracker do
   require Logger
 
   # TODO
-  # Tracker.trac(socket, %{user_id: id, status: status})
+  # Tracker.track(socket, %{user_id: id, status: status})
   # Tracker.list_by(socket, :user_id)
   # => %{123 => [%{user_id: 123, status: "away"}], [%{user_id: 123, status: "online"}]}
+
+  # Make crdt behaiour (maybe easier to test)
 
   @moduledoc """
   What you plug in your app's supervision tree...
@@ -29,11 +31,11 @@ defmodule Phoenix.Presence.Tracker do
     GenServer.call(channel, {:track, pid, topic, user_id})
   end
 
-  def list(%Phoenix.Socket{} = socket) do
-    list(socket.channel, socket.topic)
+  def list_by(%Phoenix.Socket{} = socket, key) do
+    list_by(socket.channel, socket.topic, key)
   end
-  def list(channel, topic) do
-    GenServer.call(channel, {:list, topic})
+  def list_by(channel, topic, key) do
+    GenServer.call(channel, {:list, topic, key})
   end
 
 
@@ -136,13 +138,17 @@ defmodule Phoenix.Presence.Tracker do
     {:reply, :ok, track_presence(state, pid, topic, id)}
   end
 
-  def handle_call({:list, topic}, _from, state) do
+  # CRDT TODO
+  # all operations require topic
+  #
+  def handle_call({:list, topic, group_by_key}, _from, state) do
     # TODO crdt will efficiently handle topics
     users =
       state.presences
       |> Presence.online_users()
       |> Stream.filter(fn {user_topic, _} -> topic == user_topic end)
-      |> Enum.map(fn {_, id} -> %{id: id} end)
+      |> Stream.map(fn {_user_topic, id} -> id end)
+      |> Enum.group_by(fn id -> id[group_by_key] end)
 
     {:reply, users, state}
   end
@@ -201,10 +207,10 @@ defmodule Phoenix.Presence.Tracker do
   end
 
   defp local_broadcast_join(state, topic, id) do
-    local_broadcast(state, topic, @join_event, %{id: id})
+    local_broadcast(state, topic, @join_event, id)
   end
 
   defp local_broadcast_leave(state, topic, id) do
-    local_broadcast(state, topic, @leave_event, %{id: id})
+    local_broadcast(state, topic, @leave_event, id)
   end
 end
