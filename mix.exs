@@ -11,7 +11,7 @@ defmodule Phoenix.Presence.Mixfile do
   end
 
   def application do
-    [applications: [:logger, :phoenix],
+    [applications: [:logger, :phoenix, :presence],
      mod: {Phoenix.Presence, []}]
   end
 
