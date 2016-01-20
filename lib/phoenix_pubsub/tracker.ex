@@ -1,6 +1,5 @@
 defmodule Phoenix.Presence.Tracker do
   use GenServer
-  alias Phoenix.Presence.{NodeChecker}
   alias Presence.Clock
   require Logger
 
@@ -28,50 +27,50 @@ defmodule Phoenix.Presence.Tracker do
   def track_presence(%Phoenix.Socket{} = socket, user_id, meta) do
     track_presence(socket.channel, socket.channel_pid, socket.topic, user_id, meta)
   end
-  def track_presence(channel, pid, topic, user_id, meta) do
-    GenServer.call(channel, {:track, pid, topic, user_id, meta})
+  def track_presence(server_name, pid, topic, user_id, meta) do
+    GenServer.call(server_name, {:track, pid, topic, user_id, meta})
   end
 
   def list_presences(%Phoenix.Socket{} = socket) do
     list_presences(socket.channel, socket.topic)
   end
-  def list_presences(channel, topic) do
-    channel
+  # TODO decide if need to make ref random
+  def list_presences(server_name, topic) do
+    server_name
     |> GenServer.call({:list, topic})
+    |> Presence.get_by_topic(topic)
     |> Enum.group_by(fn {_ref, key, meta} -> key end)
     |> Enum.into(%{}, fn {key, metas} ->
       meta = for {ref, _key, meta} <- metas, do: %{meta: meta, ref: encode_ref(ref)}
       {key, meta}
     end)
-    |> IO.inspect()
   end
-
 
   ## Server
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :channel))
+    GenServer.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))
   end
 
   def init(opts) do
     Process.flag(:trap_exit, true)
     pubsub_server      = Keyword.fetch!(opts, :pubsub_server)
-    channel            = Keyword.fetch!(opts, :channel)
+    server_name        = Keyword.fetch!(opts, :name)
     heartbeat_interval = opts[:heartbeat_interval] || 3_000
     node_name          = opts[:node_name] || node()
-    namespaced_topic   = namespaced_topic(channel)
+    namespaced_topic   = namespaced_topic(server_name)
     vsn = {:os.timestamp(), System.unique_integer([:positive, :monotonic])}
 
     Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
     # TODO random sleep before first heartbeat 1/2 to 1/4 heartbeat window
     send(self, :heartbeat)
-    :ok = NodeChecker.monitor_nodes(self)
+    :ok = :global_group.monitor_nodes(true)
 
-    {:ok, %{pubsub_server: pubsub_server,
+    {:ok, %{server_name: server_name,
+            pubsub_server: pubsub_server,
             node: {node_name, vsn},
             node_name: node_name,
             namespaced_topic: namespaced_topic,
-            channel: channel,
             nodes: %{},
             pending_clockset: [],
             pending_transfers: %{},
@@ -154,8 +153,8 @@ defmodule Phoenix.Presence.Tracker do
   # CRDT TODO
   # all operations require topic
   #
-  def handle_call({:list, topic}, _from, state) do
-    {:reply, Presence.get_by_topic(state.presences, topic), state}
+  def handle_call({:list, _topic}, _from, state) do
+    {:reply, state.presences, state}
   end
 
   defp do_track_presence(state, pid, topic, key, meta) do
@@ -163,6 +162,7 @@ defmodule Phoenix.Presence.Tracker do
     add_presence(state, pid, topic, key, meta)
   end
 
+  # add random "ref", use cprypto
   defp add_presence(state, ref, topic, key, meta) do
     local_broadcast_join(state, topic, key, meta, ref)
     %{state | presences: Presence.join(state.presences, ref, topic, key, meta)}
@@ -221,8 +221,8 @@ defmodule Phoenix.Presence.Tracker do
               nodes: Map.delete(state.nodes, name)}
   end
 
-  defp namespaced_topic(channel) do
-    "phx_presence:#{channel}"
+  defp namespaced_topic(server_name) do
+    "phx_presence:#{server_name}"
   end
 
   defp broadcast_from(state, from, msg) do
@@ -249,6 +249,7 @@ defmodule Phoenix.Presence.Tracker do
   end
 
   defp encode_ref(ref) do
+    # use random
     ref |> :erlang.term_to_binary() |> Base.encode64()
   end
 end
