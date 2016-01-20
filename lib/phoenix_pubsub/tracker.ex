@@ -1,21 +1,24 @@
-defmodule Phoenix.Presence.Tracker do
+defmodule Phoenix.Tracker do
   use GenServer
   alias Presence.Clock
   require Logger
 
-  # TODO
-  # Tracker.track(socket, %{user_id: id, status: status})
-  # Tracker.list_by(socket, :user_id)
-  # => %{123 => [%{user_id: 123, status: "away"}], [%{user_id: 123, status: "online"}]}
-
-  # Make crdt behaiour (maybe easier to test)
-
+  # TODO proper moduledoc
   @moduledoc """
   What you plug in your app's supervision tree...
 
-  Required options:
+  ## Required options:
 
-    * `:pubsub_server` -
+    * `:name` - The name of the server, such as: `MyApp.UserPresence`
+    * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
+
+  ## Optional configuration:
+
+    * `heartbeat_interval` - The interval in milliseconds to send heartbeats
+      across the cluster. Default `3000`
+    * `:adapter` - The state adapter for tracking presences. Defaults to
+      the `Phoenix.Tracker.State` CRDT.
+    * node_name - The name of the node. Default `node()`
 
   """
 
@@ -34,14 +37,17 @@ defmodule Phoenix.Presence.Tracker do
   def list_presences(%Phoenix.Socket{} = socket) do
     list_presences(socket.channel, socket.topic)
   end
-  # TODO decide if need to make ref random
   def list_presences(server_name, topic) do
-    server_name
-    |> GenServer.call({:list, topic})
-    |> Presence.get_by_topic(topic)
-    |> Enum.group_by(fn {_ref, key, meta} -> key end)
+    {adapter, presences} = GenServer.call(server_name, {:list, topic})
+
+    presences
+    |> adapter.get_by_topic(topic)
+    |> Enum.group_by(fn {_conn, key, _meta} -> key end)
     |> Enum.into(%{}, fn {key, metas} ->
-      meta = for {ref, _key, meta} <- metas, do: %{meta: meta, ref: encode_ref(ref)}
+      meta = for {_conn, _key, meta} <- metas do
+        {ref, meta} = Map.pop(meta, :presence_ref)
+        %{meta: meta, ref: ref}
+      end
       {key, meta}
     end)
   end
@@ -54,28 +60,34 @@ defmodule Phoenix.Presence.Tracker do
 
   def init(opts) do
     Process.flag(:trap_exit, true)
+    timestamp = :os.timestamp()
+    :random.seed(timestamp)
     pubsub_server      = Keyword.fetch!(opts, :pubsub_server)
     server_name        = Keyword.fetch!(opts, :name)
+    adapter            = opts[:adapter] || Presence
     heartbeat_interval = opts[:heartbeat_interval] || 3_000
     node_name          = opts[:node_name] || node()
     namespaced_topic   = namespaced_topic(server_name)
-    vsn = {:os.timestamp(), System.unique_integer([:positive, :monotonic])}
+    vsn                = {timestamp, System.unique_integer()}
 
     Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
-    # TODO random sleep before first heartbeat 1/2 to 1/4 heartbeat window
-    send(self, :heartbeat)
     :ok = :global_group.monitor_nodes(true)
+    send_stuttered_heartbeat(self(), heartbeat_interval)
 
     {:ok, %{server_name: server_name,
             pubsub_server: pubsub_server,
             node: {node_name, vsn},
             node_name: node_name,
             namespaced_topic: namespaced_topic,
+            adapter: adapter,
             nodes: %{},
             pending_clockset: [],
-            pending_transfers: %{},
-            presences: Presence.new({node_name, vsn}),
+            presences: adapter.new({node_name, vsn}),
             heartbeat_interval: heartbeat_interval}}
+  end
+
+  defp send_stuttered_heartbeat(pid, interval) do
+    Process.send_after(pid, :heartbeat, Enum.random(0..trunc(interval * 0.5)))
   end
 
   def handle_info(:heartbeat, state) do
@@ -86,6 +98,7 @@ defmodule Phoenix.Presence.Tracker do
       request_transfer(acc, target_node)
     end)
 
+    # TODO consider always stuttering heartbeats, instead just on init
     Process.send_after(self, :heartbeat, state.heartbeat_interval)
     {:noreply, %{state | pending_clockset: []}}
   end
@@ -93,13 +106,9 @@ defmodule Phoenix.Presence.Tracker do
   def handle_info({:pub, :gossip, {name, vsn} = from_node, clocks}, state) do
     state = put_pending_clock(state, clocks)
     case Map.get(state.nodes, name) do
-      nil            -> {:noreply, nodeup(state, from_node, clocks)}
-      {^vsn, _clock} -> {:noreply, state}
-      {old_vsn, _clock} ->
-        # handle node_down/cleanup of
-        {:noreply, state
-                   |> nodedown({name, old_vsn})
-                   |> nodeup(from_node, clocks)}
+      nil     -> {:noreply, nodeup(state, from_node)}
+      ^vsn    -> {:noreply, state}
+      old_vsn -> {:noreply, state |> nodedown({name, old_vsn}) |> nodeup(from_node)}
     end
   end
 
@@ -110,24 +119,19 @@ defmodule Phoenix.Presence.Tracker do
 
     {:noreply, state}
   end
-  # TODO handle ref/receiving "old" transfers
-  def handle_info({:pub, :transfer_ack, ref, from_node, remote_presences}, state) do
+  # TODO handle ref/receiving "old" transfers *or* CRDT should noop
+  def handle_info({:pub, :transfer_ack, _ref, from_node, remote_presences}, state) do
     Logger.debug "#{state.node_name}: transfer_ack from #{inspect from_node}"
-    {presences, joined, left} = Presence.merge(state.presences, remote_presences)
+    {presences, joined, left} = state.adapter.merge(state.presences, remote_presences)
 
-    IO.inspect {:joined, joined}
-    IO.inspect {:left, left}
-
-    for {_node, {ref, topic, key, meta}} <- joined do
-      local_broadcast_join(state, topic, key, meta, ref)
+    for {_node, {_conn, topic, key, meta}} <- joined do
+      local_broadcast_join(state, topic, key, meta)
     end
-    for {_node, {ref, topic, key, meta}} <- left do
-      local_broadcast_leave(state, topic, key, meta, ref)
+    for {_node, {_conn, topic, key, meta}} <- left do
+      local_broadcast_leave(state, topic, key, meta)
     end
 
-    {:noreply, %{state |
-                 presences: presences,
-                 pending_transfers: Map.delete(state.pending_transfers, from_node)}}
+    {:noreply, %{state | presences: presences}}
   end
 
   def handle_info({:nodeup, _name}, state) do
@@ -137,8 +141,8 @@ defmodule Phoenix.Presence.Tracker do
   def handle_info({:nodedown, name}, state) do
     # TODO rely on heartbeats for nodedown
     case Map.fetch(state.nodes, name) do
-      {:ok, {vsn, _clock}} -> {:noreply, nodedown(state, {name, vsn})}
-      :error               -> {:noreply, state}
+      {:ok, vsn} -> {:noreply, nodedown(state, {name, vsn})}
+      :error     -> {:noreply, state}
     end
   end
 
@@ -150,11 +154,8 @@ defmodule Phoenix.Presence.Tracker do
     {:reply, :ok, do_track_presence(state, pid, topic, key, meta)}
   end
 
-  # CRDT TODO
-  # all operations require topic
-  #
   def handle_call({:list, _topic}, _from, state) do
-    {:reply, state.presences, state}
+    {:reply, {state.adapter, state.presences}, state}
   end
 
   defp do_track_presence(state, pid, topic, key, meta) do
@@ -162,29 +163,29 @@ defmodule Phoenix.Presence.Tracker do
     add_presence(state, pid, topic, key, meta)
   end
 
-  # add random "ref", use cprypto
-  defp add_presence(state, ref, topic, key, meta) do
-    local_broadcast_join(state, topic, key, meta, ref)
-    %{state | presences: Presence.join(state.presences, ref, topic, key, meta)}
+  defp add_presence(state, conn, topic, key, meta) do
+    meta = Map.put(meta, :presence_ref, random_ref())
+    local_broadcast_join(state, topic, key, meta)
+    %{state | presences: state.adapter.join(state.presences, conn, topic, key, meta)}
   end
 
-  defp remove_presence(state, ref) do
-    for {topic, key, meta} <- Presence.get_by_conn(state.presences, ref) do
-      local_broadcast_leave(state, topic, key, meta, ref)
+  defp remove_presence(state, conn) do
+    for {topic, key, meta} <- state.adapter.get_by_conn(state.presences, conn) do
+      local_broadcast_leave(state, topic, key, meta)
     end
 
-    %{state | presences: Presence.part(state.presences, ref)}
+    %{state | presences: state.adapter.part(state.presences, conn)}
   end
 
-  defp request_transfer(state, {name, vsn} = target_node) do
+  defp request_transfer(state, {name, _vsn} = target_node) do
     Logger.debug "#{state.node_name}: request_transfer from #{name}"
     ref = make_ref()
     direct_broadcast(state, target_node, {:pub, :transfer_req, ref, state.node, clock(state)})
 
-    %{state | pending_transfers: Map.put(state.pending_transfers, target_node, ref)}
+    state
   end
 
-  defp clock(state), do: Presence.clock(state.presences)
+  defp clock(state), do: state.adapter.clock(state.presences)
 
   defp clockset_to_sync(state) do
     state.pending_clockset
@@ -194,27 +195,27 @@ defmodule Phoenix.Presence.Tracker do
   end
 
   defp put_pending_clock(state, clocks) do
-    %{state | pending_clockset: Presence.Clock.append_clock(state.pending_clockset, clocks)}
+    %{state | pending_clockset: Clock.append_clock(state.pending_clockset, clocks)}
   end
 
-  defp nodeup(state, {name, vsn} = remote_node, clocks) do
+  defp nodeup(state, {name, vsn} = remote_node) do
     Logger.debug "#{state.node_name}: nodeup from #{inspect name}"
-    {presences, joined, []} = Presence.node_up(state.presences, remote_node)
+    {presences, joined, []} = state.adapter.node_up(state.presences, remote_node)
 
-    for {_node, {ref, topic, key, meta}} <- joined do
-      local_broadcast_join(state, topic, key, meta, ref)
+    for {_node, {_conn, topic, key, meta}} <- joined do
+      local_broadcast_join(state, topic, key, meta)
     end
 
     %{state | presences: presences,
-              nodes: Map.put(state.nodes, name, {vsn, clocks})}
+              nodes: Map.put(state.nodes, name, vsn)}
   end
 
-  defp nodedown(state, {name, vsn} = remote_node) do
+  defp nodedown(state, {name, _vsn} = remote_node) do
     Logger.debug "#{state.node_name}: nodedown from #{inspect name}"
-    {presences, [], left} = Presence.node_down(state.presences, remote_node)
+    {presences, [], left} = state.adapter.node_down(state.presences, remote_node)
 
-    for {_node, {ref, topic, key, meta}} <- left do
-      local_broadcast_leave(state, topic, key, meta, ref)
+    for {_node, {_conn, topic, key, meta}} <- left do
+      local_broadcast_leave(state, topic, key, meta)
     end
 
     %{state | presences: presences,
@@ -238,18 +239,17 @@ defmodule Phoenix.Presence.Tracker do
     Phoenix.PubSub.broadcast({state.pubsub_server, state.node_name}, topic, msg)
   end
 
-  defp local_broadcast_join(state, topic, key, meta, ref) do
-    ref = encode_ref(ref)
+  defp local_broadcast_join(state, topic, key, meta) do
+    {ref, meta} = Map.pop(meta, :presence_ref)
     local_broadcast(state, topic, @join_event, %{key: key, meta: meta, ref: ref})
   end
 
-  defp local_broadcast_leave(state, topic, key, meta, ref) do
-    ref = encode_ref(ref)
+  defp local_broadcast_leave(state, topic, key, meta) do
+    {ref, meta} = Map.pop(meta, :presence_ref)
     local_broadcast(state, topic, @leave_event, %{key: key, meta: meta, ref: ref})
   end
 
-  defp encode_ref(ref) do
-    # use random
-    ref |> :erlang.term_to_binary() |> Base.encode64()
+  defp random_ref() do
+    :crypto.strong_rand_bytes(8) |> :erlang.term_to_binary() |> Base.encode64()
   end
 end
