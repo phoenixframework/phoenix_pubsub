@@ -1,8 +1,6 @@
 defmodule Phoenix.TrackerTest do
-  use ExUnit.Case, async: true
+  use Phoenix.PubSub.NodeCase
   alias Phoenix.Tracker
-  import Phoenix.PubSub.NodeCase
-  alias Phoenix.Socket.Broadcast
 
   @pubsub Phoenix.PubSub.Test.PubSub
   @tracker Tracker1
@@ -10,17 +8,15 @@ defmodule Phoenix.TrackerTest do
   def spawn_pid, do: spawn(fn -> :timer.sleep(:infinity) end)
 
   setup_all do
-    nodes = Application.get_env(:phoenix_pubsub, :nodes)[:names]
-    {:ok, pid} = Phoenix.Tracker.start_link(
+    {:ok, _pid} = Phoenix.Tracker.start_link(
       name: @tracker,
       pubsub_server: Phoenix.PubSub.Test.PubSub,
       heartbeat_interval: 50,
     )
-
     :ok
   end
 
-  test "heartbeats", config do
+  test "heartbeats" do
     Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{@tracker}")
     assert_receive {:pub, :gossip, {:"master@127.0.0.1", _vsn}, _clocks}
     flush()
@@ -29,22 +25,28 @@ defmodule Phoenix.TrackerTest do
     assert_receive {:pub, :gossip, {:"master@127.0.0.1", _vsn}, _clocks}
   end
 
-  test "gossip from unseen node triggers nodeup", config do
+  test "gossip from unseen node triggers nodeup" do
   end
 
-  test "replicates and locally broadcasts presence_join/leave", config do
+  test "replicates and locally broadcasts presence_join/leave" do
     # local joins
     :ok = Phoenix.PubSub.subscribe(@pubsub, self(), "topic")
-    :ok = Tracker.track_presence(@tracker, self(), "topic", "me", %{name: "me"})
-    assert_receive %Broadcast{event: "presence_join",
-                              topic: "topic",
-                              payload: %{key: "me", meta: %{name: "me"}}}
+
+    assert Tracker.list(@tracker, "topic") == %{}
+    :ok = Tracker.track(@tracker, self(), "topic", "me", %{name: "me"})
+    assert_join "topic", "me", %{name: "me"}
+    presences = Tracker.list(@tracker, "topic")
+    assert %{"me" => [%{meta: %{name: "me"}, ref: _}]} = presences
+    assert map_size(presences) == 1
 
     local_presence = spawn_pid()
-    :ok = Tracker.track_presence(@tracker, local_presence , "topic", "me2", %{name: "me2"})
-    assert_receive %Broadcast{event: "presence_join",
-                              topic: "topic",
-                              payload: %{key: "me2", meta: %{name: "me2"}}}
+    :ok = Tracker.track(@tracker, local_presence , "topic", "me2", %{name: "me2"})
+    assert_join "topic", "me2", %{name: "me2"}
+    presences = Tracker.list(@tracker, "topic")
+    assert %{"me" => [%{meta: %{name: "me"}, ref: _}],
+             "me2" => [%{meta: %{name: "me2"}, ref: _}]} = presences
+    assert map_size(presences) == 2
+
 
     # remote joins
     remote_presence = spawn_pid()
@@ -56,28 +58,31 @@ defmodule Phoenix.TrackerTest do
     {_, :ok} = track_presence_on_node(
       :"slave1@127.0.0.1", @tracker, remote_presence, "topic", "slave1", %{name: "slave1"}
     )
-    assert_receive %Broadcast{event: "presence_join",
-                              topic: "topic",
-                              payload: %{key: "slave1", meta: %{name: "slave1"}}}
+    assert_join "topic", "slave1", %{name: "slave1"}
+    presences = Tracker.list(@tracker, "topic")
+    assert %{"me" => [%{meta: %{name: "me"}, ref: _}],
+             "me2" => [%{meta: %{name: "me2"}, ref: _}],
+             "slave1" => [%{meta: %{name: "slave1"}, ref: _}]} = presences
+    assert map_size(presences) == 3
+
 
     # local leaves
     Process.exit(local_presence, :kill)
-    assert_receive %Broadcast{event: "presence_leave",
-                              topic: "topic",
-                              payload: %{key: "me2", meta: %{name: "me2"}}}
+    assert_leave "topic", "me2", %{name: "me2"}
+    presences = Tracker.list(@tracker, "topic")
+    assert %{"me" => [%{meta: %{name: "me"}, ref: _}],
+             "slave1" => [%{meta: %{name: "slave1"}, ref: _}]} = presences
+    assert map_size(presences) == 2
+
+
     # remote leaves
     Process.exit(remote_presence, :kill)
-    assert_receive %Broadcast{event: "presence_leave",
-                              topic: "topic",
-                              payload: %{key: "slave1", meta: %{name: "slave1"}}}
+    assert_leave "topic", "slave1", %{name: "slave1"}
+    presences = Tracker.list(@tracker, "topic")
+    assert %{"me" => [%{meta: %{name: "me"}, ref: _}]} = presences
+    assert map_size(presences) == 1
   end
 
-
-  defp flush() do
-    receive do
-      _ -> flush()
-    after
-      0 -> :ok
-    end
+  test "nodedown locally broadcasts leaves" do
   end
 end

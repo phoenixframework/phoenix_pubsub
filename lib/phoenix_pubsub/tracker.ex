@@ -27,17 +27,18 @@ defmodule Phoenix.Tracker do
 
   ## Client
 
-  def track_presence(%Phoenix.Socket{} = socket, user_id, meta) do
-    track_presence(socket.channel, socket.channel_pid, socket.topic, user_id, meta)
+  # TODO decouple Socket
+  def track(%Phoenix.Socket{} = socket, user_id, meta) do
+    track(socket.channel, socket.channel_pid, socket.topic, user_id, meta)
   end
-  def track_presence(server_name, pid, topic, user_id, meta) do
+  def track(server_name, pid, topic, user_id, meta) do
     GenServer.call(server_name, {:track, pid, topic, user_id, meta})
   end
 
-  def list_presences(%Phoenix.Socket{} = socket) do
-    list_presences(socket.channel, socket.topic)
+  def list(%Phoenix.Socket{} = socket) do
+    list(socket.channel, socket.topic)
   end
-  def list_presences(server_name, topic) do
+  def list(server_name, topic) do
     {adapter, presences} = GenServer.call(server_name, {:list, topic})
 
     presences

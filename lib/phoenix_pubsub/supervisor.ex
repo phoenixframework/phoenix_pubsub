@@ -3,21 +3,19 @@ defmodule Phoenix.PubSub.Supervisor do
   import Supervisor.Spec, warn: false
 
   def start(_type, :test) do
-    children = [
+    start([
       supervisor(Phoenix.PubSub.PG2, [Phoenix.PubSub.Test.PubSub, [pool_size: 1]]),
-    ]
-    opts = [strategy: :one_for_one]
-    Supervisor.start_link(children, opts)
+    ])
   end
   def start(_type, :dev) do
-    children = [
+    start([
       worker(Task, [fn -> node_connect() end])
-    ]
+    ])
+  end
+  def start(_type, _env), do: start([])
+  def start(children) do
     opts = [strategy: :one_for_one]
     Supervisor.start_link(children, opts)
-  end
-  def start(_type, _env) do
-    Supervisor.start_link([], [strategy: :one_for_one])
   end
 
   defp node_connect() do
