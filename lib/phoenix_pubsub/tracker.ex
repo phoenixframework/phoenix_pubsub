@@ -103,7 +103,7 @@ defmodule Phoenix.Tracker do
       :error                 -> {:noreply, nodeup(state, from_node)}
       {:ok, %{vsn: ^vsn}}    -> {:noreply, put_last_gossip(state, from_node)}
       {:ok, %{vsn: old_vsn}} ->
-        {:noreply, state |> nodedown({name, old_vsn}) |> nodeup(from_node)}
+        {:noreply, state |> perm_nodedown({name, old_vsn}) |> nodeup(from_node)}
     end
   end
 
@@ -205,8 +205,13 @@ defmodule Phoenix.Tracker do
     %{state | pending_clockset: Clock.append_clock(state.pending_clockset, clocks)}
   end
 
-  defp put_last_gossip(state, {name, _vsn}) do
-    %{state | nodes: put_in(state.nodes, [name, :last_gossip_at], now_ms())}
+  defp put_last_gossip(state, {name, _vsn} = from_node) do
+    # TODO rely on CRDT nooping for nodeup if already up, should return {unchanged, [], []}
+    if name in State.down_servers(state.presences) do
+      nodeup(state, from_node)
+    else
+      %{state | nodes: put_in(state.nodes, [name, :last_gossip_at], now_ms())}
+    end
   end
 
   defp nodeup(state, {name, vsn} = remote_node) do
@@ -219,6 +224,11 @@ defmodule Phoenix.Tracker do
 
     %{state | presences: presences,
       nodes: Map.put(state.nodes, name, %{vsn: vsn, last_gossip_at: now_ms()})}
+  end
+
+  defp perm_nodedown(state, {_name, _vsn} = remote_node) do
+    # TODO use CRDT's perm nodedown feature
+    {:noreply, nodedown(state, remote_node)}
   end
 
   defp nodedown(state, {name, _vsn} = remote_node) do

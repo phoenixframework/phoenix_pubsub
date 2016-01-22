@@ -102,14 +102,14 @@ defmodule Phoenix.TrackerTest do
     )
     assert_join "topic", "slave1", %{name: "slave1"}
     presences = Tracker.list(tracker, "topic")
-    assert %{"local1" => [_], "slave1" => [_]} = Tracker.list(tracker, "topic")
+    assert %{"local1" => _, "slave1" => _} = Tracker.list(tracker, "topic")
     assert map_size(presences) == 2
 
-
+    # nodedown
     Process.exit(slave1_tracker, :kill)
     assert_leave "topic", "slave1", %{name: "slave1"}
     presences = Tracker.list(tracker, "topic")
-    assert %{"local1" => [_]} = presences
+    assert %{"local1" => _} = presences
     assert map_size(presences) == 1
   end
 end
