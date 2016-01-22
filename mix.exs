@@ -16,7 +16,7 @@ defmodule Phoenix.PubSub.Mixfile do
 
   def application do
     [applications: [:logger, :phoenix, :presence],
-     mod: {Phoenix.PubSub.Supervisor, Mix.env}]
+     mod: {Phoenix.PubSub.Supervisor, []}]
   end
 
   defp deps do

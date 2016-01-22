@@ -63,10 +63,13 @@ defmodule Phoenix.PubSub.NodeCase do
     parent = self()
     ref = make_ref()
 
-    pid = Node.spawn_link(node, fn ->
+    pid = Node.spawn(node, fn ->
       result = func.()
       send parent, {ref, result}
-      :timer.sleep(:infinity)
+      ref = Process.monitor(parent)
+      receive do
+        {:DOWN, ^ref, :process, _, _} -> :ok
+      end
     end)
 
     receive do
