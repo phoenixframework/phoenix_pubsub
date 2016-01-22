@@ -15,12 +15,11 @@ defmodule Phoenix.PubSub.Mixfile do
   defp elixirc_paths(_),     do: ["lib"]
 
   def application do
-    [applications: [:logger, :phoenix, :presence],
+    [applications: [:logger, :phoenix],
      mod: {Phoenix.PubSub.Supervisor, []}]
   end
 
   defp deps do
-    [{:phoenix, path: "~/Workspace/projects/phoenix"},
-     {:presence, github: "asonge/phoenix_presence"}]
+    [{:phoenix, github: "phoenixframework/phoenix"}]
   end
 end
