@@ -1,3 +1,3 @@
-defmodule Phoenix.Tracker.State.Invariant do
+defmodule Phoenix.Tracker.State.InvariantError do
   defexception [:message]
 end
