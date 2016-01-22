@@ -26,6 +26,11 @@ defmodule Phoenix.TrackerTest do
   end
 
   test "gossip from unseen node triggers nodeup" do
+    # TODO
+  end
+
+  test "nodes are eventually permdown'd following nodedown period" do
+    # TODO
   end
 
   test "replicates and locally broadcasts presence_join/leave", %{tracker: tracker} do

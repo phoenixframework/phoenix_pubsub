@@ -45,7 +45,7 @@ defmodule Phoenix.Tracker do
     |> Enum.group_by(fn {_conn, key, _meta} -> key end)
     |> Enum.into(%{}, fn {key, metas} ->
       meta = for {_conn, _key, meta} <- metas do
-        {ref, meta} = Map.pop(meta, :presence_ref)
+        {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
         %{meta: meta, ref: ref}
       end
       {key, meta}
@@ -66,6 +66,7 @@ defmodule Phoenix.Tracker do
     server_name        = Keyword.fetch!(opts, :name)
     heartbeat_interval = opts[:heartbeat_interval] || 3_000
     nodedown_interval  = opts[:nodedown_interval] || (heartbeat_interval * 3)
+    permdown_interval  = opts[:permdown_interval] || (heartbeat_interval * 400)
     node_name          = opts[:node_name] || node()
     namespaced_topic   = namespaced_topic(server_name)
     vsn                = {timestamp, System.unique_integer()}
@@ -82,7 +83,8 @@ defmodule Phoenix.Tracker do
             pending_clockset: [],
             presences: State.new({node_name, vsn}),
             heartbeat_interval: heartbeat_interval,
-            nodedown_interval: nodedown_interval}}
+            nodedown_interval: nodedown_interval,
+            permdown_interval: permdown_interval}}
   end
 
   defp send_stuttered_heartbeat(pid, interval) do
@@ -147,7 +149,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp add_presence(state, conn, topic, key, meta) do
-    meta = Map.put(meta, :presence_ref, random_ref())
+    meta = Map.put(meta, :phx_presence, %{ref: random_ref()})
     local_broadcast_join(state, topic, key, meta)
     %{state | presences: State.join(state.presences, conn, topic, key, meta)}
   end
@@ -176,15 +178,21 @@ defmodule Phoenix.Tracker do
   defp detect_nodedowns(state) do
     now = now_ms()
     Enum.reduce(state.nodes, state, fn {name, info}, acc ->
-      if nodedown?(acc, info, now) do
-        nodedown(acc, {name, info.vsn})
-      else
-        acc
+      case node_status(acc, info, now) do
+        :temp_down -> nodedown(acc, {name, info.vsn})
+        :perm_down -> perm_nodedown(acc, {name, info.vsn})
+        :up        -> acc
       end
     end)
   end
-  defp nodedown?(state, node_info, now) do
-    now - node_info.last_gossip_at > state.nodedown_interval
+
+  defp node_status(state, node_info, now) do
+    downtime = now - node_info.last_gossip_at
+    cond do
+      downtime > state.permdown_interval -> :perm_down
+      downtime > state.nodedown_interval -> :temp_down
+      true                               -> :up
+    end
   end
 
   defp schedule_next_heartbeat(state) do
@@ -261,12 +269,12 @@ defmodule Phoenix.Tracker do
   end
 
   defp local_broadcast_join(state, topic, key, meta) do
-    {ref, meta} = Map.pop(meta, :presence_ref)
+    {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
     local_broadcast(state, topic, @join_event, %{key: key, meta: meta, ref: ref})
   end
 
   defp local_broadcast_leave(state, topic, key, meta) do
-    {ref, meta} = Map.pop(meta, :presence_ref)
+    {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
     local_broadcast(state, topic, @leave_event, %{key: key, meta: meta, ref: ref})
   end
 
