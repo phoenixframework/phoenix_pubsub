@@ -14,13 +14,13 @@ defmodule Phoenix.TrackerStateTest do
     make_ref()
   end
 
-  test "That this is set up correctly" do
+  test "that this is set up correctly" do
     a = newp(:a)
     assert [] = TrackerState.online_users(a)
     assert [] = TrackerState.offline_users(a)
   end
 
-  test "User added online is online" do
+  test "user added online is online" do
     a = newp(:a)
     john = new_conn()
     a = TrackerState.join(a, john, "lobby", :john)
@@ -29,7 +29,7 @@ defmodule Phoenix.TrackerStateTest do
     assert [] = TrackerState.online_users(a)
   end
 
-  test "Users from other servers merge" do
+  test "users from other servers merge" do
     a = newp(:a)
     b = newp(:b)
 
@@ -65,7 +65,7 @@ defmodule Phoenix.TrackerStateTest do
 
   end
 
-  test "Deltas" do
+  test "basic deltas" do
     a = newp(:a)
     b = newp(:b)
 
@@ -83,7 +83,7 @@ defmodule Phoenix.TrackerStateTest do
     assert {_, [], [{_, {_, _, :alice, _}}]} = TrackerState.merge(b, d_a2)
   end
 
-  test "Netsplit" do
+  test "basic netsplit" do
     a = newp(:a)
     b = newp(:b)
 
