@@ -265,7 +265,7 @@ defmodule Phoenix.Tracker.State do
 
   # Our dot's values aren't the same. This is an invariant and shouldn't happen. ever.
   defp merge_dots([{{dot,_},_}, {{dot,_},_}|_], _, _acc) do
-    raise State.Tracker.InvariantError, "2 dot-pairs with the same dot but different values"
+    raise Phoenix.Tracker.State.InvariantError, "2 dot-pairs with the same dot but different values"
   end
 
   # Our dots aren't the same.
