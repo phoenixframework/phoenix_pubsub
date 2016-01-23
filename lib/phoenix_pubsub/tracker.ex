@@ -1,6 +1,6 @@
 defmodule Phoenix.Tracker do
   use GenServer
-  alias Phoenix.Tracker.{Clock, State}
+  alias Phoenix.Tracker.{Clock, State, VNode}
   require Logger
 
   # TODO proper moduledoc
@@ -64,8 +64,7 @@ defmodule Phoenix.Tracker do
 
   def init(opts) do
     Process.flag(:trap_exit, true)
-    timestamp = :os.timestamp()
-    :random.seed(timestamp)
+    :random.seed(:os.timestamp())
     pubsub_server      = Keyword.fetch!(opts, :pubsub_server)
     server_name        = Keyword.fetch!(opts, :name)
     heartbeat_interval = opts[:heartbeat_interval] || 3_000
@@ -73,19 +72,18 @@ defmodule Phoenix.Tracker do
     permdown_interval  = opts[:permdown_interval] || 1_200_000
     node_name          = opts[:node_name] || node()
     namespaced_topic   = namespaced_topic(server_name)
-    vsn                = {timestamp, System.unique_integer()}
+    vnode              = VNode.new(node_name)
 
     Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
     send_stuttered_heartbeat(self(), heartbeat_interval)
 
     {:ok, %{server_name: server_name,
             pubsub_server: pubsub_server,
-            node: {node_name, vsn},
-            node_name: node_name,
+            vnode: vnode,
             namespaced_topic: namespaced_topic,
-            nodes: %{},
+            vnodes: %{},
             pending_clockset: [],
-            presences: State.new({node_name, vsn}),
+            presences: State.new(VNode.ref(vnode)),
             heartbeat_interval: heartbeat_interval,
             nodedown_interval: nodedown_interval,
             permdown_interval: permdown_interval}}
@@ -96,29 +94,29 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info(:heartbeat, state) do
-    broadcast_from(state, self(), {:pub, :gossip, state.node, clock(state)})
+    broadcast_from(state, self(), {:pub, :gossip, state.vnode, clock(state)})
     {:noreply, state
                |> request_transfer_from_nodes_needing_synced()
                |> detect_nodedowns()
                |> schedule_next_heartbeat()}
   end
 
-  def handle_info({:pub, :gossip, {_name, _vsn} = from_node, clocks}, state) do
+  def handle_info({:pub, :gossip, from_node, clocks}, state) do
     {:noreply, state
                |> put_pending_clock(clocks)
                |> handle_gossip(from_node)}
   end
 
   def handle_info({:pub, :transfer_req, ref, from_node, _clocks}, state) do
-    Logger.debug "#{state.node_name}: transfer_req from #{inspect from_node}"
-    msg = {:pub, :transfer_ack, ref, state.node, state.presences}
+    Logger.debug "#{state.vnode.name}: transfer_req from #{inspect from_node.name}"
+    msg = {:pub, :transfer_ack, ref, state.vnode, state.presences}
     direct_broadcast(state, from_node, msg)
 
     {:noreply, state}
   end
 
   def handle_info({:pub, :transfer_ack, _ref, from_node, remote_presences}, state) do
-    Logger.debug "#{state.node_name}: transfer_ack from #{inspect from_node}"
+    Logger.debug "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}"
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
     for {_node, {_conn, topic, key, meta}} <- joined do
@@ -159,38 +157,54 @@ defmodule Phoenix.Tracker do
     %{state | presences: State.part(state.presences, conn)}
   end
 
-  defp handle_gossip(state, {name, vsn} = from_node) do
-    case Map.fetch(state.nodes, name) do
-      :error                 -> nodeup(state, from_node)
-      {:ok, %{vsn: ^vsn}}    -> node_active(state, from_node)
-      {:ok, %{vsn: old_vsn}} ->
-        state |> permdown({name, old_vsn}) |> nodeup(from_node)
+  defp handle_gossip(state, %VNode{vsn: vsn} = from_node) do
+    case VNode.put_gossip(state.vnodes, from_node) do
+      {vnodes, nil, %VNode{status: :up} = upped} ->
+        nodeup(%{state | vnodes: vnodes}, upped)
+
+      {vnodes, %VNode{vsn: ^vsn, status: :up}, %VNode{vsn: ^vsn, status: :up}} ->
+        %{state | vnodes: vnodes}
+
+      {vnodes, %VNode{vsn: ^vsn, status: :down}, %VNode{vsn: ^vsn, status: :up} = upped} ->
+        nodeup(%{state | vnodes: vnodes}, upped)
+
+      {vnodes, %VNode{vsn: old, status: :up} = downed, %VNode{vsn: ^vsn, status: :up} = upped} when old != vsn ->
+        %{state | vnodes: vnodes} |> nodedown(downed) |> permdown(downed) |> nodeup(upped)
+
+      {vnodes, %VNode{vsn: old, status: :down} = downed, %VNode{vsn: ^vsn, status: :up} = upped} when old != vsn ->
+        %{state | vnodes: vnodes} |> permdown(downed) |> nodeup(upped)
     end
   end
 
   defp request_transfer_from_nodes_needing_synced(state) do
     needs_synced = clockset_to_sync(state)
-    Logger.debug "#{state.node_name}: heartbeat, needs_synced: #{inspect needs_synced}"
+    Logger.debug "#{state.vnode.name}: heartbeat, needs_synced: #{inspect needs_synced}"
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
     %{state | pending_clockset: []}
   end
 
-  defp request_transfer(state, {name, _vsn} = target_node) do
-    Logger.debug "#{state.node_name}: request_transfer from #{name}"
+  defp request_transfer(state, target_node) do
+    Logger.debug "#{state.vnode.name}: request_transfer from #{target_node.name}"
     ref = make_ref()
-    msg = {:pub, :transfer_req, ref, state.node, clock(state)}
+    msg = {:pub, :transfer_req, ref, state.vnode, clock(state)}
     direct_broadcast(state, target_node, msg)
   end
 
-  defp detect_nodedowns(state) do
-    now = now_ms()
-    Enum.reduce(state.nodes, state, fn {name, info}, acc ->
-      downtime = now - info.last_gossip_at
-      cond do
-        downtime > state.permdown_interval -> permdown(acc, {name, info.vsn})
-        downtime > state.nodedown_interval -> nodedown(acc, {name, info.vsn})
-        true                               -> acc
+  defp detect_nodedowns(%{permdown_interval: perm_int, nodedown_interval: temp_int} = state) do
+    Enum.reduce(state.vnodes, state, fn {_name, vnode}, acc ->
+      case VNode.detect_down(acc.vnodes, vnode, temp_int, perm_int) do
+        {vnodes, %VNode{status: :up}, %VNode{status: :permdown} = down_node} ->
+          %{acc | vnodes: vnodes} |> nodedown(down_node) |> permdown(down_node)
+
+        {vnodes, %VNode{status: :down}, %VNode{status: :permdown} = down_node} ->
+          permdown(%{acc | vnodes: vnodes}, down_node)
+
+        {vnodes, %VNode{status: :up}, %VNode{status: :down} = down_node} ->
+          nodedown(%{acc | vnodes: vnodes}, down_node)
+
+        {vnodes, %VNode{status: unchanged}, %VNode{status: unchanged}} ->
+          %{acc | vnodes: vnodes}
       end
     end)
   end
@@ -206,54 +220,40 @@ defmodule Phoenix.Tracker do
     state.pending_clockset
     |> Clock.append_clock(clock(state))
     |> Clock.clockset_nodes()
-    |> Enum.reject(fn node -> node == state.node end)
+    |> Stream.map(fn {name, _vsn} -> Map.get(state.vnodes, name) end)
+    |> Enum.filter(&(&1))
   end
 
   defp put_pending_clock(state, clocks) do
     %{state | pending_clockset: Clock.append_clock(state.pending_clockset, clocks)}
   end
 
-  defp node_active(state, {name, _vsn} = from_node) do
-    if name in State.down_servers(state.presences) do
-      nodeup(state, from_node)
-    else
-      %{state | nodes: put_in(state.nodes, [name, :last_gossip_at], now_ms())}
-    end
-  end
-
-  defp nodeup(state, {name, vsn} = remote_node) do
-    Logger.debug "#{state.node_name}: nodeup from #{inspect name}"
-    {presences, joined, []} = State.node_up(state.presences, remote_node)
+  defp nodeup(state, remote_node) do
+    Logger.debug "#{state.vnode.name}: nodeup from #{inspect remote_node.name}"
+    {presences, joined, []} = State.node_up(state.presences, VNode.ref(remote_node))
 
     for {_node, {_conn, topic, key, meta}} <- joined do
       local_broadcast_join(state, topic, key, meta)
     end
 
-    %{state | presences: presences,
-      nodes: Map.put(state.nodes, name, %{vsn: vsn, last_gossip_at: now_ms()})}
+    %{state | presences: presences}
   end
 
-  defp nodedown(state, {name, _vsn} = remote_node) do
-    if not name in State.down_servers(state.presences) do
-      Logger.debug "#{state.node_name}: nodedown from #{inspect name}"
-      {presences, [], left} = State.node_down(state.presences, remote_node)
-      for {_node, {_conn, topic, key, meta}} <- left do
-        local_broadcast_leave(state, topic, key, meta)
-      end
-
-      %{state | presences: presences}
-    else
-      state
+  defp nodedown(state, remote_node) do
+    Logger.debug "#{state.vnode.name}: nodedown from #{inspect remote_node.name}"
+    {presences, [], left} = State.node_down(state.presences, VNode.ref(remote_node))
+    for {_node, {_conn, topic, key, meta}} <- left do
+      local_broadcast_leave(state, topic, key, meta)
     end
+
+    %{state | presences: presences}
   end
 
-  defp permdown(state, {name, _vsn} = remote_node) do
-    Logger.debug "#{state.node_name}: permanent nodedown detected #{inspect name}"
-    state = nodedown(state, remote_node)
-    presences = State.remove_down_nodes(state.presences, remote_node)
+  defp permdown(state, remote_node) do
+    Logger.debug "#{state.vnode.name}: permanent nodedown detected #{remote_node.name}"
+    presences = State.remove_down_nodes(state.presences, VNode.ref(remote_node))
 
-    {:noreply, %{state | presences: presences,
-                         nodes: Map.delete(state.nodes, name)}}
+    {:noreply, %{state | presences: presences}}
   end
 
   defp namespaced_topic(server_name) do
@@ -264,13 +264,13 @@ defmodule Phoenix.Tracker do
     Phoenix.PubSub.broadcast_from!(state.pubsub_server, from, state.namespaced_topic, msg)
   end
 
-  defp direct_broadcast(state, {name, _vsn} = _target_node, msg) do
-    Phoenix.PubSub.broadcast!({state.pubsub_server, name}, state.namespaced_topic, msg)
+  defp direct_broadcast(state, target_node, msg) do
+    Phoenix.PubSub.broadcast!({state.pubsub_server, target_node.name}, state.namespaced_topic, msg)
   end
 
   defp local_broadcast(state, topic, event, payload) do
     msg = %Phoenix.Socket.Broadcast{topic: topic, event: event, payload: payload}
-    Phoenix.PubSub.broadcast({state.pubsub_server, state.node_name}, topic, msg)
+    Phoenix.PubSub.broadcast({state.pubsub_server, state.vnode.name}, topic, msg)
   end
 
   defp local_broadcast_join(state, topic, key, meta) do
@@ -285,10 +285,5 @@ defmodule Phoenix.Tracker do
 
   defp random_ref() do
     :crypto.strong_rand_bytes(8) |> :erlang.term_to_binary() |> Base.encode64()
-  end
-
-  defp now_ms, do: :os.timestamp() |> time_to_ms()
-  defp time_to_ms({mega, sec, micro}) do
-    trunc(((mega * 1000000 + sec) * 1000) + (micro / 1000))
   end
 end

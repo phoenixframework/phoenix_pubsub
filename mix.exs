@@ -20,6 +20,7 @@ defmodule Phoenix.PubSub.Mixfile do
   end
 
   defp deps do
-    [{:phoenix, github: "phoenixframework/phoenix"}]
+    [{:phoenix, github: "phoenixframework/phoenix"},
+     {:dialyze, "~> 0.2.0", only: :dev}]
   end
 end

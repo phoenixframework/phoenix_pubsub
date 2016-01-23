@@ -1,4 +1,5 @@
-%{"phoenix": {:git, "https://github.com/phoenixframework/phoenix.git", "eddfa1fd66576afb612b567e744b955a10dbeb24", []},
+%{"dialyze": {:hex, :dialyze, "0.2.0"},
+  "phoenix": {:git, "https://github.com/phoenixframework/phoenix.git", "eddfa1fd66576afb612b567e744b955a10dbeb24", []},
   "phoenix_presence": {:git, "https://github.com/asonge/phoenix_presence.git", "12724f7de9472cfd7c84e22de59f010a0fe669d8", []},
   "plug": {:hex, :plug, "1.1.0"},
   "poison": {:hex, :poison, "2.0.0"}}
