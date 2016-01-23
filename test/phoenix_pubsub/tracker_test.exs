@@ -1,6 +1,7 @@
 defmodule Phoenix.TrackerTest do
   use Phoenix.PubSub.NodeCase
   alias Phoenix.Tracker
+  alias Phoenix.Tracker.VNode
 
   @pubsub Phoenix.PubSub.Test.PubSub
 
@@ -18,11 +19,11 @@ defmodule Phoenix.TrackerTest do
 
   test "heartbeats", %{tracker: tracker} do
     Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
-    assert_receive {:pub, :gossip, {:"master@127.0.0.1", _vsn}, _clocks}
+    assert_receive {:pub, :gossip, %VNode{name: :"master@127.0.0.1"}, _clocks}
     flush()
-    assert_receive {:pub, :gossip, {:"master@127.0.0.1", _vsn}, _clocks}
+    assert_receive {:pub, :gossip, %VNode{name: :"master@127.0.0.1"}, _clocks}
     flush()
-    assert_receive {:pub, :gossip, {:"master@127.0.0.1", _vsn}, _clocks}
+    assert_receive {:pub, :gossip, %VNode{name: :"master@127.0.0.1"}, _clocks}
   end
 
   test "gossip from unseen node triggers nodeup" do
