@@ -6,6 +6,7 @@ defmodule Phoenix.PubSub.NodeCase do
     quote do
       use ExUnit.Case, async: false
       import unquote(__MODULE__)
+      @moduletag :clustered
     end
   end
 

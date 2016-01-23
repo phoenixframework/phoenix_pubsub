@@ -1,5 +1,5 @@
 :net_kernel.start([:"master@127.0.0.1"])
-nodes = Application.get_env(:phoenix_pubsub, :nodes)
+nodes = Application.get_env(:phoenix_pubsub, :nodes, [])
 
 if Enum.all?(nodes, &Phoenix.PubSub.NodeCase.connect_and_recompile(&1) == true) do
   ExUnit.start()
