@@ -253,7 +253,7 @@ defmodule Phoenix.Tracker do
     Logger.debug "#{state.vnode.name}: permanent nodedown detected #{remote_node.name}"
     presences = State.remove_down_nodes(state.presences, VNode.ref(remote_node))
 
-    {:noreply, %{state | presences: presences}}
+    %{state | presences: presences}
   end
 
   defp namespaced_topic(server_name) do
