@@ -1,7 +1,6 @@
 defmodule Phoenix.Tracker do
   use GenServer
-  alias Presence.Clock
-  alias Presence, as: State
+  alias Phoenix.Tracker.{Clock, State}
   require Logger
 
   # TODO proper moduledoc
