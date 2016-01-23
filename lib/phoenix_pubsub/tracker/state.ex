@@ -61,9 +61,9 @@ defmodule Phoenix.Tracker.State do
   end
 
   @spec remove_down_nodes(t, noderef) :: t
-  def remove_down_nodes(%{ctx: ctx, dots: dots}=set, node) do
-    new_ctx = Enum.reject(ctx, &match?({{^node, _vsn},_}, &1)) |> Enum.into(%{})
-    new_dots = for {{dot_node,_}=dot, v} <- dots, dot_node != node, into: %{}, do: {dot, v}
+  def remove_down_nodes(%{ctx: ctx, dots: dots}=set, noderef) do
+    new_ctx = Enum.reject(ctx, &match?({^noderef,_}, &1)) |> Enum.into(%{})
+    new_dots = for {dot, v} <- dots, dot != noderef, into: %{}, do: {dot, v}
 
     %{set|ctx: new_ctx, dots: new_dots}
   end
