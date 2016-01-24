@@ -1,4 +1,5 @@
 defmodule Phoenix.PubSub.Cluster do
+
   def spawn do
     # Turn node into a distributed node with the given long name
     :net_kernel.start([:"master@127.0.0.1"])
@@ -8,12 +9,13 @@ defmodule Phoenix.PubSub.Cluster do
     allow_boot to_char_list("127.0.0.1")
 
     # Start configured nodes as slaves
-    Application.get_env(:phoenix_pubsub, :nodes, [])
-    |> Enum.each(&(spawn_node(&1)))
+    for node <- Application.get_env(:phoenix_pubsub, :nodes, []) do
+      spawn_node(node)
+    end
   end
 
   defp spawn_node(node_host) do
-    {:ok, slave} = :slave.start(to_char_list("127.0.0.1"), node_name(node_host), inet_loader_args)
+    {:ok, slave} = :slave.start(to_char_list("127.0.0.1"), node_name(node_host), inet_loader_args())
     add_code_paths(slave)
     transfer_configuration(slave)
     ensure_applications_started(slave)
@@ -25,7 +27,7 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp inet_loader_args do
-    "-loader inet -hosts 127.0.0.1 -setcookie #{:erlang.get_cookie}" |> to_char_list
+    to_char_list("-loader inet -hosts 127.0.0.1 -setcookie #{:erlang.get_cookie()}")
   end
 
   defp allow_boot(host) do
@@ -34,18 +36,19 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp add_code_paths(slave) do
-    :rpc.block_call(slave, :code, :add_paths, [:code.get_path])
+    :rpc.block_call(slave, :code, :add_paths, [:code.get_path()])
   end
 
   defp transfer_configuration(slave) do
-    Application.get_all_env(:phoenix_pubsub) |> Enum.each(fn({config_key, config_value}) ->
-      rpc(slave, Application, :put_env, [:phoenix_pubsub, config_key, config_value])
-    end)
+    for {key, val} <- Application.get_all_env(:phoenix_pubsub) do
+      rpc(slave, Application, :put_env, [:phoenix_pubsub, key, val])
+    end
   end
 
   defp ensure_applications_started(slave) do
-    Enum.each Application.loaded_applications, fn({app_name, _, _}) ->
-      rpc(slave, :application, :ensure_all_started, [app_name])
+    rpc(slave, Application, :ensure_all_started, [:mix])
+    for {app_name, _, _} <- Application.loaded_applications do
+      rpc(slave, Application, :ensure_all_started, [app_name])
     end
   end
 
