@@ -1,21 +1,12 @@
 defmodule Phoenix.PubSub.NodeCase do
 
-  @timeout 100
+  @timeout 250
 
   defmacro __using__(_opts) do
     quote do
       use ExUnit.Case, async: false
       import unquote(__MODULE__)
       @moduletag :clustered
-    end
-  end
-
-  def connect_and_recompile(node) do
-    if Node.connect(node) do
-      case call_node(node, fn -> IEx.Helpers.recompile() end) do
-        {_pid, {:restarted, [:phoenix_pubsub]}} -> true
-        _ -> false
-      end
     end
   end
 
