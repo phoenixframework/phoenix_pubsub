@@ -1,6 +1,6 @@
 defmodule Phoenix.PubSub.NodeCase do
 
-  @timeout 250
+  @timeout 500
 
   defmacro __using__(_opts) do
     quote do
