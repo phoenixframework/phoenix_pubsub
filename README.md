@@ -19,11 +19,7 @@
 
 ## Testing
 
-Full testing requires multiple nodes. Start two nodes as slaves before running the test suite:
+Testing by default spawns slave nodes internally for distributed tests.
+To run tests that do not require slave nodes, exclude  the `clustered` tag:
 
-    $ MIX_ENV=test iex --name slave1@127.0.0.1 -S mix
-    $ MIX_ENV=test iex --name slave2@127.0.0.1 -S mix
-
-Then run the tests as normal:
-
-    $ mix test
+    $ mix test --exclude clustered
