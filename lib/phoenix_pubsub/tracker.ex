@@ -115,7 +115,7 @@ defmodule Phoenix.Tracker do
     {:noreply, state}
   end
 
-  def handle_info({:pub, :transfer_ack, _ref, from_node, remote_presences}, state) do
+  def handle_info({:pub, :transfer_ack, _ref, _from_node, remote_presences}, state) do
     Logger.debug "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}"
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 

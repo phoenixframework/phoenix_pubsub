@@ -42,13 +42,16 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp transfer_configuration(slave) do
-    for {key, val} <- Application.get_all_env(:phoenix_pubsub) do
-      rpc(slave, Application, :put_env, [:phoenix_pubsub, key, val])
+    for {app_name, _, _} <- Application.loaded_applications do
+      for {key, val} <- Application.get_all_env(app_name) do
+        rpc(slave, Application, :put_env, [app_name, key, val])
+      end
     end
   end
 
   defp ensure_applications_started(slave) do
     rpc(slave, Application, :ensure_all_started, [:mix])
+    rpc(slave, Mix, :env, [Mix.env()])
     for {app_name, _, _} <- Application.loaded_applications do
       rpc(slave, Application, :ensure_all_started, [app_name])
     end
