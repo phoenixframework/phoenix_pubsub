@@ -9,9 +9,11 @@ defmodule Phoenix.PubSub.Cluster do
     allow_boot to_char_list("127.0.0.1")
 
     # Start configured nodes as slaves
-    for node <- Application.get_env(:phoenix_pubsub, :nodes, []) do
-      spawn_node(node)
-    end
+    nodes = Application.get_env(:phoenix_pubsub, :nodes, [])
+
+    nodes
+    |> Enum.map(&Task.async(fn -> spawn_node(&1) end))
+    |> Enum.map(&Task.await(&1))
   end
 
   defp spawn_node(node_host) do
