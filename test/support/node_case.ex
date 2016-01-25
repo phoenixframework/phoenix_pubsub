@@ -22,6 +22,19 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
+  def spy_on_pubsub(node_name, pubsub_server, target_pid, topic) do
+    call_node(node_name, fn ->
+      Phoenix.PubSub.subscribe(pubsub_server, self(), topic)
+      loop = fn next ->
+        receive do
+          msg -> send target_pid, {node_name, msg}
+        end
+        next.(next)
+      end
+      loop.(loop)
+    end)
+  end
+
   defmacro assert_join(topic, key, meta, timeout \\ 500) do
     quote do
       assert_receive %Phoenix.Socket.Broadcast{
@@ -55,7 +68,7 @@ defmodule Phoenix.PubSub.NodeCase do
     parent = self()
     ref = make_ref()
 
-    pid = Node.spawn(node, fn ->
+    pid = Node.spawn_link(node, fn ->
       result = func.()
       send parent, {ref, result}
       ref = Process.monitor(parent)

@@ -44,8 +44,8 @@ defmodule Phoenix.Tracker.VNode do
   end
 
   @spec detect_down(%{name => VNode.t}, VNode.t, pos_integer, pos_integer) :: op_result
-  def detect_down(vnodes, vnode, temp_interval, perm_interval) do
-    downtime = now_ms() - vnode.last_gossip_at
+  def detect_down(vnodes, vnode, temp_interval, perm_interval, now \\ now_ms()) do
+    downtime = now - vnode.last_gossip_at
     cond do
       downtime > perm_interval -> {Map.delete(vnodes, vnode.name), vnode, permdown(vnode)}
       downtime > temp_interval ->

@@ -13,7 +13,7 @@ defmodule Phoenix.PubSub.Cluster do
 
     nodes
     |> Enum.map(&Task.async(fn -> spawn_node(&1) end))
-    |> Enum.map(&Task.await(&1))
+    |> Enum.map(&Task.await(&1, 30_000))
   end
 
   defp spawn_node(node_host) do
