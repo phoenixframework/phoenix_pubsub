@@ -16,13 +16,12 @@ defmodule Phoenix.PubSub.Mixfile do
   defp elixirc_paths(_),     do: ["lib"]
 
   def application do
-    [applications: [:logger, :phoenix],
+    [applications: [:logger],
      mod: {Phoenix.PubSub.Supervisor, []}]
   end
 
   defp deps do
-    [{:phoenix, github: "phoenixframework/phoenix"},
-     {:dialyze, "~> 0.2.0", only: :dev}]
+    [{:dialyze, "~> 0.2.0", only: :dev}]
   end
 
   defp package do
