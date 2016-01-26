@@ -80,6 +80,7 @@ defmodule Phoenix.TrackerTest do
   test "tempdowns with nodeups of new vsn, and permdowns",
     %{tracker: tracker, topic: topic} do
 
+    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
     :ok = Phoenix.PubSub.subscribe(@pubsub, self(), topic)
     {slave1_node, {:ok, slave1_tracker}} = spawn_tracker_on_node(@slave1,
       name: tracker,
@@ -129,7 +130,10 @@ defmodule Phoenix.TrackerTest do
              @slave2 => %VNode{status: :up}} = vnodes(tracker)
 
     # tempdown => permdown
-    :timer.sleep(@permdown * 2)
+    flush()
+    for _ <- 0..trunc(@permdown / @heartbeat) do
+      assert_receive {:pub, :gossip, %VNode{name: @master}, _clocks}
+    end
     vnodes = vnodes(tracker)
     assert %{@slave2 => %VNode{status: :up}} = vnodes
     assert map_size(vnodes) == 1
