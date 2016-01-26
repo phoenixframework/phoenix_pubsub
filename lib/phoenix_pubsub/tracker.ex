@@ -22,7 +22,9 @@ defmodule Phoenix.Tracker do
     * `permdown_interval` - The interval in milliseconds to flag a node
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
-    * node_name - The name of the node. Default `node()`
+    * `node_name` - The name of the node. Default `node()`
+    * `clock_sample_windows` - The numbers of heartbeat windows to sample
+      remote clocks before collapsing and requesting transfer. Default `2`
 
   """
 
@@ -65,14 +67,15 @@ defmodule Phoenix.Tracker do
   def init(opts) do
     Process.flag(:trap_exit, true)
     :random.seed(:os.timestamp())
-    pubsub_server      = Keyword.fetch!(opts, :pubsub_server)
-    server_name        = Keyword.fetch!(opts, :name)
-    heartbeat_interval = opts[:heartbeat_interval] || 3_000
-    nodedown_interval  = opts[:nodedown_interval] || (heartbeat_interval * 3)
-    permdown_interval  = opts[:permdown_interval] || 1_200_000
-    node_name          = opts[:node_name] || node()
-    namespaced_topic   = namespaced_topic(server_name)
-    vnode              = VNode.new(node_name)
+    pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
+    server_name          = Keyword.fetch!(opts, :name)
+    heartbeat_interval   = opts[:heartbeat_interval] || 3_000
+    nodedown_interval    = opts[:nodedown_interval] || (heartbeat_interval * 5)
+    permdown_interval    = opts[:permdown_interval] || 1_200_000
+    clock_sample_windows = opts[:clock_sample_windows] || 2
+    node_name            = opts[:node_name] || node()
+    namespaced_topic     = namespaced_topic(server_name)
+    vnode                = VNode.new(node_name)
 
     Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
     send_stuttered_heartbeat(self(), heartbeat_interval)
@@ -86,11 +89,13 @@ defmodule Phoenix.Tracker do
             presences: State.new(VNode.ref(vnode)),
             heartbeat_interval: heartbeat_interval,
             nodedown_interval: nodedown_interval,
-            permdown_interval: permdown_interval}}
+            permdown_interval: permdown_interval,
+            clock_sample_windows: clock_sample_windows,
+            current_sample_count: clock_sample_windows}}
   end
 
   defp send_stuttered_heartbeat(pid, interval) do
-    Process.send_after(pid, :heartbeat, Enum.random(0..trunc(interval * 0.5)))
+    Process.send_after(pid, :heartbeat, Enum.random(0..trunc(interval * 0.25)))
   end
 
   def handle_info(:heartbeat, state) do
@@ -180,12 +185,15 @@ defmodule Phoenix.Tracker do
     end
   end
 
-  defp request_transfer_from_nodes_needing_synced(state) do
+  defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
     needs_synced = clockset_to_sync(state)
     Logger.debug "#{state.vnode.name}: heartbeat, needs_synced: #{inspect needs_synced}"
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
-    %{state | pending_clockset: []}
+    %{state | pending_clockset: [], current_sample_count: state.clock_sample_windows}
+  end
+  defp request_transfer_from_nodes_needing_synced(state) do
+    %{state | current_sample_count: state.current_sample_count - 1}
   end
 
   defp request_transfer(state, target_node) do
