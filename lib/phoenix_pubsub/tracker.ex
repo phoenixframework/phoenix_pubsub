@@ -141,6 +141,10 @@ defmodule Phoenix.Tracker do
     {:reply, state.presences, state}
   end
 
+  def handle_call(:vnodes, _from, state) do
+    {:reply, state.vnodes, state}
+  end
+
   defp put_presence(state, pid, topic, key, meta) do
     Process.link(pid)
     meta = Map.put(meta, :phx_presence, %{ref: random_ref()})

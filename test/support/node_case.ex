@@ -4,7 +4,7 @@ defmodule Phoenix.PubSub.NodeCase do
 
   defmacro __using__(_opts) do
     quote do
-      use ExUnit.Case, async: false
+      use ExUnit.Case, async: true
       import unquote(__MODULE__)
       @moduletag :clustered
     end
