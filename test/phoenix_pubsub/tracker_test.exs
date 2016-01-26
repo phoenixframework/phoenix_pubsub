@@ -97,10 +97,20 @@ defmodule Phoenix.TrackerTest do
       {_, :ok} = track_presence_on_node(slave, tracker, pid, topic, slave, %{})
       assert_join ^topic, ^slave, %{}
     end
-    assert %{@slave1 => %VNode{status: :up},
+    assert %{@slave1 => %VNode{status: :up, vsn: vsn_before},
              @slave2 => %VNode{status: :up}} = vnodes(tracker)
 
-    # tempdown
+    # tempdown netsplit
+    :ok = :sys.suspend(slave1_tracker)
+    assert_leave ^topic, @slave1, %{}
+    assert %{@slave1 => %VNode{status: :down, vsn: ^vsn_before},
+             @slave2 => %VNode{status: :up}} = vnodes(tracker)
+    :ok = :sys.resume(slave1_tracker)
+    assert_join ^topic, @slave1, %{}
+    assert %{@slave1 => %VNode{status: :up, vsn: ^vsn_before},
+             @slave2 => %VNode{status: :up}} = vnodes(tracker)
+
+    # tempdown crash
     Process.unlink(slave1_node)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, @slave1, %{}
@@ -119,8 +129,9 @@ defmodule Phoenix.TrackerTest do
     presences = Tracker.list(tracker, topic)
     assert %{@slave2 => _, "slave1-back" => _} = presences
     assert map_size(presences) == 2
-    assert %{@slave1 => %VNode{status: :up},
+    assert %{@slave1 => %VNode{status: :up, vsn: new_vsn},
              @slave2 => %VNode{status: :up}} = vnodes(tracker)
+    assert vsn_before != new_vsn
 
     # tempdown again
     Process.unlink(slave1_node)
