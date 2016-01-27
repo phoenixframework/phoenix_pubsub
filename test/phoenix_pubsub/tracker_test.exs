@@ -82,6 +82,7 @@ defmodule Phoenix.TrackerTest do
                Tracker.list(tracker, topic), 3
   end
 
+  # TODO split into multiple testscases
   test "tempdowns with nodeups of new vsn, and permdowns",
     %{tracker: tracker, topic: topic} do
 
