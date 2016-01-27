@@ -279,7 +279,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp direct_broadcast(state, target_node, msg) do
-    Phoenix.PubSub.broadcast!({state.pubsub_server, target_node.name}, state.namespaced_topic, msg)
+    Phoenix.PubSub.direct_broadcast!(target_node.name, state.pubsub_server, state.namespaced_topic, msg)
   end
 
   defp local_broadcast_joins(state, joined) do

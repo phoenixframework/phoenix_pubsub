@@ -20,14 +20,36 @@ defmodule Phoenix.PubSub.PG2Test do
 
   for size <- [1, 8] do
     @tag pool_size: size
-    test "pool #{size}: broadcasts can target a specific node", config do
+    test "pool #{size}: direct_broadcast targets a specific node", config do
       spy_on_pubsub(@slave1, config.pubsub, self(), "some:topic")
 
       PubSub.subscribe(config.pubsub, self, "some:topic")
-      :ok = PubSub.broadcast({config.pubsub, @slave1}, "some:topic", :ping)
+      :ok = PubSub.direct_broadcast(@slave1, config.pubsub, "some:topic", :ping)
+      assert_receive {@slave1, :ping}
+      :ok = PubSub.direct_broadcast!(@slave1, config.pubsub, "some:topic", :ping)
       assert_receive {@slave1, :ping}
 
-      :ok = PubSub.broadcast({config.pubsub, @slave2}, "some:topic", :ping)
+      :ok = PubSub.direct_broadcast(@slave2, config.pubsub, "some:topic", :ping)
+      refute_receive {@slave1, :ping}
+
+      :ok = PubSub.direct_broadcast!(@slave2, config.pubsub, "some:topic", :ping)
+      refute_receive {@slave1, :ping}
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: direct_broadcast_from targets a specific node", config do
+      spy_on_pubsub(@slave1, config.pubsub, self(), "some:topic")
+
+      PubSub.subscribe(config.pubsub, self, "some:topic")
+      :ok = PubSub.direct_broadcast_from(@slave1, config.pubsub, self(), "some:topic", :ping)
+      assert_receive {@slave1, :ping}
+      :ok = PubSub.direct_broadcast_from!(@slave1, config.pubsub, self(), "some:topic", :ping)
+      assert_receive {@slave1, :ping}
+
+      :ok = PubSub.direct_broadcast_from(@slave2, config.pubsub, self(), "some:topic", :ping)
+      refute_receive {@slave1, :ping}
+
+      :ok = PubSub.direct_broadcast_from!(@slave2, config.pubsub, self(), "some:topic", :ping)
       refute_receive {@slave1, :ping}
     end
   end

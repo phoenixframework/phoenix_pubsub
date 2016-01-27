@@ -17,18 +17,18 @@ defmodule Phoenix.PubSub.NodeCase do
     def init(opts) do
       # store along side module name
       server = Keyword.fetch!(opts, :pubsub_server)
-      {:ok, {server, Phoenix.PubSub.node_name(server)}}
+      {:ok, %{pubsub_server: server, node_name: Phoenix.PubSub.node_name(server)}}
     end
 
     def handle_join(topic, presence, state) do
       msg = %{topic: topic, event: "presence_join", payload: presence}
-      Phoenix.PubSub.broadcast(state, topic, msg)
+      Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       {:ok, state}
     end
 
     def handle_leave(topic, presence, state) do
       msg = %{topic: topic, event: "presence_leave", payload: presence}
-      Phoenix.PubSub.broadcast(state, topic, msg)
+      Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       {:ok, state}
     end
   end

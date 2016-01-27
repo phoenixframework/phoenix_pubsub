@@ -34,6 +34,7 @@ defmodule Phoenix.PubSub.PG2 do
     pool_size = Keyword.fetch!(opts, :pool_size)
     node_name = opts[:node_name]
     dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+                      {:direct_broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
                       {:node_name, __MODULE__, [node_name]}]
 
     children = [

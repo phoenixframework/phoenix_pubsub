@@ -22,7 +22,8 @@ defmodule Phoenix.PubSub.Local do
   @doc """
   Subscribes the pid to the topic.
 
-    * `pubsub_server` - The registered server name or pid
+    * `pubsub_server` - The registered server name
+    * `pool_size` - The size of the pool
     * `pid` - The subscriber pid
     * `topic` - The string topic, for example "users:123"
     * `opts` - The optional list of options. Supported options
@@ -30,7 +31,7 @@ defmodule Phoenix.PubSub.Local do
 
   ## Examples
 
-      iex> subscribe(:pubsub_server, self, "foo")
+      iex> subscribe(MyApp.PubSub, 1, self, "foo")
       :ok
 
   """
@@ -49,13 +50,14 @@ defmodule Phoenix.PubSub.Local do
   @doc """
   Unsubscribes the pid from the topic.
 
-    * `pubsub_server` - The registered server name or pid
+    * `pubsub_server` - The registered server name
+    * `pool_size` - The size of the pool
     * `pid` - The subscriber pid
     * `topic` - The string topic, for example "users:123"
 
   ## Examples
 
-      iex> unsubscribe(:pubsub_server, self, "foo")
+      iex> unsubscribe(MyApp.PubSub, 1, self, "foo")
       :ok
 
   """
@@ -71,14 +73,15 @@ defmodule Phoenix.PubSub.Local do
   @doc """
   Sends a message to all subscribers of a topic.
 
-    * `pubsub_server` - The registered server name or pid
+    * `pubsub_server` - The registered server name
+    * `pool_size` - The size of the pool
     * `topic` - The string topic, for example "users:123"
 
   ## Examples
 
-      iex> broadcast(:pubsub_server, self, "foo")
+      iex> broadcast(MyApp.PubSub, 1, self, "foo")
       :ok
-      iex> broadcast(:pubsub_server, :none, "bar")
+      iex> broadcast(MyApp.PubSub, 1, :none, "bar")
       :ok
 
   """
@@ -117,10 +120,12 @@ defmodule Phoenix.PubSub.Local do
 
     * `pubsub_server` - The registered server name or pid
     * `topic` - The string topic, for example "users:123"
+    * `shard` - The shard, for example `1`
+
 
   ## Examples
 
-      iex> subscribers(:pubsub_server, "foo")
+      iex> subscribers(:pubsub_server, "foo", 1)
       [#PID<0.48.0>, #PID<0.49.0>]
 
   """

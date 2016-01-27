@@ -100,6 +100,8 @@ defmodule Phoenix.PubSub do
   your PubSub adapter. See `Phoenix.PubSub.PG2` implementation for examples.
   """
 
+  @type node_name :: atom :: binary
+
   defmodule BroadcastError do
     defexception [:message]
     def exception(msg) do
@@ -148,11 +150,23 @@ defmodule Phoenix.PubSub do
     * `message` - The payload of the broadcast
 
   """
-  @spec broadcast(atom | {atom, atom}, binary, term) :: :ok | {:error, term}
-  def broadcast({server, node_name}, topic, message) when is_atom(server),
-    do: call(server, :broadcast, [node_name, :none, topic, message])
+  @spec broadcast(atom, binary, term) :: :ok | {:error, term}
   def broadcast(server, topic, message) when is_atom(server) or is_tuple(server),
-    do: call(server, :broadcast, [:global, :none, topic, message])
+    do: call(server, :broadcast, [:none, topic, message])
+
+
+  @doc """
+  Broadcasts message on given topic, to a single node.
+
+    * `server` - The Pid or registered server name and optional node to
+      scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
+    * `topic` - The topic to broadcast to, ie: `"users:123"`
+    * `message` - The payload of the broadcast
+
+  """
+  @spec direct_broadcast(node_name, atom, binary, term) :: :ok | {:error, term}
+  def direct_broadcast(node_name, server, topic, message) when is_atom(server),
+    do: call(server, :direct_broadcast, [node_name, :none, topic, message])
 
   @doc """
   Broadcasts message on given topic.
@@ -160,9 +174,23 @@ defmodule Phoenix.PubSub do
   Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
   See `Phoenix.PubSub.broadcast/3` for usage details.
   """
-  @spec broadcast!(atom | {atom, atom}, binary, term) :: :ok | no_return
+  @spec broadcast!(atom, binary, term) :: :ok | no_return
   def broadcast!(server, topic, message) do
     case broadcast(server, topic, message) do
+      :ok -> :ok
+      {:error, reason} -> raise BroadcastError, message: reason
+    end
+  end
+
+  @doc """
+  Broadcasts message on given topic, to a single node.
+
+  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
+  See `Phoenix.PubSub.broadcast/3` for usage details.
+  """
+  @spec direct_broadcast!(node_name, atom, binary, term) :: :ok | no_return
+  def direct_broadcast!(node_name, server, topic, message) do
+    case direct_broadcast(node_name, server, topic, message) do
       :ok -> :ok
       {:error, reason} -> raise BroadcastError, message: reason
     end
@@ -172,11 +200,18 @@ defmodule Phoenix.PubSub do
   Broadcasts message to all but `from_pid` on given topic.
   See `Phoenix.PubSub.broadcast/3` for usage details.
   """
-  @spec broadcast_from(atom | {atom, atom}, pid, binary, term) :: :ok | {:error, term}
-  def broadcast_from({server, node_name}, from_pid, topic, message) when is_atom(server),
-    do: call(server, :broadcast, [node_name, from_pid, topic, message])
+  @spec broadcast_from(atom, pid, binary, term) :: :ok | {:error, term}
   def broadcast_from(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid),
-    do: call(server, :broadcast, [:global, from_pid, topic, message])
+    do: call(server, :broadcast, [from_pid, topic, message])
+
+  @doc """
+  Broadcasts message to all but `from_pid` on given topic, to a single node.
+  See `Phoenix.PubSub.broadcast/3` for usage details.
+  """
+  @spec direct_broadcast_from(node_name, atom, pid, binary, term) :: :ok | {:error, term}
+  def direct_broadcast_from(node_name, server, from_pid, topic, message)
+    when is_atom(server) and is_pid(from_pid),
+    do: call(server, :direct_broadcast, [node_name, from_pid, topic, message])
 
   @doc """
   Broadcasts message to all but `from_pid` on given topic.
@@ -187,6 +222,22 @@ defmodule Phoenix.PubSub do
   @spec broadcast_from(atom | {atom, atom}, pid, binary, term) :: :ok | no_return
   def broadcast_from!(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid) do
     case broadcast_from(server, from_pid, topic, message) do
+      :ok -> :ok
+      {:error, reason} -> raise BroadcastError, message: reason
+    end
+  end
+
+  @doc """
+  Broadcasts message to all but `from_pid` on given topic, to a single node.
+
+  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
+  See `Phoenix.PubSub.broadcast/3` for usage details.
+  """
+  @spec direct_broadcast_from(node_name, atom, pid, binary, term) :: :ok | no_return
+  def direct_broadcast_from!(node_name, server, from_pid, topic, message)
+    when is_atom(server) and is_pid(from_pid) do
+
+    case direct_broadcast_from(node_name, server, from_pid, topic, message) do
       :ok -> :ok
       {:error, reason} -> raise BroadcastError, message: reason
     end
