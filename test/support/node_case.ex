@@ -34,7 +34,11 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def subscribe(pid, topic) do
-    Phoenix.PubSub.subscribe(@pubsub, pid, topic)
+    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, topic)
+  end
+
+  def subscribe_to_tracker(pid, tracker) do
+    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, "phx_presence:#{tracker}")
   end
 
   def start_tracker(node_name, opts) do
@@ -61,6 +65,10 @@ defmodule Phoenix.PubSub.NodeCase do
     call_node(node_name, fn ->
       adapter.start_link(server_name, opts)
     end)
+  end
+
+  def spy_on_tracker(node_name, server \\ @pubsub, target_pid, tracker) do
+    spy_on_pubsub(node_name, server, target_pid, "phx_presence:#{tracker}")
   end
 
   def spy_on_pubsub(node_name, server \\ @pubsub, target_pid, topic) do
@@ -93,6 +101,13 @@ defmodule Phoenix.PubSub.NodeCase do
         topic: unquote(topic),
         payload: %{key: unquote(key), meta: unquote(meta)}
       }, unquote(timeout)
+    end
+  end
+
+  defmacro assert_map(pattern, map, size) do
+    quote bind_quoted: [map: map, size: size], unquote: true do
+      assert unquote(pattern) = map
+      assert map_size(map) == size
     end
   end
 
