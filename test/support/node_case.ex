@@ -57,9 +57,15 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
-  def spy_on_pubsub(node_name, target_pid, topic) do
+  def start_pubsub(node_name, adapter, server_name, opts) do
     call_node(node_name, fn ->
-      Phoenix.PubSub.subscribe(@pubsub, self(), topic)
+      adapter.start_link(server_name, opts)
+    end)
+  end
+
+  def spy_on_pubsub(node_name, server \\ @pubsub, target_pid, topic) do
+    call_node(node_name, fn ->
+      Phoenix.PubSub.subscribe(server, self(), topic)
       loop = fn next ->
         receive do
           msg -> send target_pid, {node_name, msg}

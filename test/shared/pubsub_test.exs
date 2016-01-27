@@ -107,19 +107,6 @@ defmodule Phoenix.PubSubTest do
     end
 
     @tag pool_size: size
-    # TODO test this for real now that we have multinode (will fix hostname errors)
-    test "pool #{size}: broadcasts can target a specific node", config do
-      PubSub.subscribe(config.test, self, "topic9")
-      :ok = PubSub.broadcast({config.test, node()}, "topic9", :ping)
-      assert_receive :ping
-      :ok = PubSub.broadcast!({config.test, node()}, "topic9", :ping)
-      assert_receive :ping
-
-      PubSub.broadcast({config.test, :another@host}, "topic9", :ping)
-      refute_receive :ping
-    end
-
-    @tag pool_size: size
     test "pool #{size}: broadcast/3 does not publish message to other topic subscribers", config do
       PubSub.subscribe(config.test, self, "topic9")
 
