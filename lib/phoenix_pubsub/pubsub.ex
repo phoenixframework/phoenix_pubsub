@@ -149,8 +149,8 @@ defmodule Phoenix.PubSub do
 
   """
   @spec broadcast(atom | {atom, atom}, binary, term) :: :ok | {:error, term}
-  def broadcast({server, dest_node}, topic, message) when is_atom(server),
-    do: call(server, :broadcast, [dest_node, :none, topic, message])
+  def broadcast({server, node_name}, topic, message) when is_atom(server),
+    do: call(server, :broadcast, [node_name, :none, topic, message])
   def broadcast(server, topic, message) when is_atom(server) or is_tuple(server),
     do: call(server, :broadcast, [:global, :none, topic, message])
 
@@ -173,8 +173,8 @@ defmodule Phoenix.PubSub do
   See `Phoenix.PubSub.broadcast/3` for usage details.
   """
   @spec broadcast_from(atom | {atom, atom}, pid, binary, term) :: :ok | {:error, term}
-  def broadcast_from({server, dest_node}, from_pid, topic, message) when is_atom(server),
-    do: call(server, :broadcast, [dest_node, from_pid, topic, message])
+  def broadcast_from({server, node_name}, from_pid, topic, message) when is_atom(server),
+    do: call(server, :broadcast, [node_name, from_pid, topic, message])
   def broadcast_from(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid),
     do: call(server, :broadcast, [:global, from_pid, topic, message])
 
@@ -197,8 +197,7 @@ defmodule Phoenix.PubSub do
   """
   @spec node_name(atom) :: atom :: binary
   def node_name(server) do
-    [{:node, {mod, func, args}}] = :ets.lookup(server, :node)
-    apply(mod, func, args)
+    call(server, :node_name, [])
   end
 
   defp call(server, kind, args) do
