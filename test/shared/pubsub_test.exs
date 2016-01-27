@@ -48,6 +48,10 @@ defmodule Phoenix.PubSubTest do
             pool_size: size}}
   end
 
+  test "node_name/1 returns the node name", config do
+    assert PubSub.node_name(config.test) == node()
+  end
+
   for size <- [1, 8] do
     @tag pool_size: size
     test "pool #{size}: subscribe and unsubscribe", config do
@@ -103,6 +107,7 @@ defmodule Phoenix.PubSubTest do
     end
 
     @tag pool_size: size
+    # TODO test this for real now that we have multinode (will fix hostname errors)
     test "pool #{size}: broadcasts can target a specific node", config do
       PubSub.subscribe(config.test, self, "topic9")
       :ok = PubSub.broadcast({config.test, node()}, "topic9", :ping)

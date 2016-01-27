@@ -192,6 +192,15 @@ defmodule Phoenix.PubSub do
     end
   end
 
+  @doc """
+  Returns the node name of the PubSub server.
+  """
+  @spec node_name(atom) :: atom :: binary
+  def node_name(server) do
+    [{:node, {mod, func, args}}] = :ets.lookup(server, :node)
+    apply(mod, func, args)
+  end
+
   defp call(server, kind, args) do
     [{^kind, module, head}] = :ets.lookup(server, kind)
     apply(module, kind, head ++ args)

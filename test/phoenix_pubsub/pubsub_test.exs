@@ -2,30 +2,55 @@ defmodule Phoenix.PubSub.PubSubTest do
   use ExUnit.Case, async: true
 
   alias Phoenix.PubSub
-  alias Phoenix.Socket.Broadcast
-  alias Phoenix.Socket.Message
-  alias Phoenix.Socket.Reply
-
   @pool_size 1
 
-  setup_all do
-    {:ok, _} = Phoenix.PubSub.PG2.start_link(__MODULE__, [pool_size: @pool_size])
-    :ok
+  defmodule Message do
+    defstruct topic: nil, event: nil, payload: nil, ref: nil
   end
 
-  setup do
-    Process.register(self(), :phx_pubsub_test_subscriber)
-    :ok
+  defmodule Reply do
+    defstruct topic: nil, status: nil, payload: nil, ref: nil
   end
 
-  def broadcast(error, _, _, _, _) do
-    {:error, error}
+  defmodule Broadcast do
+    defstruct topic: nil, event: nil, payload: nil
+  end
+
+  def fastlane(subscribers, from, %Broadcast{event: event} = msg) do
+    Enum.reduce(subscribers, %{}, fn
+      {pid, _fastlanes}, cache when pid == from ->
+        cache
+
+      {pid, nil}, cache ->
+        send(pid, msg)
+        cache
+
+      {pid, {fastlane_pid, serializer, event_intercepts}}, cache ->
+        if event in event_intercepts do
+          send(pid, msg)
+          cache
+        else
+          case Map.fetch(cache, serializer) do
+            {:ok, encoded_msg} ->
+              send(fastlane_pid, encoded_msg)
+              cache
+            :error ->
+              encoded_msg = serializer.fastlane!(msg)
+              send(fastlane_pid, encoded_msg)
+              Map.put(cache, serializer, encoded_msg)
+          end
+        end
+    end)
+  end
+
+  def fastlane(subscribers, from, msg) do
+    Enum.each(subscribers, fn
+      {pid, _} when pid == from -> :noop
+      {pid, _} -> send(pid, msg)
+    end)
   end
 
   defmodule Serializer do
-
-    @behaviour Phoenix.Transports.Serializer
-
     def fastlane!(%Broadcast{} = msg) do
       send(Process.whereis(:phx_pubsub_test_subscriber), {:fastlaned, msg})
       %Message{
@@ -50,6 +75,21 @@ defmodule Phoenix.PubSub.PubSubTest do
     def decode!(message, _opts), do: message
   end
 
+
+  setup_all do
+    {:ok, _} =
+      Phoenix.PubSub.PG2.start_link(__MODULE__, [pool_size: @pool_size, fastlane: __MODULE__])
+    :ok
+  end
+
+  setup do
+    Process.register(self(), :phx_pubsub_test_subscriber)
+    :ok
+  end
+
+  def broadcast(error, _, _, _, _) do
+    {:error, error}
+  end
 
   test "broadcast!/3 and broadcast_from!/4 raises if broadcast fails" do
     :ets.new(FailedBroadcaster, [:named_table])

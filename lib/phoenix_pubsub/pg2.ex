@@ -32,7 +32,9 @@ defmodule Phoenix.PubSub.PG2 do
   @doc false
   def init([server, opts]) do
     pool_size = Keyword.fetch!(opts, :pool_size)
-    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [server, pool_size]}]
+    node_name = opts[:node_name]
+    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+                      {:node, {__MODULE__, :node_name, [node_name]}}]
 
     children = [
       supervisor(Phoenix.PubSub.LocalSupervisor, [server, pool_size, dispatch_rules]),
@@ -41,4 +43,8 @@ defmodule Phoenix.PubSub.PG2 do
 
     supervise children, strategy: :rest_for_one
   end
+
+  @doc false
+  def node_name(nil), do: node()
+  def node_name(configured_name), do: configured_name
 end

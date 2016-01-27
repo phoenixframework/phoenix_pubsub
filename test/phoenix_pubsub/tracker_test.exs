@@ -3,13 +3,12 @@ defmodule Phoenix.TrackerTest do
   alias Phoenix.Tracker
   alias Phoenix.Tracker.VNode
 
-  @pubsub Phoenix.PubSub.Test.PubSub
   @master :"master@127.0.0.1"
   @slave1 :"slave1@127.0.0.1"
   @slave2 :"slave2@127.0.0.1"
   @heartbeat 25
   @permdown 1000
-  @timeout @heartbeat * 4
+  @timeout 100
 
   def spawn_pid, do: spawn(fn -> :timer.sleep(:infinity) end)
 
@@ -17,17 +16,12 @@ defmodule Phoenix.TrackerTest do
 
   setup config do
     tracker = config.test
-    {:ok, _pid} = Phoenix.Tracker.start_link(
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-      permdown_interval: @permdown,
-    )
+    {:ok, _pid} = start_tracker(name: tracker)
     {:ok, topic: config.test, tracker: tracker}
   end
 
   test "heartbeats", %{tracker: tracker} do
-    Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
+    subscribe(self(), "phx_presence:#{tracker}")
     assert_receive {:pub, :gossip, %VNode{name: @master}, _clocks}, @timeout
     flush()
     assert_receive {:pub, :gossip, %VNode{name: @master}, _clocks}, @timeout
@@ -40,20 +34,16 @@ defmodule Phoenix.TrackerTest do
 
     # TODO assert nodeup (some way, cleanly)
     assert Tracker.list(tracker, topic) == %{}
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
-    spy_on_pubsub(@slave1, @pubsub, self(), "phx_presence:#{tracker}")
+    :ok = subscribe(self(), "phx_presence:#{tracker}")
+    spy_on_pubsub(@slave1, self(), "phx_presence:#{tracker}")
 
     remote_presence = spawn_pid()
-    {_, {:ok, _pid}} = spawn_tracker_on_node(@slave1,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
+    {_, {:ok, _pid}} = start_tracker(@slave1, name: tracker)
     # does not gossip until slave1's clock bumps
     refute_receive {@slave1, {:pub, :transfer_req, _, %VNode{name: @master}, _}}
     assert %{@slave1 => %VNode{status: :up}} = vnodes(tracker)
 
-    {_, :ok} = track_presence_on_node(
+    {_, :ok} = track_presence(
       @slave1, tracker, remote_presence, topic, "slave1", %{name: "slave1"}
     )
     # master sends transfer_req to slave1
@@ -66,22 +56,17 @@ defmodule Phoenix.TrackerTest do
   test "requests for transfer collapses clocks",
     %{tracker: tracker, topic: topic} do
 
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), topic)
+    :ok = subscribe(self(), "phx_presence:#{tracker}")
+    :ok = subscribe(self(), topic)
     for slave <- [@slave1, @slave2] do
-      spy_on_pubsub(slave, @pubsub, self(), "phx_presence:#{tracker}")
-      {_, {:ok, _pid}} = spawn_tracker_on_node(slave,
-        name: tracker,
-        pubsub_server: @pubsub,
-        heartbeat_interval: @heartbeat,
-        permdown_interval: @permdown,
-      )
+      spy_on_pubsub(slave, self(), "phx_presence:#{tracker}")
+      {_, {:ok, _pid}} = start_tracker(slave, name: tracker)
       assert_receive {^slave, {:pub, :gossip, %VNode{name: @master}, _clocks}}
     end
     :ok = :sys.suspend(tracker)
-    {_, :ok} = track_presence_on_node(@slave1, tracker, spawn_pid(), topic, "slave1", %{})
-    {_, :ok} = track_presence_on_node(@slave1, tracker, spawn_pid(), topic, "slave1.2", %{})
-    {_, :ok} = track_presence_on_node(@slave2, tracker, spawn_pid(), topic, "slave2", %{})
+    {_, :ok} = track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{})
+    {_, :ok} = track_presence(@slave1, tracker, spawn_pid(), topic, "slave1.2", %{})
+    {_, :ok} = track_presence(@slave2, tracker, spawn_pid(), topic, "slave2", %{})
 
     # slave1 sends transfer_req to slave2
     assert_receive {slave1, {:pub, :transfer_req, ref, %VNode{name: slave2}, _state}}, @timeout
@@ -109,21 +94,14 @@ defmodule Phoenix.TrackerTest do
   test "tempdowns with nodeups of new vsn, and permdowns",
     %{tracker: tracker, topic: topic} do
 
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), "phx_presence:#{tracker}")
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), topic)
-    {slave1_node, {:ok, slave1_tracker}} = spawn_tracker_on_node(@slave1,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
-    {_slave2_node, {:ok, _slave2_tracker}} = spawn_tracker_on_node(@slave2,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
+    :ok = subscribe(self(), "phx_presence:#{tracker}")
+    :ok = subscribe(self(), topic)
+
+    {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
+    {_, {:ok, _}} = start_tracker(@slave2, name: tracker)
     for slave <- [@slave1, @slave2] do
       pid = spawn_pid()
-      {_, :ok} = track_presence_on_node(slave, tracker, pid, topic, slave, %{})
+      {_, :ok} = track_presence(slave, tracker, pid, topic, slave, %{})
       assert_join ^topic, ^slave, %{}
     end
     assert %{@slave1 => %VNode{status: :up, vsn: vsn_before},
@@ -148,13 +126,9 @@ defmodule Phoenix.TrackerTest do
              @slave2 => %VNode{status: :up}} = vnodes(tracker)
 
     # tempdown => nodeup with new vsn
-    {slave1_node, {:ok, slave1_tracker}} = spawn_tracker_on_node(@slave1,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
+    {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     pid = spawn_pid()
-    {_, :ok} = track_presence_on_node(@slave1, tracker, pid, topic, "slave1-back", %{})
+    {_, :ok} = track_presence(@slave1, tracker, pid, topic, "slave1-back", %{})
     assert_join ^topic, "slave1-back", %{}
     presences = Tracker.list(tracker, topic)
     assert %{@slave2 => _, "slave1-back" => _} = presences
@@ -184,7 +158,7 @@ defmodule Phoenix.TrackerTest do
     %{tracker: tracker, topic: topic} do
 
     # local joins
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), topic)
+    :ok = subscribe(self(), topic)
 
     assert Tracker.list(tracker, topic) == %{}
     :ok = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
@@ -205,12 +179,8 @@ defmodule Phoenix.TrackerTest do
     # remote joins
     assert vnodes(tracker) == %{}
     remote_presence = spawn_pid()
-    {_, {:ok, _pid}} = spawn_tracker_on_node(@slave1,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
-    {_, :ok} = track_presence_on_node(
+    {_, {:ok, _pid}} = start_tracker(@slave1, name: tracker)
+    {_, :ok} = track_presence(
       @slave1, tracker, remote_presence, topic, "slave1", %{name: "slave1"}
     )
     assert_join ^topic, "slave1", %{name: "slave1"}
@@ -242,12 +212,8 @@ defmodule Phoenix.TrackerTest do
   test "detects nodedown and locally broadcasts leaves",
     %{tracker: tracker, topic: topic} do
 
-    :ok = Phoenix.PubSub.subscribe(@pubsub, self(), topic)
-    {node_pid, {:ok, slave1_tracker}} = spawn_tracker_on_node(@slave1,
-      name: tracker,
-      pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-    )
+    :ok = subscribe(self(), topic)
+    {node_pid, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     assert Tracker.list(tracker, topic) == %{}
 
     local_presence = spawn_pid()
@@ -255,7 +221,7 @@ defmodule Phoenix.TrackerTest do
     assert_join ^topic, "local1", %{}
 
     remote_presence = spawn_pid()
-    {_, :ok} = track_presence_on_node(
+    {_, :ok} = track_presence(
       @slave1, tracker, remote_presence, topic, "slave1", %{name: "slave1"}
     )
     assert_join ^topic, "slave1", %{name: "slave1"}

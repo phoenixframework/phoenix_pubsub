@@ -1,4 +1,4 @@
-defmodule Phoenix.LocalTest do
+defmodule Phoenix.PubSub.LocalTest do
   use ExUnit.Case, async: true
 
   alias Phoenix.PubSub.Local
@@ -33,15 +33,15 @@ defmodule Phoenix.LocalTest do
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "bar")
 
       # broadcast
-      assert :ok = Local.broadcast(config.pubsub, config.pool_size, :none, "foo", :hellofoo)
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "foo", :hellofoo)
       assert_received :hellofoo
       assert Process.info(pid)[:messages] == [:hellofoo]
 
-      assert :ok = Local.broadcast(config.pubsub, config.pool_size, :none, "bar", :hellobar)
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "bar", :hellobar)
       assert_received :hellobar
       assert Process.info(pid)[:messages] == [:hellofoo]
 
-      assert :ok = Local.broadcast(config.pubsub, config.pool_size, :none, "unknown", :hellobar)
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "unknown", :hellobar)
       assert Process.info(self)[:messages] == []
     end
 
