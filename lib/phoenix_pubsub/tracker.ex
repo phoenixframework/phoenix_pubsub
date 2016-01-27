@@ -3,6 +3,11 @@ defmodule Phoenix.Tracker do
   alias Phoenix.Tracker.{Clock, State, VNode}
   require Logger
 
+  @type state :: %{key: key :: term, meta: meta :: Map.t, ref: ref :: Strint.t}
+
+  @callback handle_join(pubsub_server :: atom, topic :: String.t, state) :: :ok
+  @callback handle_leave(pubsub_server :: atom, topic :: String.t, state) :: :ok
+
   # TODO proper moduledoc
   @moduledoc """
   What you plug in your app's supervision tree...
@@ -22,7 +27,6 @@ defmodule Phoenix.Tracker do
     * `permdown_interval` - The interval in milliseconds to flag a node
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
-    * `node_name` - The name of the node. Default `node()`
     * `clock_sample_windows` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
 
@@ -33,17 +37,10 @@ defmodule Phoenix.Tracker do
 
   ## Client
 
-  # TODO decouple Socket
-  def track(%Phoenix.Socket{} = socket, user_id, meta) do
-    track(socket.channel, socket.channel_pid, socket.topic, user_id, meta)
-  end
   def track(server_name, pid, topic, user_id, meta) do
     GenServer.call(server_name, {:track, pid, topic, user_id, meta})
   end
 
-  def list(%Phoenix.Socket{} = socket) do
-    list(socket.channel, socket.topic)
-  end
   def list(server_name, topic) do
     server_name
     |> GenServer.call({:list, topic})
@@ -60,11 +57,12 @@ defmodule Phoenix.Tracker do
 
   ## Server
 
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))
+  def start_link(tracker, tracker_opts, server_opts) do
+    name = Keyword.fetch!(server_opts, :name)
+    GenServer.start_link(__MODULE__, [tracker, tracker_opts, server_opts], name: name)
   end
 
-  def init(opts) do
+  def init([tracker, tracker_opts, opts]) do
     Process.flag(:trap_exit, true)
     :random.seed(:os.timestamp())
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
@@ -73,25 +71,32 @@ defmodule Phoenix.Tracker do
     nodedown_interval    = opts[:nodedown_interval] || (heartbeat_interval * 5)
     permdown_interval    = opts[:permdown_interval] || 1_200_000
     clock_sample_windows = opts[:clock_sample_windows] || 2
-    node_name            = opts[:node_name] || node()
+    node_name            = Phoenix.PubSub.node_name(pubsub_server)
     namespaced_topic     = namespaced_topic(server_name)
     vnode                = VNode.new(node_name)
 
-    Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
-    send_stuttered_heartbeat(self(), heartbeat_interval)
+    case tracker.init(tracker_opts) do
+      {:ok, tracker_state} ->
+        Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
+        send_stuttered_heartbeat(self(), heartbeat_interval)
 
-    {:ok, %{server_name: server_name,
-            pubsub_server: pubsub_server,
-            vnode: vnode,
-            namespaced_topic: namespaced_topic,
-            vnodes: %{},
-            pending_clockset: [],
-            presences: State.new(VNode.ref(vnode)),
-            heartbeat_interval: heartbeat_interval,
-            nodedown_interval: nodedown_interval,
-            permdown_interval: permdown_interval,
-            clock_sample_windows: clock_sample_windows,
-            current_sample_count: clock_sample_windows}}
+        {:ok, %{server_name: server_name,
+                pubsub_server: pubsub_server,
+                tracker: tracker,
+                tracker_state: tracker_state,
+                vnode: vnode,
+                namespaced_topic: namespaced_topic,
+                vnodes: %{},
+                pending_clockset: [],
+                presences: State.new(VNode.ref(vnode)),
+                heartbeat_interval: heartbeat_interval,
+                nodedown_interval: nodedown_interval,
+                permdown_interval: permdown_interval,
+                clock_sample_windows: clock_sample_windows,
+                current_sample_count: clock_sample_windows}}
+
+       other -> other
+    end
   end
 
   defp send_stuttered_heartbeat(pid, interval) do
@@ -124,14 +129,10 @@ defmodule Phoenix.Tracker do
     Logger.debug "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}"
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
-    for {_node, {_conn, topic, key, meta}} <- joined do
-      local_broadcast_join(state, topic, key, meta)
-    end
-    for {_node, {_conn, topic, key, meta}} <- left do
-      local_broadcast_leave(state, topic, key, meta)
-    end
-
-    {:noreply, %{state | presences: presences}}
+    {:noreply, state
+               |> local_broadcast_joins(joined)
+               |> local_broadcast_leaves(left)
+               |> Map.put(:presences, presences)}
   end
 
   def handle_info({:EXIT, pid, _reason}, state) do
@@ -153,17 +154,21 @@ defmodule Phoenix.Tracker do
   defp put_presence(state, pid, topic, key, meta) do
     Process.link(pid)
     meta = Map.put(meta, :phx_presence, %{ref: random_ref()})
-    local_broadcast_join(state, topic, key, meta)
 
-    %{state | presences: State.join(state.presences, pid, topic, key, meta)}
+    state
+    |> local_broadcast_join(topic, key, meta)
+    |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
   end
 
   defp drop_presence(state, conn) do
-    for {topic, key, meta} <- State.get_by_conn(state.presences, conn) do
-      local_broadcast_leave(state, topic, key, meta)
-    end
+    new_state =
+      state.presences
+      |> State.get_by_conn(conn)
+      |> Enum.reduce(state, fn {topic, key, meta}, acc ->
+        local_broadcast_leave(acc, topic, key, meta)
+      end)
 
-    %{state | presences: State.part(state.presences, conn)}
+    %{new_state | presences: State.part(new_state.presences, conn)}
   end
 
   defp handle_gossip(state, %VNode{vsn: vsn} = from_node) do
@@ -244,21 +249,18 @@ defmodule Phoenix.Tracker do
     Logger.debug "#{state.vnode.name}: nodeup from #{inspect remote_node.name}"
     {presences, joined, []} = State.node_up(state.presences, VNode.ref(remote_node))
 
-    for {_node, {_conn, topic, key, meta}} <- joined do
-      local_broadcast_join(state, topic, key, meta)
-    end
-
-    %{state | presences: presences}
+    state
+    |> local_broadcast_joins(joined)
+    |> Map.put(:presences, presences)
   end
 
   defp nodedown(state, remote_node) do
     Logger.debug "#{state.vnode.name}: nodedown from #{inspect remote_node.name}"
     {presences, [], left} = State.node_down(state.presences, VNode.ref(remote_node))
-    for {_node, {_conn, topic, key, meta}} <- left do
-      local_broadcast_leave(state, topic, key, meta)
-    end
 
-    %{state | presences: presences}
+    state
+    |> local_broadcast_leaves(left)
+    |> Map.put(:presences, presences)
   end
 
   defp permdown(state, remote_node) do
@@ -280,19 +282,39 @@ defmodule Phoenix.Tracker do
     Phoenix.PubSub.broadcast!({state.pubsub_server, target_node.name}, state.namespaced_topic, msg)
   end
 
-  defp local_broadcast(state, topic, event, payload) do
-    msg = %Phoenix.Socket.Broadcast{topic: topic, event: event, payload: payload}
-    Phoenix.PubSub.broadcast({state.pubsub_server, state.vnode.name}, topic, msg)
+  defp local_broadcast_joins(state, joined) do
+    Enum.reduce(joined, state, fn {_node, {_conn, topic, key, meta}}, acc ->
+      local_broadcast_join(acc, topic, key, meta)
+    end)
+  end
+
+  defp local_broadcast_leaves(state, left) do
+    Enum.reduce(left, state, fn {_node, {_conn, topic, key, meta}}, acc ->
+      local_broadcast_leave(acc, topic, key, meta)
+    end)
   end
 
   defp local_broadcast_join(state, topic, key, meta) do
     {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
-    local_broadcast(state, topic, @join_event, %{key: key, meta: meta, ref: ref})
+    state.tracker.handle_join(topic, %{key: key, meta: meta, ref: ref}, state.tracker_state)
+    |> handle_tracker_result(state)
   end
 
   defp local_broadcast_leave(state, topic, key, meta) do
     {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
-    local_broadcast(state, topic, @leave_event, %{key: key, meta: meta, ref: ref})
+
+    state.tracker.handle_leave(topic, %{key: key, meta: meta, ref: ref}, state.tracker_state)
+    |> handle_tracker_result(state)
+  end
+  defp handle_tracker_result({:ok, tracker_state}, state) do
+    %{state | tracker_state: tracker_state}
+  end
+  defp handle_tracker_result(other, state) do
+    raise ArgumentError, """
+    expected #{state.tracker} to return {:ok, state}, but got:
+
+        #{inspect other}
+    """
   end
 
   defp random_ref() do
