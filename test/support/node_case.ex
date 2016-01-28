@@ -14,6 +14,10 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   defmodule TestTracker do
+    @behaviour Phoenix.Tracker
+
+    def start_link(_opts), do: {:error, :not_implemented}
+
     def init(opts) do
       # store along side module name
       server = Keyword.fetch!(opts, :pubsub_server)

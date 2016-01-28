@@ -3,10 +3,14 @@ defmodule Phoenix.Tracker do
   alias Phoenix.Tracker.{Clock, State, VNode}
   require Logger
 
-  @type state :: %{key: key :: term, meta: meta :: Map.t, ref: ref :: Strint.t}
+  @type presences :: %{ String.t => %{metas: [map]}}
+  @type presence :: %{key: String.t, meta: map}
+  @type topic :: String.t
 
-  @callback handle_join(pubsub_server :: atom, topic :: String.t, state) :: :ok
-  @callback handle_leave(pubsub_server :: atom, topic :: String.t, state) :: :ok
+  @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
+  @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
+  @callback handle_join(topic, presence, state :: term) :: {:ok, state :: term}
+  @callback handle_leave(topic, presence, state :: term) :: {:ok, state :: term}
 
   # TODO proper moduledoc
   @moduledoc """
