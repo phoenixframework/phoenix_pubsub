@@ -24,10 +24,10 @@ defmodule Phoenix.Tracker do
   ## Optional configuration:
 
     * `heartbeat_interval` - The interval in milliseconds to send heartbeats
-      across the cluster. Default `3000`
+      across the cluster. Default `1000`
     * `nodedown_interval` - The interval in milliseconds to flag a node
       as down temporarily down.
-      Default `heartbeat_interval * 3` (three missed gossip windows)
+      Default `heartbeat_interval * 5` (five missed gossip windows)
     * `permdown_interval` - The interval in milliseconds to flag a node
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
@@ -46,14 +46,11 @@ defmodule Phoenix.Tracker do
   end
 
   def list(server_name, topic) do
+    # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
     server_name
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
-    |> Stream.map(fn {_conn, key, meta} -> %{key: key, meta: meta} end)
-    |> Enum.group_by(fn %{key: key} -> key end)
-    |> Enum.into(%{}, fn {key, grouped} ->
-      {key, %{metas: for(%{meta: meta} <- grouped, do: meta)}}
-    end)
+    |> Enum.map(fn {_conn, key, meta} -> {key, meta} end)
   end
 
   ## Server
@@ -68,7 +65,7 @@ defmodule Phoenix.Tracker do
     :random.seed(:os.timestamp())
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
-    heartbeat_interval   = opts[:heartbeat_interval] || 3_000
+    heartbeat_interval   = opts[:heartbeat_interval] || 1000
     nodedown_interval    = opts[:nodedown_interval] || (heartbeat_interval * 5)
     permdown_interval    = opts[:permdown_interval] || 1_200_000
     clock_sample_windows = opts[:clock_sample_windows] || 2
@@ -296,12 +293,12 @@ defmodule Phoenix.Tracker do
   end
 
   defp local_broadcast_join(state, topic, key, meta) do
-    state.tracker.handle_join(topic, %{key: key, meta: meta}, state.tracker_state)
+    state.tracker.handle_join(topic, {key, meta}, state.tracker_state)
     |> handle_tracker_result(state)
   end
 
   defp local_broadcast_leave(state, topic, key, meta) do
-    state.tracker.handle_leave(topic, %{key: key, meta: meta}, state.tracker_state)
+    state.tracker.handle_leave(topic, {key, meta}, state.tracker_state)
     |> handle_tracker_result(state)
   end
   defp handle_tracker_result({:ok, tracker_state}, state) do

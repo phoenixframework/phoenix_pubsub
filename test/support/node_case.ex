@@ -24,14 +24,14 @@ defmodule Phoenix.PubSub.NodeCase do
       {:ok, %{pubsub_server: server, node_name: Phoenix.PubSub.node_name(server)}}
     end
 
-    def handle_join(topic, presence, state) do
-      msg = %{topic: topic, event: "presence_join", payload: presence}
+    def handle_join(topic, {key, meta}, state) do
+      msg = %{topic: topic, event: "presence_join", payload: %{key: key, meta: meta}}
       Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       {:ok, state}
     end
 
-    def handle_leave(topic, presence, state) do
-      msg = %{topic: topic, event: "presence_leave", payload: presence}
+    def handle_leave(topic, {key, meta}, state) do
+      msg = %{topic: topic, event: "presence_leave", payload: %{key: key, meta: meta}}
       Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       {:ok, state}
     end

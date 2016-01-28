@@ -28,7 +28,7 @@ defmodule Phoenix.TrackerTest do
   test "gossip from unseen node triggers nodeup and transfer request",
     %{tracker: tracker, topic: topic} do
 
-    assert Tracker.list(tracker, topic) == %{}
+    assert Tracker.list(tracker, topic) == []
     subscribe_to_tracker(self(), tracker)
     spy_on_tracker(@slave1, self(), tracker)
     start_tracker(@slave1, name: tracker)
@@ -42,7 +42,7 @@ defmodule Phoenix.TrackerTest do
     ref = assert_transfer_req to: @slave1, from: @master
     # slave1 fulfills tranfer request and sends transfer_ack to master
     assert_transfer_ack ref, from: @slave1
-    assert %{"slave1" => _} = Tracker.list(tracker, topic)
+    assert [{"slave1", _}] = Tracker.list(tracker, topic)
   end
 
   test "requests for transfer collapses clocks",
@@ -78,8 +78,8 @@ defmodule Phoenix.TrackerTest do
     assert_join ^topic, "slave1.2", %{}
     assert_join ^topic, "slave2", %{}
 
-    assert_map %{"slave1" => _, "slave1.2" => _, "slave2" => _},
-               Tracker.list(tracker, topic), 3
+    assert [{"slave1", _}, {"slave1.2", _}, {"slave2", _}] =
+           Tracker.list(tracker, topic)
   end
 
   # TODO split into multiple testscases
@@ -120,7 +120,7 @@ defmodule Phoenix.TrackerTest do
     {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1-back", %{})
     assert_join ^topic, "slave1-back", %{}
-    assert_map %{@slave2 => _, "slave1-back" => _}, Tracker.list(tracker, topic), 2
+    assert [{"slave1-back", _}, {@slave2, _}] = Tracker.list(tracker, topic)
     assert_map %{@slave1 => %VNode{status: :up, vsn: new_vsn},
                  @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
     assert vsn_before != new_vsn
@@ -146,16 +146,16 @@ defmodule Phoenix.TrackerTest do
 
     # local joins
     subscribe(self(), topic)
-    assert Tracker.list(tracker, topic) == %{}
+    assert Tracker.list(tracker, topic) == []
     :ok = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
     assert_join ^topic, "me", %{name: "me"}
-    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]}}, Tracker.list(tracker, topic), 1
+    assert [{"me", %{name: "me", phx_ref: _}}] = Tracker.list(tracker, topic)
 
     :ok = Tracker.track(tracker, local_presence , topic, "me2", %{name: "me2"})
     assert_join ^topic, "me2", %{name: "me2"}
-    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
-                 "me2" => %{metas: [%{name: "me2", phx_ref: _}]}},
-               Tracker.list(tracker, topic), 2
+    assert [{"me", %{name: "me", phx_ref: _}},
+            {"me2",%{name: "me2", phx_ref: _}}] =
+           Tracker.list(tracker, topic)
 
     # remote joins
     assert vnodes(tracker) == %{}
@@ -163,22 +163,22 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave1, tracker, remote_pres, topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
     assert_map %{@slave1 => %VNode{status: :up}}, vnodes(tracker), 1
-    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
-                 "me2" => %{metas: [%{name: "me2", phx_ref: _}]},
-                 "slave1" => %{metas: [%{name: "s1", phx_ref: _}]}},
-                 Tracker.list(tracker, topic), 3
+    assert [{"me", %{name: "me", phx_ref: _}},
+            {"me2",%{name: "me2", phx_ref: _}},
+            {"slave1", %{name: "s1", phx_ref: _}}] =
+           Tracker.list(tracker, topic)
 
     # local leaves
     Process.exit(local_presence, :kill)
     assert_leave ^topic, "me2", %{name: "me2"}
-    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
-                 "slave1" => %{metas: [%{name: "s1", phx_ref: _}]}},
-               Tracker.list(tracker, topic), 2
+    assert [{"me", %{name: "me", phx_ref: _}},
+            {"slave1", %{name: "s1", phx_ref: _}}] =
+           Tracker.list(tracker, topic)
 
     # remote leaves
     Process.exit(remote_pres, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
-    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]}}, Tracker.list(tracker, topic), 1
+    assert [{"me", %{name: "me", phx_ref: _}}] = Tracker.list(tracker, topic)
   end
 
   test "detects nodedown and locally broadcasts leaves",
@@ -187,7 +187,7 @@ defmodule Phoenix.TrackerTest do
     local_presence = spawn_pid()
     subscribe(self(), topic)
     {node_pid, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
-    assert Tracker.list(tracker, topic) == %{}
+    assert Tracker.list(tracker, topic) == []
 
     :ok = Tracker.track(tracker, local_presence , topic, "local1", %{name: "l1"})
     assert_join ^topic, "local1", %{}
@@ -195,14 +195,14 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
     assert %{@slave1 => %VNode{status: :up}} = vnodes(tracker)
-    assert_map %{"local1" => _, "slave1" => _}, Tracker.list(tracker, topic), 2
+    assert [{"local1", _}, {"slave1", _}] = Tracker.list(tracker, topic)
 
     # nodedown
     Process.unlink(node_pid)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
     assert %{@slave1 => %VNode{status: :down}} = vnodes(tracker)
-    assert_map %{"local1" => _}, Tracker.list(tracker, topic), 1
+    assert [{"local1", _}] = Tracker.list(tracker, topic)
   end
 
 
