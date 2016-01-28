@@ -50,7 +50,6 @@ defmodule Phoenix.PubSub.NodeCase do
       pubsub_server: @pubsub,
       heartbeat_interval: @heartbeat,
       permdown_interval: @permdown,
-      tracker: TestTracker,
     ], opts)
     Phoenix.Tracker.start_link(TestTracker, opts, opts)
   end

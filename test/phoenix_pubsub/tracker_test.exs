@@ -149,12 +149,12 @@ defmodule Phoenix.TrackerTest do
     assert Tracker.list(tracker, topic) == %{}
     :ok = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
     assert_join ^topic, "me", %{name: "me"}
-    assert_map %{"me" => [%{meta: %{name: "me"}, ref: _}]}, Tracker.list(tracker, topic), 1
+    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]}}, Tracker.list(tracker, topic), 1
 
     :ok = Tracker.track(tracker, local_presence , topic, "me2", %{name: "me2"})
     assert_join ^topic, "me2", %{name: "me2"}
-    assert_map %{"me" => [%{meta: %{name: "me"}, ref: _}],
-                 "me2" => [%{meta: %{name: "me2"}, ref: _}]},
+    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
+                 "me2" => %{metas: [%{name: "me2", phx_ref: _}]}},
                Tracker.list(tracker, topic), 2
 
     # remote joins
@@ -163,22 +163,22 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave1, tracker, remote_pres, topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
     assert_map %{@slave1 => %VNode{status: :up}}, vnodes(tracker), 1
-    assert_map %{"me" => [%{meta: %{name: "me"}, ref: _}],
-                 "me2" => [%{meta: %{name: "me2"}, ref: _}],
-                 "slave1" => [%{meta: %{name: "s1"}, ref: _}]},
+    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
+                 "me2" => %{metas: [%{name: "me2", phx_ref: _}]},
+                 "slave1" => %{metas: [%{name: "s1", phx_ref: _}]}},
                  Tracker.list(tracker, topic), 3
 
     # local leaves
     Process.exit(local_presence, :kill)
     assert_leave ^topic, "me2", %{name: "me2"}
-    assert_map %{"me" => [%{meta: %{name: "me"}, ref: _}],
-                 "slave1" => [%{meta: %{name: "s1"}, ref: _}]},
+    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]},
+                 "slave1" => %{metas: [%{name: "s1", phx_ref: _}]}},
                Tracker.list(tracker, topic), 2
 
     # remote leaves
     Process.exit(remote_pres, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
-    assert_map %{"me" => [%{meta: %{name: "me"}}]}, Tracker.list(tracker, topic), 1
+    assert_map %{"me" => %{metas: [%{name: "me", phx_ref: _}]}}, Tracker.list(tracker, topic), 1
   end
 
   test "detects nodedown and locally broadcasts leaves",

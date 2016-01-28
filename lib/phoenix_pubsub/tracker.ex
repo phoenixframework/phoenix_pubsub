@@ -45,13 +45,10 @@ defmodule Phoenix.Tracker do
     server_name
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
-    |> Enum.group_by(fn {_conn, key, _meta} -> key end)
-    |> Enum.into(%{}, fn {key, metas} ->
-      meta = for {_conn, _key, meta} <- metas do
-        {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
-        %{meta: meta, ref: ref}
-      end
-      {key, meta}
+    |> Stream.map(fn {_conn, key, meta} -> %{key: key, meta: meta} end)
+    |> Enum.group_by(fn %{key: key} -> key end)
+    |> Enum.into(%{}, fn {key, grouped} ->
+      {key, %{metas: for(%{meta: meta} <- grouped, do: meta)}}
     end)
   end
 
@@ -153,7 +150,7 @@ defmodule Phoenix.Tracker do
 
   defp put_presence(state, pid, topic, key, meta) do
     Process.link(pid)
-    meta = Map.put(meta, :phx_presence, %{ref: random_ref()})
+    meta = Map.put(meta, :phx_ref, random_ref())
 
     state
     |> local_broadcast_join(topic, key, meta)
@@ -295,15 +292,12 @@ defmodule Phoenix.Tracker do
   end
 
   defp local_broadcast_join(state, topic, key, meta) do
-    {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
-    state.tracker.handle_join(topic, %{key: key, meta: meta, ref: ref}, state.tracker_state)
+    state.tracker.handle_join(topic, %{key: key, meta: meta}, state.tracker_state)
     |> handle_tracker_result(state)
   end
 
   defp local_broadcast_leave(state, topic, key, meta) do
-    {%{ref: ref}, meta} = Map.pop(meta, :phx_presence)
-
-    state.tracker.handle_leave(topic, %{key: key, meta: meta, ref: ref}, state.tracker_state)
+    state.tracker.handle_leave(topic, %{key: key, meta: meta}, state.tracker_state)
     |> handle_tracker_result(state)
   end
   defp handle_tracker_result({:ok, tracker_state}, state) do
