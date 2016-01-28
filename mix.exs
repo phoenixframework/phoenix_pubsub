@@ -9,7 +9,10 @@ defmodule Phoenix.PubSub.Mixfile do
      start_permanent: Mix.env == :prod,
      elixirc_paths: elixirc_paths(Mix.env),
      package: package,
-     deps: deps]
+     deps: deps,
+     description: """
+     Distributed PubSub and Presence platform
+     """]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
