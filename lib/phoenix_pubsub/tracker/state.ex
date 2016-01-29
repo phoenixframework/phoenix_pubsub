@@ -108,7 +108,9 @@ defmodule Phoenix.Tracker.State do
 
   @spec get_by_conn(t, conn) :: [{topic, key, metadata}]
   def get_by_conn(%State{dots: dots, servers: servers}, conn) do
-    for {{nodespec, _}, {^conn, topic, key, metadata}} <- dots, Map.get(servers, nodespec, :up)==:up, do: {topic, key, metadata}
+    for {{nodespec, _}, {^conn, _topic, _key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
+      entry
+    end
   end
 
   @spec get_by_conn(t, conn, topic) :: {key, metadata}

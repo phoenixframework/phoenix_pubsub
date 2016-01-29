@@ -24,15 +24,17 @@ defmodule Phoenix.PubSub.NodeCase do
       {:ok, %{pubsub_server: server, node_name: Phoenix.PubSub.node_name(server)}}
     end
 
-    def handle_join(topic, {key, meta}, state) do
-      msg = %{topic: topic, event: "presence_join", payload: %{key: key, meta: meta}}
-      Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
-      {:ok, state}
-    end
-
-    def handle_leave(topic, {key, meta}, state) do
-      msg = %{topic: topic, event: "presence_leave", payload: %{key: key, meta: meta}}
-      Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
+    def handle_diff(diff, state) do
+      for {topic, {joins, leaves}}  <- diff do
+        for {key, meta} <- joins do
+          msg = %{topic: topic, event: "presence_join", payload: {key, meta}}
+          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
+        end
+        for {key, meta} <- leaves do
+          msg = %{topic: topic, event: "presence_leave", payload: {key, meta}}
+          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
+        end
+      end
       {:ok, state}
     end
   end
@@ -92,7 +94,7 @@ defmodule Phoenix.PubSub.NodeCase do
       assert_receive %{
         event: "presence_join",
         topic: unquote(topic),
-        payload: %{key: unquote(key), meta: unquote(meta)}
+        payload: {unquote(key), unquote(meta)}
       }, unquote(timeout)
     end
   end
@@ -102,7 +104,7 @@ defmodule Phoenix.PubSub.NodeCase do
       assert_receive %{
         event: "presence_leave",
         topic: unquote(topic),
-        payload: %{key: unquote(key), meta: unquote(meta)}
+        payload: {unquote(key), unquote(meta)}
       }, unquote(timeout)
     end
   end

@@ -9,8 +9,7 @@ defmodule Phoenix.Tracker do
 
   @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
   @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
-  @callback handle_join(topic, presence, state :: term) :: {:ok, state :: term}
-  @callback handle_leave(topic, presence, state :: term) :: {:ok, state :: term}
+  @callback handle_diff(%{topic => {joins :: presences, leaves :: presences}}, state :: term) :: {:ok, state :: term}
 
   # TODO proper moduledoc
   @moduledoc """
@@ -128,8 +127,7 @@ defmodule Phoenix.Tracker do
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
     {:noreply, state
-               |> local_broadcast_joins(joined)
-               |> local_broadcast_leaves(left)
+               |> report_diff(joined, left)
                |> Map.put(:presences, presences)}
   end
 
@@ -154,19 +152,16 @@ defmodule Phoenix.Tracker do
     meta = Map.put(meta, :phx_ref, random_ref())
 
     state
-    |> local_broadcast_join(topic, key, meta)
+    |> report_diff_join(topic, key, meta)
     |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
   end
 
   defp drop_presence(state, conn) do
-    new_state =
-      state.presences
-      |> State.get_by_conn(conn)
-      |> Enum.reduce(state, fn {topic, key, meta}, acc ->
-        local_broadcast_leave(acc, topic, key, meta)
-      end)
+    leaves = State.get_by_conn(state.presences, conn)
 
-    %{new_state | presences: State.part(new_state.presences, conn)}
+    state
+    |> report_diff([], leaves)
+    |> Map.put(:presences, State.part(state.presences, conn))
   end
 
   defp handle_gossip(state, %VNode{vsn: vsn} = from_node) do
@@ -248,7 +243,7 @@ defmodule Phoenix.Tracker do
     {presences, joined, []} = State.node_up(state.presences, VNode.ref(remote_node))
 
     state
-    |> local_broadcast_joins(joined)
+    |> report_diff(joined, [])
     |> Map.put(:presences, presences)
   end
 
@@ -257,7 +252,7 @@ defmodule Phoenix.Tracker do
     {presences, [], left} = State.node_down(state.presences, VNode.ref(remote_node))
 
     state
-    |> local_broadcast_leaves(left)
+    |> report_diff([], left)
     |> Map.put(:presences, presences)
   end
 
@@ -280,27 +275,29 @@ defmodule Phoenix.Tracker do
     Phoenix.PubSub.direct_broadcast!(target_node.name, state.pubsub_server, state.namespaced_topic, msg)
   end
 
-  defp local_broadcast_joins(state, joined) do
-    Enum.reduce(joined, state, fn {_node, {_conn, topic, key, meta}}, acc ->
-      local_broadcast_join(acc, topic, key, meta)
+  defp report_diff(state, joined, left) do
+    join_diff = Enum.reduce(joined, %{}, fn {_node, {_conn, topic, key, meta}}, acc ->
+      Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->
+        {[{key, meta} | joins], leaves}
+      end)
     end)
-  end
-
-  defp local_broadcast_leaves(state, left) do
-    Enum.reduce(left, state, fn {_node, {_conn, topic, key, meta}}, acc ->
-      local_broadcast_leave(acc, topic, key, meta)
+    full_diff = Enum.reduce(left, join_diff, fn {_node, {_conn, topic, key, meta}}, acc ->
+      Map.update(acc, topic, {[], [{key, meta}]}, fn {joins, leaves} ->
+        {joins, [{key, meta} | leaves]}
+      end)
     end)
-  end
 
-  defp local_broadcast_join(state, topic, key, meta) do
-    state.tracker.handle_join(topic, {key, meta}, state.tracker_state)
+    full_diff
+    |> state.tracker.handle_diff(state.tracker_state)
     |> handle_tracker_result(state)
   end
 
-  defp local_broadcast_leave(state, topic, key, meta) do
-    state.tracker.handle_leave(topic, {key, meta}, state.tracker_state)
+  defp report_diff_join(state, topic, key, meta) do
+    %{topic => {[{key, meta}], []}}
+    |> state.tracker.handle_diff(state.tracker_state)
     |> handle_tracker_result(state)
   end
+
   defp handle_tracker_result({:ok, tracker_state}, state) do
     %{state | tracker_state: tracker_state}
   end
