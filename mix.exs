@@ -4,7 +4,7 @@ defmodule Phoenix.PubSub.Mixfile do
   def project do
     [app: :phoenix_pubsub,
      version: "0.0.1",
-     elixir: "~> 1.1",
+     elixir: "~> 1.2",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      elixirc_paths: elixirc_paths(Mix.env),
