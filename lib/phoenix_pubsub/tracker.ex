@@ -40,8 +40,21 @@ defmodule Phoenix.Tracker do
 
   ## Client
 
+  @doc """
+  TODO
+  """
   def track(server_name, pid, topic, user_id, meta) do
     GenServer.call(server_name, {:track, pid, topic, user_id, meta})
+  end
+
+  @doc """
+  TODO
+  """
+  def untrack(server_name, pid, topic) do
+    GenServer.call(server_name, {:untrack, pid, topic})
+  end
+  def untrack(server_name, pid) do
+    GenServer.call(server_name, {:untrack, pid})
   end
 
   def list(server_name, topic) do
@@ -139,6 +152,19 @@ defmodule Phoenix.Tracker do
     {:reply, :ok, put_presence(state, pid, topic, key, meta)}
   end
 
+  def handle_call({:untrack, pid, topic}, _from, state) do
+    new_state = drop_presence(state, pid, topic)
+    if State.get_by_conn(new_state.presences, pid) == [] do
+      Process.unlink(pid)
+    end
+    {:reply, :ok, new_state}
+  end
+
+  def handle_call({:untrack, pid}, _from, state) do
+    Process.unlink(pid)
+    {:reply, :ok, drop_presence(state, pid)}
+  end
+
   def handle_call({:list, _topic}, _from, state) do
     {:reply, state.presences, state}
   end
@@ -156,6 +182,15 @@ defmodule Phoenix.Tracker do
     |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
   end
 
+  defp drop_presence(state, conn, topic) do
+    if leave = State.get_by_conn(state.presences, conn, topic) do
+      state
+      |> report_diff([], [leave])
+      |> Map.put(:presences, State.part(state.presences, conn, topic))
+    else
+      state
+    end
+  end
   defp drop_presence(state, conn) do
     leaves = State.get_by_conn(state.presences, conn)
 

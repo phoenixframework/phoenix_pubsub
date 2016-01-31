@@ -206,6 +206,41 @@ defmodule Phoenix.TrackerTest do
   end
 
 
+  test "untrack with no tracked topic is a noop",
+    %{tracker: tracker, topic: topic} do
+    assert Tracker.untrack(tracker, self(), topic) == :ok
+  end
+
+  test "untrack with topic",
+    %{tracker: tracker, topic: topic} do
+
+    Tracker.track(tracker, self(), topic, "user1", %{name: "user1"})
+    Tracker.track(tracker, self(), "another:topic", "user2", %{name: "user2"})
+    assert [{"user1", %{name: "user1"}}] = Tracker.list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert Tracker.untrack(tracker, self(), topic) == :ok
+    assert [] = Tracker.list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert Process.whereis(tracker) in Process.info(self())[:links]
+    assert Tracker.untrack(tracker, self(), "another:topic") == :ok
+    assert [] = Tracker.list(tracker, "another:topic")
+    refute Process.whereis(tracker) in Process.info(self())[:links]
+  end
+
+  test "untrack from all topics",
+    %{tracker: tracker, topic: topic} do
+
+    Tracker.track(tracker, self(), topic, "user1", %{name: "user1"})
+    Tracker.track(tracker, self(), "another:topic", "user2", %{name: "user2"})
+    assert [{"user1", %{name: "user1"}}] = Tracker.list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert Process.whereis(tracker) in Process.info(self())[:links]
+    assert Tracker.untrack(tracker, self()) == :ok
+    assert [] = Tracker.list(tracker, topic)
+    assert [] = Tracker.list(tracker, "another:topic")
+    refute Process.whereis(tracker) in Process.info(self())[:links]
+  end
+
   ## Helpers
 
   def spawn_pid, do: spawn(fn -> :timer.sleep(:infinity) end)
