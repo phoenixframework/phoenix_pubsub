@@ -117,6 +117,14 @@ defmodule Phoenix.PubSub do
     * `topic` - The topic to subscribe to, ie: `"users:123"`
     * `opts` - The optional list of options. See below.
 
+  ## Duplicate Subscriptions
+
+  Callers should only subscribe to a given topic a single time.
+  Duplicate subscriptions for a Pid/topic pair are allowed and
+  will cause duplicate events to be sent; however, when using
+  `Phoenix.PubSub.unsubscribe/3`, all duplicate subscriptions
+  will be dropped.
+
   ## Options
 
     * `:link` - links the subscriber to the pubsub adapter
