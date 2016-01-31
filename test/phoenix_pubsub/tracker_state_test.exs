@@ -113,4 +113,18 @@ defmodule Phoenix.TrackerStateTest do
     assert [:bob, :carol, :david] = TrackerState.online_users(a) |> Enum.sort
   end
 
+  test "get_by_conn" do
+    pid = self()
+    state = newp(:node1)
+
+    assert [] = TrackerState.get_by_conn(state, pid)
+    state = TrackerState.join(state, pid, "topic", "key1", %{})
+    assert [{{{:node1, 1}, 1}, {^pid, "topic", "key1", %{}}}] =
+           TrackerState.get_by_conn(state, pid)
+
+    assert {{{:node1, 1}, 1}, {^pid, "topic", "key1", %{}}} =
+           TrackerState.get_by_conn(state, pid, "topic")
+
+    assert TrackerState.get_by_conn(state, pid, "notopic") == nil
+  end
 end
