@@ -43,24 +43,24 @@ defmodule Phoenix.Tracker do
   @doc """
   TODO
   """
-  def track(server_name, pid, topic, key, meta) do
+  def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:track, pid, topic, key, meta})
   end
 
   @doc """
   TODO
   """
-  def untrack(server_name, pid, topic, key) do
+  def untrack(server_name, pid, topic, key) when is_pid(pid) do
     GenServer.call(server_name, {:untrack, pid, topic, key})
   end
-  def untrack(server_name, pid) do
+  def untrack(server_name, pid) when is_pid(pid) do
     GenServer.call(server_name, {:untrack, pid})
   end
 
   @doc """
   TODO
   """
-  def update(server_name, pid, topic, key, meta) do
+  def update(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
 
