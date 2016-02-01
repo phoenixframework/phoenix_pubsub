@@ -244,7 +244,7 @@ defmodule Phoenix.Tracker do
 
   defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
     needs_synced = clockset_to_sync(state)
-    Logger.debug "#{state.vnode.name}: heartbeat, needs_synced: #{inspect needs_synced}"
+    # Logger.debug "#{state.vnode.name}: heartbeat, needs_synced: #{inspect needs_synced}"
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
     %{state | pending_clockset: [], current_sample_count: state.clock_sample_windows}

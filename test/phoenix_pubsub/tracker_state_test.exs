@@ -128,4 +128,23 @@ defmodule Phoenix.TrackerStateTest do
     assert TrackerState.get_by_conn(state, pid, "notopic", "key1") == nil
     assert TrackerState.get_by_conn(state, pid, "notopic", "nokey") == nil
   end
+
+  test "remove_down_nodes" do
+    state1 = newp(:node1)
+    state2 = newp(:node2)
+
+    alice = new_conn
+    bob = new_conn
+
+    state1 = TrackerState.join(state1, alice, "lobby", :alice)
+    state2 = TrackerState.join(state2, bob, "lobby", :bob)
+    {state2, _, _} = TrackerState.merge(state2, state1)
+    assert TrackerState.online_users(state2) == [:alice, :bob]
+
+    {state2, _, _} = TrackerState.node_down(state2, {:node1, 1})
+    state2 = TrackerState.remove_down_nodes(state2, {:node1, 1})
+    {state2, _, _} = TrackerState.node_up(state2, {:node1, 1})
+    assert TrackerState.online_users(state2) == [:bob]
+  end
+
 end
