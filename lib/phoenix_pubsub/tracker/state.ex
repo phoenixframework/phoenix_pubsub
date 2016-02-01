@@ -91,19 +91,9 @@ defmodule Phoenix.Tracker.State do
     remove(set, &match?({^conn,_,_,_}, &1))
   end
 
-  @spec part(t, conn, topic) :: t
-  def part(%State{}=set, conn, topic) do
-    remove(set, &match?({^conn,^topic,_,_}, &1))
-  end
-
-  @spec update_metadata(t, conn, topic, metadata | (metadata -> metadata)) :: t
-  def update_metadata(%State{dots: dots}=set, conn, topic, fun) when is_function(fun) do
-    [{key, old_metadata}] = for {_,{^conn, ^topic, key, metadata}} <- dots, do: {key, metadata}
-    remove(set, &match?({^conn,^topic,_,_}, &1))
-    |> add({conn, topic, key, fun.(old_metadata)})
-  end
-  def update_metadata(set, conn, topic, %{}=new_metadata) do
-    update_metadata(set, conn, topic, fn _ -> new_metadata end)
+  @spec part(t, conn, topic, key) :: t
+  def part(%State{}=set, conn, topic, key) do
+    remove(set, &match?({^conn,^topic,^key,_}, &1))
   end
 
   @spec get_by_conn(t, conn) :: [{topic, key, metadata}]
@@ -113,9 +103,9 @@ defmodule Phoenix.Tracker.State do
     end
   end
 
-  @spec get_by_conn(t, conn, topic) :: {key, metadata}
-  def get_by_conn(%State{dots: dots, servers: servers}, conn, topic) do
-    results = for {{nodespec, _}, {^conn, ^topic, _key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
+  @spec get_by_conn(t, conn, topic, key) :: {key, metadata}
+  def get_by_conn(%State{dots: dots, servers: servers}, conn, topic, key) do
+    results = for {{nodespec, _}, {^conn, ^topic, ^key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
       entry
     end
 

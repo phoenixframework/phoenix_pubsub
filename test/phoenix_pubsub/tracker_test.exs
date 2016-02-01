@@ -208,7 +208,7 @@ defmodule Phoenix.TrackerTest do
 
   test "untrack with no tracked topic is a noop",
     %{tracker: tracker, topic: topic} do
-    assert Tracker.untrack(tracker, self(), topic) == :ok
+    assert Tracker.untrack(tracker, self(), topic, "foo") == :ok
   end
 
   test "untrack with topic",
@@ -218,11 +218,11 @@ defmodule Phoenix.TrackerTest do
     Tracker.track(tracker, self(), "another:topic", "user2", %{name: "user2"})
     assert [{"user1", %{name: "user1"}}] = Tracker.list(tracker, topic)
     assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
-    assert Tracker.untrack(tracker, self(), topic) == :ok
+    assert Tracker.untrack(tracker, self(), topic, "user1") == :ok
     assert [] = Tracker.list(tracker, topic)
     assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
     assert Process.whereis(tracker) in Process.info(self())[:links]
-    assert Tracker.untrack(tracker, self(), "another:topic") == :ok
+    assert Tracker.untrack(tracker, self(), "another:topic", "user2") == :ok
     assert [] = Tracker.list(tracker, "another:topic")
     refute Process.whereis(tracker) in Process.info(self())[:links]
   end
@@ -239,6 +239,22 @@ defmodule Phoenix.TrackerTest do
     assert [] = Tracker.list(tracker, topic)
     assert [] = Tracker.list(tracker, "another:topic")
     refute Process.whereis(tracker) in Process.info(self())[:links]
+  end
+
+  test "updating presence sends join/leave and phx_ref_prev",
+    %{tracker: tracker, topic: topic} do
+
+    subscribe(self(), topic)
+    :ok = Tracker.track(tracker, self(), topic, "u1", %{name: "u1"})
+    assert [{"u1", %{name: "u1", phx_ref: ref}}] = Tracker.list(tracker, topic)
+    :ok = Tracker.update(tracker, self(), topic, "u1", %{name: "u1-updated"})
+    assert_leave ^topic, "u1", %{name: "u1", phx_ref: ^ref}
+    assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
+  end
+
+  test "updating with no prior presence",
+    %{tracker: tracker, topic: topic} do
+    assert {:error, :nopresence} = Tracker.update(tracker, self, topic, "u1", %{})
   end
 
   ## Helpers

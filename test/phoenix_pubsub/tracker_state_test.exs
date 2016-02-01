@@ -25,7 +25,7 @@ defmodule Phoenix.TrackerStateTest do
     john = new_conn()
     a = TrackerState.join(a, john, "lobby", :john)
     assert [:john] = TrackerState.online_users(a)
-    a = TrackerState.part(a, john, "lobby")
+    a = TrackerState.part(a, john, "lobby", :john)
     assert [] = TrackerState.online_users(a)
   end
 
@@ -49,7 +49,7 @@ defmodule Phoenix.TrackerStateTest do
 
     assert {b,[{_,{_,_,:alice,_}}],[]} = TrackerState.merge(b, a)
     assert {^b,[],[]} = TrackerState.merge(b, a)
-    a = TrackerState.part(a, alice, "lobby")
+    a = TrackerState.part(a, alice, "lobby", :alice)
     assert {b,[],[{_,{_,_,:alice,_}}]} = TrackerState.merge(b, a)
 
     assert [:bob] = TrackerState.online_users(b) |> Enum.sort
@@ -78,7 +78,7 @@ defmodule Phoenix.TrackerStateTest do
     {a, d_a} = TrackerState.delta_reset(a)
     assert {b, [{_, {_, _, :alice, _}}], []} = TrackerState.merge(b, d_a)
 
-    a = TrackerState.part(a, alice, "lobby")
+    a = TrackerState.part(a, alice, "lobby", :alice)
     d_a2 = TrackerState.delta(a)
     assert {_, [], [{_, {_, _, :alice, _}}]} = TrackerState.merge(b, d_a2)
   end
@@ -99,7 +99,7 @@ defmodule Phoenix.TrackerStateTest do
     assert [:alice, :bob] = TrackerState.online_users(a) |> Enum.sort
 
     a = TrackerState.join(a, carol, "lobby", :carol)
-    a = TrackerState.part(a, alice, "lobby")
+    a = TrackerState.part(a, alice, "lobby", :alice)
     a = TrackerState.join(a, david, "lobby", :david)
     assert {a,[],[{_,{_,_,:bob,_}}]} = TrackerState.node_down(a, {:b,1})
 
@@ -123,8 +123,9 @@ defmodule Phoenix.TrackerStateTest do
            TrackerState.get_by_conn(state, pid)
 
     assert {{{:node1, 1}, 1}, {^pid, "topic", "key1", %{}}} =
-           TrackerState.get_by_conn(state, pid, "topic")
+           TrackerState.get_by_conn(state, pid, "topic", "key1")
 
-    assert TrackerState.get_by_conn(state, pid, "notopic") == nil
+    assert TrackerState.get_by_conn(state, pid, "notopic", "key1") == nil
+    assert TrackerState.get_by_conn(state, pid, "notopic", "nokey") == nil
   end
 end

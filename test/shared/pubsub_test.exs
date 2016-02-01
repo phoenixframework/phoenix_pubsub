@@ -45,6 +45,7 @@ defmodule Phoenix.PubSubTest do
     adapter = Application.get_env(:phoenix, :pubsub_test_adapter)
     {:ok, _} = adapter.start_link(config.test, pool_size: size)
     {:ok, %{pubsub: config.test,
+            topic: config.test,
             pool_size: size}}
   end
 
@@ -56,17 +57,17 @@ defmodule Phoenix.PubSubTest do
     @tag pool_size: size
     test "pool #{size}: subscribe and unsubscribe", config do
       pid = spawn_pid()
-      assert subscribers(config, "topic4") |> length == 0
-      assert PubSub.subscribe(config.test, pid, "topic4")
-      assert subscribers(config, "topic4") == [pid]
-      assert PubSub.unsubscribe(config.test, pid, "topic4")
-      assert subscribers(config, "topic4") |> length == 0
+      assert subscribers(config, config.topic) |> length == 0
+      assert PubSub.subscribe(config.test, pid, config.topic)
+      assert subscribers(config, config.topic) == [pid]
+      assert PubSub.unsubscribe(config.test, pid, config.topic)
+      assert subscribers(config, config.topic) |> length == 0
     end
 
     @tag pool_size: size
     test "pool #{size}: subscribe/3 with link does not down adapter", config do
       pid = spawn_pid()
-      assert PubSub.subscribe(config.test, pid, "topic4", link: true)
+      assert PubSub.subscribe(config.test, pid, config.topic, link: true)
 
       kill_and_wait(pid)
       each_shard(config, fn shard ->
@@ -75,7 +76,7 @@ defmodule Phoenix.PubSubTest do
       end)
 
       assert Local.subscription(config.pubsub, config.pool_size, pid) == []
-      assert subscribers(config, "topic4") |> length == 0
+      assert subscribers(config, config.topic) |> length == 0
     end
 
     @tag pool_size: size
@@ -84,9 +85,9 @@ defmodule Phoenix.PubSubTest do
       non_linked_pid1 = spawn_pid()
       non_linked_pid2 = spawn_pid()
 
-      assert PubSub.subscribe(config.test, pid, "topic4", link: true)
-      assert PubSub.subscribe(config.test, non_linked_pid1, "topic4")
-      assert PubSub.subscribe(config.test, non_linked_pid2, "topic4", link: false)
+      assert PubSub.subscribe(config.test, pid, config.topic, link: true)
+      assert PubSub.subscribe(config.test, non_linked_pid1, config.topic)
+      assert PubSub.subscribe(config.test, non_linked_pid2, config.topic, link: false)
 
       each_shard(config, fn shard ->
         kill_and_wait(Process.whereis(Local.local_name(config.pubsub, shard)))

@@ -43,20 +43,30 @@ defmodule Phoenix.Tracker do
   @doc """
   TODO
   """
-  def track(server_name, pid, topic, user_id, meta) do
-    GenServer.call(server_name, {:track, pid, topic, user_id, meta})
+  def track(server_name, pid, topic, key, meta) do
+    GenServer.call(server_name, {:track, pid, topic, key, meta})
   end
 
   @doc """
   TODO
   """
-  def untrack(server_name, pid, topic) do
-    GenServer.call(server_name, {:untrack, pid, topic})
+  def untrack(server_name, pid, topic, key) do
+    GenServer.call(server_name, {:untrack, pid, topic, key})
   end
   def untrack(server_name, pid) do
     GenServer.call(server_name, {:untrack, pid})
   end
 
+  @doc """
+  TODO
+  """
+  def update(server_name, pid, topic, key, meta) do
+    GenServer.call(server_name, {:update, pid, topic, key, meta})
+  end
+
+  @doc """
+  TODO
+  """
   def list(server_name, topic) do
     # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
     server_name
@@ -152,8 +162,8 @@ defmodule Phoenix.Tracker do
     {:reply, :ok, put_presence(state, pid, topic, key, meta)}
   end
 
-  def handle_call({:untrack, pid, topic}, _from, state) do
-    new_state = drop_presence(state, pid, topic)
+  def handle_call({:untrack, pid, topic, key}, _from, state) do
+    new_state = drop_presence(state, pid, topic, key)
     if State.get_by_conn(new_state.presences, pid) == [] do
       Process.unlink(pid)
     end
@@ -165,6 +175,15 @@ defmodule Phoenix.Tracker do
     {:reply, :ok, drop_presence(state, pid)}
   end
 
+  def handle_call({:update, pid, topic, key, new_meta}, _from, state) do
+    case State.get_by_conn(state.presences, pid, topic, key) do
+      nil ->
+        {:reply, {:error, :nopresence}, state}
+      {{_node, _}, {_pid, _topic, ^key, prev_meta}} ->
+        {:reply, :ok, put_update(state, pid, topic, key, new_meta, prev_meta)}
+    end
+  end
+
   def handle_call({:list, _topic}, _from, state) do
     {:reply, state.presences, state}
   end
@@ -173,20 +192,25 @@ defmodule Phoenix.Tracker do
     {:reply, state.vnodes, state}
   end
 
-  defp put_presence(state, pid, topic, key, meta) do
+  defp put_update(state, pid, topic, key, meta, %{phx_ref: ref} = prev_meta) do
+    state
+    |> Map.put(:presences, State.part(state.presences, pid, topic, key))
+    |> put_presence(pid, topic, key, Map.put(meta, :phx_ref_prev, ref), prev_meta)
+  end
+  defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
     Process.link(pid)
     meta = Map.put(meta, :phx_ref, random_ref())
 
     state
-    |> report_diff_join(topic, key, meta)
+    |> report_diff_join(topic, key, meta, prev_meta)
     |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
   end
 
-  defp drop_presence(state, conn, topic) do
-    if leave = State.get_by_conn(state.presences, conn, topic) do
+  defp drop_presence(state, conn, topic, key) do
+    if leave = State.get_by_conn(state.presences, conn, topic, key) do
       state
       |> report_diff([], [leave])
-      |> Map.put(:presences, State.part(state.presences, conn, topic))
+      |> Map.put(:presences, State.part(state.presences, conn, topic, key))
     else
       state
     end
@@ -327,8 +351,13 @@ defmodule Phoenix.Tracker do
     |> handle_tracker_result(state)
   end
 
-  defp report_diff_join(state, topic, key, meta) do
+  defp report_diff_join(state, topic, key, meta, nil = _prev_meta) do
     %{topic => {[{key, meta}], []}}
+    |> state.tracker.handle_diff(state.tracker_state)
+    |> handle_tracker_result(state)
+  end
+  defp report_diff_join(state, topic, key, meta, prev_meta) do
+    %{topic => {[{key, meta}], [{key, prev_meta}]}}
     |> state.tracker.handle_diff(state.tracker_state)
     |> handle_tracker_result(state)
   end
