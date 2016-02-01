@@ -1,4 +1,7 @@
 # Phoenix.PubSub
+> Distributed PubSub and Presence platform for the Phoenix Framework
+
+[![Build Status](https://api.travis-ci.org/phoenixframework/phoenix_pubsub.svg)](https://travis-ci.org/phoenixframework/phoenix_pubsub)
 
 
 ## Installation
