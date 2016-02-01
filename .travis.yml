@@ -4,6 +4,7 @@ otp_release:
   - 18.0
 sudo: false
 before_script:
+  - epmd -daemon
   - mix deps.get --only test
 script:
   - mix test
