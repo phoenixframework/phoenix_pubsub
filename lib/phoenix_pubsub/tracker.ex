@@ -32,6 +32,8 @@ defmodule Phoenix.Tracker do
       Default `1_200_000` (20 minutes)
     * `clock_sample_windows` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
+    * log_level - The log level to log events, defaults `:debug` and can be
+      disabled with `false`
 
   """
 
@@ -91,6 +93,7 @@ defmodule Phoenix.Tracker do
     nodedown_interval    = opts[:nodedown_interval] || (heartbeat_interval * 5)
     permdown_interval    = opts[:permdown_interval] || 1_200_000
     clock_sample_windows = opts[:clock_sample_windows] || 2
+    log_level            = Keyword.get(opts, :log_level, false)
     node_name            = Phoenix.PubSub.node_name(pubsub_server)
     namespaced_topic     = namespaced_topic(server_name)
     vnode                = VNode.new(node_name)
@@ -106,6 +109,7 @@ defmodule Phoenix.Tracker do
                 tracker_state: tracker_state,
                 vnode: vnode,
                 namespaced_topic: namespaced_topic,
+                log_level: log_level,
                 vnodes: %{},
                 pending_clockset: [],
                 presences: State.new(VNode.ref(vnode)),
@@ -138,7 +142,7 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info({:pub, :transfer_req, ref, from_node, _clocks}, state) do
-    Logger.debug "#{state.vnode.name}: transfer_req from #{inspect from_node.name}"
+    log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect from_node.name}" end
     msg = {:pub, :transfer_ack, ref, state.vnode, state.presences}
     direct_broadcast(state, from_node, msg)
 
@@ -146,7 +150,7 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info({:pub, :transfer_ack, _ref, from_node, remote_presences}, state) do
-    if from_node, do: Logger.debug "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}"
+    if from_node, do: log(state, fn -> "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}" end)
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
     {:noreply, state
@@ -244,7 +248,6 @@ defmodule Phoenix.Tracker do
 
   defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
     needs_synced = clockset_to_sync(state)
-    # Logger.debug "#{state.vnode.name}: heartbeat, needs_synced: #{inspect needs_synced}"
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
     %{state | pending_clockset: [], current_sample_count: state.clock_sample_windows}
@@ -254,7 +257,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp request_transfer(state, target_node) do
-    Logger.debug "#{state.vnode.name}: request_transfer from #{target_node.name}"
+    log state, fn -> "#{state.vnode.name}: request_transfer from #{target_node.name}" end
     ref = make_ref()
     msg = {:pub, :transfer_req, ref, state.vnode, clock(state)}
     direct_broadcast(state, target_node, msg)
@@ -298,7 +301,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp nodeup(state, remote_node) do
-    Logger.debug "#{state.vnode.name}: nodeup from #{inspect remote_node.name}"
+    log state, fn -> "#{state.vnode.name}: nodeup from #{inspect remote_node.name}" end
     {presences, joined, []} = State.node_up(state.presences, VNode.ref(remote_node))
 
     state
@@ -307,7 +310,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp nodedown(state, remote_node) do
-    Logger.debug "#{state.vnode.name}: nodedown from #{inspect remote_node.name}"
+    log state, fn -> "#{state.vnode.name}: nodedown from #{inspect remote_node.name}" end
     {presences, [], left} = State.node_down(state.presences, VNode.ref(remote_node))
 
     state
@@ -316,7 +319,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp permdown(state, remote_node) do
-    Logger.debug "#{state.vnode.name}: permanent nodedown detected #{remote_node.name}"
+    log state, fn -> "#{state.vnode.name}: permanent nodedown detected #{remote_node.name}" end
     presences = State.remove_down_nodes(state.presences, VNode.ref(remote_node))
 
     %{state | presences: presences}
@@ -376,4 +379,7 @@ defmodule Phoenix.Tracker do
   defp random_ref() do
     :crypto.strong_rand_bytes(8) |> :erlang.term_to_binary() |> Base.encode64()
   end
+
+  defp log(%{log_level: false}, _msg_func), do: :ok
+  defp log(%{log_level: level}, msg), do: Logger.log(level, msg)
 end
