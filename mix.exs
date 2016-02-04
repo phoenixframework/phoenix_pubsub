@@ -19,7 +19,7 @@ defmodule Phoenix.PubSub.Mixfile do
   defp elixirc_paths(_),     do: ["lib"]
 
   def application do
-    [applications: [:logger],
+    [applications: [:logger, :crypto],
      mod: {Phoenix.PubSub.Supervisor, []}]
   end
 
