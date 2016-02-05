@@ -83,6 +83,36 @@ defmodule Phoenix.TrackerStateTest do
     assert {_, [], [{_, {_, _, :alice, _}}]} = TrackerState.merge(b, d_a2)
   end
 
+  test "merge 2 deltas" do
+    a = newp(:a)
+    b = newp(:b)
+
+    alice = new_conn
+    bob = new_conn
+
+    a = TrackerState.join(a, alice, "lobby", :alice)
+    b = TrackerState.join(b, bob, "lobby", :bob)
+
+    {a, d_a} = TrackerState.delta_reset(a)
+    {b, d_b} = TrackerState.delta_reset(b)
+
+    assert {a2, [_], _} = TrackerState.merge(a, b)
+    assert {b2, [_], _} = TrackerState.merge(b, a)
+
+    # Merging 2 deltas should emit *nothing*
+    assert {d_ab, [], []} = TrackerState.merge(d_a, d_b)
+    # Adds should emit if we merge with a CRDT
+    assert {_, [{_,{_,_,:bob,_}}], []} = TrackerState.merge(a, d_ab)
+    assert {_, [{_,{_,_,:alice,_}}], []} = TrackerState.merge(b, d_ab)
+
+    # We should not emit another join with a past delta
+    assert {a3, [], []} = TrackerState.merge(a2, d_ab)
+    assert {_b3, [], []} = TrackerState.merge(b2, d_ab)
+
+    assert [:alice,:bob] = TrackerState.online_users(a3)
+
+  end
+
   test "basic netsplit" do
     a = newp(:a)
     b = newp(:b)
