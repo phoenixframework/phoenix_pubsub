@@ -147,11 +147,11 @@ defmodule Phoenix.TrackerTest do
     # local joins
     subscribe(self(), topic)
     assert Tracker.list(tracker, topic) == []
-    :ok = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
+    {:ok, _ref} = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
     assert_join ^topic, "me", %{name: "me"}
     assert [{"me", %{name: "me", phx_ref: _}}] = Tracker.list(tracker, topic)
 
-    :ok = Tracker.track(tracker, local_presence , topic, "me2", %{name: "me2"})
+    {:ok, _ref} = Tracker.track(tracker, local_presence , topic, "me2", %{name: "me2"})
     assert_join ^topic, "me2", %{name: "me2"}
     assert [{"me", %{name: "me", phx_ref: _}},
             {"me2",%{name: "me2", phx_ref: _}}] =
@@ -189,7 +189,7 @@ defmodule Phoenix.TrackerTest do
     {node_pid, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     assert Tracker.list(tracker, topic) == []
 
-    :ok = Tracker.track(tracker, local_presence , topic, "local1", %{name: "l1"})
+    {:ok, _ref} = Tracker.track(tracker, local_presence , topic, "local1", %{name: "l1"})
     assert_join ^topic, "local1", %{}
 
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{name: "s1"})
@@ -245,9 +245,9 @@ defmodule Phoenix.TrackerTest do
     %{tracker: tracker, topic: topic} do
 
     subscribe(self(), topic)
-    :ok = Tracker.track(tracker, self(), topic, "u1", %{name: "u1"})
+    {:ok, _ref} = Tracker.track(tracker, self(), topic, "u1", %{name: "u1"})
     assert [{"u1", %{name: "u1", phx_ref: ref}}] = Tracker.list(tracker, topic)
-    :ok = Tracker.update(tracker, self(), topic, "u1", %{name: "u1-updated"})
+    {:ok, _ref} = Tracker.update(tracker, self(), topic, "u1", %{name: "u1-updated"})
     assert_leave ^topic, "u1", %{name: "u1", phx_ref: ^ref}
     assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
   end

@@ -16,7 +16,7 @@ defmodule Phoenix.Tracker do
 
   ## Required `server_opts`:
 
-    * `:name` - The name of the server, such as: `MyApp.UserState`
+    * `:name` - The name of the server, such as: `MyApp.Tracker`
     * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
 
   ## Optional `server_opts`:
@@ -38,7 +38,7 @@ defmodule Phoenix.Tracker do
 
   To start a tracker, first add the tracker to your supervision tree:
 
-      worker(MyTracker, [[name: MyTracker, pubsub_server: MyPubsub]])
+      worker(MyTracker, [[name: MyTracker, pubsub_server: MyPubSub]])
 
   Next, implement `MyTracker` with support for the `Phoenix.Tracker`
   behaviour callbacks. An example of a minimal tracker could include:
@@ -92,13 +92,12 @@ defmodule Phoenix.Tracker do
   alias Phoenix.Tracker.{Clock, State, VNode}
   require Logger
 
-  @type presences :: %{ String.t => %{metas: [map]}}
-  @type presence :: %{key: String.t, meta: map}
+  @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
 
   @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
   @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
-  @callback handle_diff(%{topic => {joins :: presences, leaves :: presences}}, state :: term) :: {:ok, state :: term}
+  @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
 
   ## Client
 
@@ -114,8 +113,9 @@ defmodule Phoenix.Tracker do
   ## Examples
 
       iex> Phoenix.Tracker.track(MyTracker, self, "lobby", u.id, %{stat: "away"})
-      :ok
+      {:ok, "g20AAAAI1WpAofWYIAA="}
   """
+  @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:track, pid, topic, key, meta})
   end
@@ -138,6 +138,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.untrack(MyTracker, self)
       :ok
   """
+  @spec untrack(atom, pid, topic, term) :: :ok
   def untrack(server_name, pid, topic, key) when is_pid(pid) do
     GenServer.call(server_name, {:untrack, pid, topic, key})
   end
@@ -159,8 +160,9 @@ defmodule Phoenix.Tracker do
   ## Examples
 
       iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, %{stat: "zzz"})
-      :ok
+      {:ok, "g20AAAAI1WpAofWYIAA="}
   """
+  @spec update(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
@@ -178,6 +180,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.list(MyTracker, "lobby")
       [{123, %{name: "user 123"}}, {456, %{name: "user 456"}}]
   """
+  @spec list(atom, topic) :: [presence]
   def list(server_name, topic) do
     # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
     server_name
@@ -272,7 +275,8 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_call({:track, pid, topic, key, meta}, _from, state) do
-    {:reply, :ok, put_presence(state, pid, topic, key, meta)}
+    {state, ref} = put_presence(state, pid, topic, key, meta)
+    {:reply, {:ok, ref}, state}
   end
 
   def handle_call({:untrack, pid, topic, key}, _from, state) do
@@ -293,7 +297,8 @@ defmodule Phoenix.Tracker do
       nil ->
         {:reply, {:error, :nopresence}, state}
       {{_node, _}, {_pid, _topic, ^key, prev_meta}} ->
-        {:reply, :ok, put_update(state, pid, topic, key, new_meta, prev_meta)}
+        {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
+        {:reply, {:ok, ref}, state}
     end
   end
 
@@ -312,11 +317,14 @@ defmodule Phoenix.Tracker do
   end
   defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
     Process.link(pid)
-    meta = Map.put(meta, :phx_ref, random_ref())
+    ref = random_ref()
+    meta = Map.put(meta, :phx_ref, ref)
+    new_state =
+      state
+      |> report_diff_join(topic, key, meta, prev_meta)
+      |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
 
-    state
-    |> report_diff_join(topic, key, meta, prev_meta)
-    |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
+    {new_state, ref}
   end
 
   defp drop_presence(state, conn, topic, key) do

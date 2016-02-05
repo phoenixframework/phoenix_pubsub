@@ -227,7 +227,7 @@ defmodule Phoenix.PubSub do
   Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
   See `Phoenix.PubSub.broadcast/3` for usage details.
   """
-  @spec broadcast_from(atom | {atom, atom}, pid, binary, term) :: :ok | no_return
+  @spec broadcast_from!(atom | {atom, atom}, pid, binary, term) :: :ok | no_return
   def broadcast_from!(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid) do
     case broadcast_from(server, from_pid, topic, message) do
       :ok -> :ok
@@ -241,7 +241,7 @@ defmodule Phoenix.PubSub do
   Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
   See `Phoenix.PubSub.broadcast/3` for usage details.
   """
-  @spec direct_broadcast_from(node_name, atom, pid, binary, term) :: :ok | no_return
+  @spec direct_broadcast_from!(node_name, atom, pid, binary, term) :: :ok | no_return
   def direct_broadcast_from!(node_name, server, from_pid, topic, message)
     when is_atom(server) and is_pid(from_pid) do
 

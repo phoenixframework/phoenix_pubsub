@@ -19,6 +19,7 @@ defmodule Phoenix.Tracker.State do
   @type parts :: [value]
   @type noderef :: {node, term}
   @type node_status :: :up | :down
+  @type entry :: {noderef, value}
 
   @opaque t :: %State{
     actor: nil,
@@ -98,14 +99,14 @@ defmodule Phoenix.Tracker.State do
     remove(set, &match?({^conn,^topic,^key,_}, &1))
   end
 
-  @spec get_by_conn(t, conn) :: [{topic, key, metadata}]
+  @spec get_by_conn(t, conn) :: [entry]
   def get_by_conn(%State{dots: dots, servers: servers}, conn) do
     for {{nodespec, _}, {^conn, _topic, _key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
       entry
     end
   end
 
-  @spec get_by_conn(t, conn, topic, key) :: {key, metadata}
+  @spec get_by_conn(t, conn, topic, key) :: entry | nil
   def get_by_conn(%State{dots: dots, servers: servers}, conn, topic, key) do
     results = for {{nodespec, _}, {^conn, ^topic, ^key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
       entry
