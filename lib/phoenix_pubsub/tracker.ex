@@ -1,26 +1,25 @@
 defmodule Phoenix.Tracker do
-  use GenServer
-  alias Phoenix.Tracker.{Clock, State, VNode}
-  require Logger
+  @moduledoc ~S"""
+  Provides distributed Presence tracking to processes.
 
-  @type presences :: %{ String.t => %{metas: [map]}}
-  @type presence :: %{key: String.t, meta: map}
-  @type topic :: String.t
+  Tracker servers use a gossip protocol and CRDT to replicate
+  presence information across a cluster in an eventually consistent
+  manner, conflict free manner. Under this design, there is no single
+  source of truth or global process. Instead, each node runs one or more
+  `Phoenix.Tracker` servers and node-local changes are replicated across
+  the cluster and handled locally as a diff of changes.
 
-  @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
-  @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
-  @callback handle_diff(%{topic => {joins :: presences, leaves :: presences}}, state :: term) :: {:ok, state :: term}
+    * `tracker` - The name of the tracker hanlder module implementing the
+      `Phoenix.Tracker` behaviour
+    * `tracker_opts` - The list of options to pass to the tracker handler
+    * `server_opts` - The list of options to pass to the tracker server
 
-  # TODO proper moduledoc
-  @moduledoc """
-  What you plug in your app's supervision tree...
-
-  ## Required options:
+  ## Required `server_opts`:
 
     * `:name` - The name of the server, such as: `MyApp.UserState`
     * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
 
-  ## Optional configuration:
+  ## Optional `server_opts`:
 
     * `heartbeat_interval` - The interval in milliseconds to send heartbeats
       across the cluster. Default `1000`
@@ -35,22 +34,109 @@ defmodule Phoenix.Tracker do
     * log_level - The log level to log events, defaults `:debug` and can be
       disabled with `false`
 
-  """
+  ## Implementing a Tracker
 
-  @join_event "presence_join"
-  @leave_event "presence_leave"
+  To start a tracker, first add the tracker to your supervision tree:
+
+      worker(MyTracker, [[name: MyTracker, pubsub_server: MyPubsub]])
+
+  Next, implement `MyTracker` with support for the `Phoenix.Tracker`
+  behaviour callbacks. An example of a minimal tracker could include:
+
+      defmodule MyTracker do
+        @behaviour Phoenix.Tracker
+
+        def start_link(opts) do
+          opts = Keyword.merge([name: __MODULE__, opts)
+          GenServer.start_link(Phoenix.Tracker, [__MODULE__, opts, opts], name: __MODULE__)
+        end
+
+        def init(opts) do
+          server = Keyword.fetch!(opts, :pubsub_server)
+          {:ok, %{pubsub_server: server, node_name: Phoenix.PubSub.node_name(server)}}
+        end
+
+        def handle_diff(diff, state) do
+          for {topic, {joins, leaves}}  <- diff do
+            for {key, meta} <- joins do
+              IO.puts "presence join: key \"#{key}\" with meta #{inspect meta}"
+              direct_broadcast(state, topic, {:join, key, meta})
+            end
+            for {key, meta} <- leaves do
+              IO.puts "presence leave: key \"#{key}\" with meta #{inspect meta}"
+              direct_broadcast(state, topic, {:leave, key, meta})
+            end
+          end
+          {:ok, state}
+        end
+      end
+
+  Trackers must implement `start_link/1`, `init/1`, and `handle_diff/2`.
+  The `init/1` calback allows the tracker to manage its own state when
+  running within the `Phoenix.Tracker` server. The `handle_diff` callback
+  is invoked with a diff of presence join and leaves events, grouped by
+  topic. As nodes gossip and replicate data, the local tracker state is
+  merged with the remote data, and the diff is sent to the callback. The
+  handler can use this information to notify subscribers of events, as
+  done above.
+
+  ## Special Considerations
+
+  Operations within `handle_diff/2` happen *in the tracker server's context*.
+  Therefore, blocking operations should be avoided when possible, and offloaded
+  to a supervised task when required. Also, a crash in the `handle_diff/2` will
+  crash the tracker server, so operations that may crash the server should be
+  offloaded with a `Task.Supervisor` spawned process.
+  """
+  use GenServer
+  alias Phoenix.Tracker.{Clock, State, VNode}
+  require Logger
+
+  @type presences :: %{ String.t => %{metas: [map]}}
+  @type presence :: %{key: String.t, meta: map}
+  @type topic :: String.t
+
+  @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
+  @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
+  @callback handle_diff(%{topic => {joins :: presences, leaves :: presences}}, state :: term) :: {:ok, state :: term}
 
   ## Client
 
   @doc """
-  TODO
+  Tracks a presence.
+
+    * `server_name` - The registered name of the tracker server
+    * `pid` - The Pid to track
+    * `topic` - The `Phoenix.PubSub` topic for this presence
+    * `key` - The key identifying this presence
+    * `meta` - The map of metadata to attach to this presence
+
+  ## Examples
+
+      iex> Phoenix.Tracker.track(MyTracker, self, "lobby", u.id, %{stat: "away"})
+      :ok
   """
   def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:track, pid, topic, key, meta})
   end
 
   @doc """
-  TODO
+  Untracks a presence.
+
+    * `server_name` - The registered name of the tracker server
+    * `pid` - The Pid to untrack
+    * `topic` - The `Phoenix.PubSub` topic to untrack for this presence
+    * `key` - The key identifying this presence
+
+  All presences for a given Pid can be untracked by calling the
+  `Phoenix.Tracker.track/2` signature of this function.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.untrack(MyTracker, self, "lobby", u.id)
+      :ok
+      iex> Phoenix.Tracker.untrack(MyTracker, self)
+      :ok
   """
   def untrack(server_name, pid, topic, key) when is_pid(pid) do
     GenServer.call(server_name, {:untrack, pid, topic, key})
@@ -60,14 +146,37 @@ defmodule Phoenix.Tracker do
   end
 
   @doc """
-  TODO
+  Updates a presence's metadata.
+
+    * `server_name` - The registered name of the tracker server
+    * `pid` - The Pid being tracked
+    * `topic` - The `Phoenix.PubSub` topic to update for this presence
+    * `key` - The key identifying this presence
+
+  All presences for a given Pid can be untracked by calling the
+  `Phoenix.Tracker.track/2` signature of this function.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, %{stat: "zzz"})
+      :ok
   """
   def update(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
 
   @doc """
-  TODO
+  Lists all presences tracked under a given topic.
+
+    * `server_name` - The registered name of the tracker server
+    * `topic` - The `Phoenix.PubSub` topic to update for this presence
+
+  Returns a lists of presences in key/metadata tuple pairs.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.list(MyTracker, "lobby")
+      [{123, %{name: "user 123"}}, {456, %{name: "user 456"}}]
   """
   def list(server_name, topic) do
     # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
