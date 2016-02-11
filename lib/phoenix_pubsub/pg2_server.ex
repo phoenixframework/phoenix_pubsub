@@ -16,7 +16,7 @@ defmodule Phoenix.PubSub.PG2Server do
 
   def broadcast(fastlane, server_name, pool_size, from_pid, topic, msg) do
     server_name
-    |> get_members(:global)
+    |> get_members()
     |> do_broadcast(fastlane, server_name, pool_size, from_pid, topic, msg)
   end
 
@@ -53,7 +53,7 @@ defmodule Phoenix.PubSub.PG2Server do
     {:noreply, name}
   end
 
-  defp get_members(server_name, :global) do
+  defp get_members(server_name) do
     :pg2.get_members(pg2_namespace(server_name))
   end
   defp get_members(server_name, node_name) do
