@@ -95,7 +95,6 @@ defmodule Phoenix.Tracker do
   @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
 
-  @callback start_link(Keyword.t) :: {:ok, pid} | {:error, reason :: term} :: :ignore
   @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
 
