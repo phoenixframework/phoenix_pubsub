@@ -1,14 +1,11 @@
 defmodule Phoenix.TrackerTest do
   use Phoenix.PubSub.NodeCase
   alias Phoenix.Tracker
-  alias Phoenix.Tracker.VNode
+  alias Phoenix.Tracker.{VNode, State}
 
   @master :"master@127.0.0.1"
   @slave1 :"slave1@127.0.0.1"
   @slave2 :"slave2@127.0.0.1"
-  @heartbeat 25
-  @permdown 1000
-  @timeout 100
 
   setup config do
     tracker = config.test
@@ -30,18 +27,19 @@ defmodule Phoenix.TrackerTest do
 
     assert Tracker.list(tracker, topic) == []
     subscribe_to_tracker(self(), tracker)
+    drop_gossips(Process.whereis(tracker), tracker)
     spy_on_tracker(@slave1, self(), tracker)
     start_tracker(@slave1, name: tracker)
-
-    # does not gossip until slave1's clock bumps
-    refute_transfer_req to: @slave1, from: @master
-    assert_map %{@slave1 => %VNode{status: :up}}, vnodes(tracker), 1
-
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{})
-    # master sends transfer_req to slave1
+    flush()
+    assert_gossip from: @slave1
+
+    resume_gossips(Process.whereis(tracker), tracker)
+    # master sends transfer_req to slave1 after seeing behind
     ref = assert_transfer_req to: @slave1, from: @master
     # slave1 fulfills tranfer request and sends transfer_ack to master
     assert_transfer_ack ref, from: @slave1
+    assert_gossip to: @slave1, from: @master
     assert [{"slave1", _}] = Tracker.list(tracker, topic)
   end
 
@@ -55,23 +53,27 @@ defmodule Phoenix.TrackerTest do
       start_tracker(slave, name: tracker)
       assert_gossip to: slave, from: @master
     end
-    :ok = :sys.suspend(tracker)
+
+    flush()
+    drop_gossips(Process.whereis(tracker), tracker)
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{})
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1.2", %{})
     track_presence(@slave2, tracker, spawn_pid(), topic, "slave2", %{})
 
-    # slave1 sends transfer_req to slave2
-    assert_receive {slave1, {:pub, :transfer_req, ref, %VNode{name: slave2}, _state}}, @timeout
-    # slave2 fulfills tranfer request and sends transfer_ack to slave1
-    assert_receive {^slave2, {:pub, :transfer_ack, ^ref, %VNode{name: ^slave1}, _state}}, @timeout
+    # slave1 sends delta broadcast to slave2
+    assert_receive {@slave1, {:pub, :gossip, {@slave2, _vsn}, %State.Delta{}, _clocks}}, @timeout
 
-    :ok = :sys.resume(tracker)
+    # slave2 sends delta broadcast to slave1
+    assert_receive {@slave2, {:pub, :gossip, {@slave1, _vsn}, %State.Delta{}, _clocks}}, @timeout
+
+    flush()
+    resume_gossips(Process.whereis(tracker), tracker)
     # master sends transfer_req to slave with most dominance
-    assert_receive {slave1, {:pub, :transfer_req, ref, %VNode{name: @master}, _state}}, @timeout
+    assert_receive {slave, {:pub, :transfer_req, ref, {@master, _vsn}, _state}}, @timeout * 2
     # master does not send transfer_req to other slave, since in dominant slave's future
-    refute_received {_other, {:pub, :transfer_req, _ref, %VNode{name: @master}, _state}}, @timeout
+    refute_received {_other, {:pub, :transfer_req, _ref, {@master, _vsn}, _state}}, @timeout * 2
     # dominant slave fulfills transfer request and sends transfer_ack to master
-    assert_receive {:pub, :transfer_ack, ^ref, %VNode{name: ^slave1}, _state}, @timeout
+    assert_receive {:pub, :transfer_ack, ^ref, {^slave, _vsn}, _state}, @timeout
 
     # wait for local sync
     assert_join ^topic, "slave1", %{}
@@ -104,8 +106,10 @@ defmodule Phoenix.TrackerTest do
     assert_leave ^topic, @slave1, %{}
     assert_map %{@slave1 => %VNode{status: :down, vsn: ^vsn_before},
                  @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    flush()
     :ok = :sys.resume(slave1_tracker)
     assert_join ^topic, @slave1, %{}
+    assert_gossip from: @slave1
     assert_map %{@slave1 => %VNode{status: :up, vsn: ^vsn_before},
                  @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
 
@@ -266,31 +270,31 @@ defmodule Phoenix.TrackerTest do
   def refute_transfer_req(opts) do
     to = Keyword.fetch!(opts, :to)
     from = Keyword.fetch!(opts, :from)
-    refute_receive {^to, {:pub, :transfer_req, _, %VNode{name: ^from}, _}}
+    refute_receive {^to, {:pub, :transfer_req, _, {^from, _vsn}, _}}, @timeout * 2
   end
 
   def assert_transfer_req(opts) do
     to = Keyword.fetch!(opts, :to)
     from = Keyword.fetch!(opts, :from)
-    assert_receive {^to, {:pub, :transfer_req, ref, %VNode{name: ^from}, _}}
+    assert_receive {^to, {:pub, :transfer_req, ref, {^from, _vsn}, _}}, @timeout * 2
     ref
   end
 
   def assert_transfer_ack(ref, opts) do
     from = Keyword.fetch!(opts, :from)
     if to = opts[:to] do
-      assert_receive {^to, {:pub, :transfer_ack, ^ref, %VNode{name: ^from}, _state}}, @timeout
+      assert_receive {^to, {:pub, :transfer_ack, ^ref, {^from, _vsn}, _state}}, @timeout
     else
-      assert_receive {:pub, :transfer_ack, ^ref, %VNode{name: ^from}, _state}, @timeout
+      assert_receive {:pub, :transfer_ack, ^ref, {^from, vsn}, _state}, @timeout
     end
   end
 
   def assert_gossip(opts) do
     from = Keyword.fetch!(opts, :from)
     if to = opts[:to] do
-      assert_receive {^to, {:pub, :gossip, %VNode{name: ^from}, _clocks}}, @timeout
+      assert_receive {^to, {:pub, :gossip, {^from, _vsn}, %State.Delta{}, _clocks}}, @timeout
     else
-      assert_receive {:pub, :gossip, %VNode{name: ^from}, _clocks}, @timeout
+      assert_receive {:pub, :gossip, {^from, _vsn}, %State.Delta{}, _clocks}, @timeout
     end
   end
 end

@@ -67,7 +67,9 @@ defmodule Phoenix.PubSubTest do
     @tag pool_size: size
     test "pool #{size}: subscribe/3 with link does not down adapter", config do
       pid = spawn_pid()
+      assert PubSub.subscribe(config.test, self(), config.topic, link: true)
       assert PubSub.subscribe(config.test, pid, config.topic, link: true)
+      assert subscribers(config, config.topic) |> length == 2
 
       kill_and_wait(pid)
       each_shard(config, fn shard ->
@@ -75,8 +77,9 @@ defmodule Phoenix.PubSubTest do
         assert Process.alive?(local)
       end)
 
+      assert Local.subscription(config.pubsub, config.pool_size, self()) == [config.topic]
       assert Local.subscription(config.pubsub, config.pool_size, pid) == []
-      assert subscribers(config, config.topic) |> length == 0
+      assert subscribers(config, config.topic) |> length == 1
     end
 
     @tag pool_size: size
