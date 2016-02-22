@@ -4,6 +4,9 @@ defmodule Phoenix.Tracker.State do
 
   require Delta
 
+  @g1_size 100
+  @g2_size 999
+
   @type actor :: term
   @type clock :: pos_integer
   @type dot :: {actor, clock}
@@ -25,7 +28,7 @@ defmodule Phoenix.Tracker.State do
     actor: nil,
     dots: %{dot => value},
     ctx: ctx_clock,
-    cloud: [dot],
+    cloud: MapSet.t,
     delta: Delta.t,
     delta1: Delta.t,
     delta2: Delta.t,
@@ -35,7 +38,7 @@ defmodule Phoenix.Tracker.State do
   defstruct actor: nil,
             dots: %{}, # A map of dots (version-vector pairs) to values
             ctx: %{},  # Current counter values for actors used in the dots
-            cloud: [],  # A set of dots that we've seen but haven't been merged.
+            cloud: MapSet.new(),  # A set of dots that we've seen but haven't been merged.
             delta: %Delta{},
             delta1: %Delta{}, # Gen1 delta
             delta2: %Delta{}, # Gen2 delta
@@ -56,11 +59,15 @@ defmodule Phoenix.Tracker.State do
   @spec delta(t) :: Delta.t
   def delta(%State{delta: d}), do: d
 
+  @spec delta(t, :g1|:g2) :: Delta.t
+  def delta(%{delta1: d1}, :g1), do: d1
+  def delta(%{delta2: d2}, :g2), do: d2
+
   @spec delta_reset(t) :: {State.t, Delta.t}
   def delta_reset(set), do: {reset_delta(set), delta(set)}
 
   @spec reset_delta(t) :: t
-  def reset_delta(%State{actor: actor, ctx: ctx}=set) do
+  def reset_delta(%State{ctx: ctx}=set) do
     %State{set| delta: %State.Delta{start_clock: ctx, end_clock: ctx}}
   end
 
@@ -171,7 +178,8 @@ defmodule Phoenix.Tracker.State do
   Automatically compacts any contiguous dots.
   """
   @spec merge(t, t | Delta.t | [Delta.t]) :: {t, joins, parts}
-  def merge(dots1, dots2), do: do_merge(dots1, dots2)
+  def merge(%Delta{}=set1, set2), do: {Delta.merge(set1, set2), [], []}
+  def merge(set1, set2), do: do_merge(set1, set2)
 
   # @doc """
   # Adds and associates a value with a new dot for an actor.
@@ -179,17 +187,19 @@ defmodule Phoenix.Tracker.State do
   # @spec add(t, value) :: t
   defp add(%State{}=set, {_,_,_,_}=value) do
     %{actor: actor, dots: dots, ctx: ctx, delta: delta} = set
-    clock = Dict.get(ctx, actor, 0) + 1 # What's the value of our clock?
+    clock = Map.get(ctx, actor, 0) + 1 # What's the value of our clock?
     %{cloud: cloud, dots: delta_dots} = delta
 
-    new_ctx = Dict.put(ctx, actor, clock) # Add the actor/clock to the context
-    new_dots = Dict.put(dots, {actor, clock}, value) # Add the value to the dot values
+    new_ctx = Map.put(ctx, actor, clock) # Add the actor/clock to the context
+    new_dots = Map.put(dots, {actor, clock}, value) # Add the value to the dot values
 
-    new_cloud = [{actor, clock}|cloud]
+    new_cloud = MapSet.put(cloud, {actor, clock})
     new_delta_dots = Dict.put(delta_dots, {actor,clock}, value)
 
-    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots}
+    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots, end_clock: new_ctx}
     %{set| ctx: new_ctx, delta: new_delta, dots: new_dots}
+    |> push_gen1(new_delta)
+    |> push_gen2(new_delta)
   end
 
   # @doc """
@@ -204,47 +214,52 @@ defmodule Phoenix.Tracker.State do
     new_ctx = Dict.put(ctx, actor, clock)
     new_dots = for {dot, v} <- dots, !pred.(v), into: %{}, do: {dot, v}
 
-    new_cloud = [{actor, clock}|cloud] ++ Enum.filter_map(dots, fn {_, v} -> pred.(v) end, fn {dot,_} -> dot end)
+    new_cloud = Enum.filter_map(dots, fn {_, v} -> pred.(v) end, fn {dot,_} -> dot end)
+                |> MapSet.new()
+                |> MapSet.union(cloud)
+                |> MapSet.put({actor, clock})
     new_delta_dots = for {dot, v} <- delta_dots, !pred.(v), into: %{}, do: {dot, v}
-    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots}
+    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots, end_clock: new_ctx}
 
     %{set| ctx: new_ctx, dots: new_dots, delta: new_delta}
+    |> push_gen1(new_delta)
+    |> push_gen2(new_delta)
   end
 
   defp do_compact(%{ctx: ctx, cloud: c}=dots) do
-    {new_ctx, new_cloud} = compact_reduce(Enum.sort(c), ctx, [])
+    {new_ctx, new_cloud} = compact_reduce(Enum.sort(c), ctx, MapSet.new)
     %{dots|ctx: new_ctx, cloud: new_cloud}
   end
 
   defp compact_reduce([], ctx, cloud_acc) do
-    {ctx, Enum.reverse(cloud_acc)}
+    {ctx, cloud_acc}
   end
   defp compact_reduce([{actor, clock}=dot|cloud], ctx, cloud_acc) do
-    case {ctx[actor], clock} do
-      {nil, 1} ->
+    case {Map.get(ctx, actor, 0), clock} do
+      {0, 1} ->
         # We can merge nil with 1 in the cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
-      {nil, _} ->
+        compact_reduce(cloud, Map.put(ctx, actor, clock), cloud_acc)
+      {0, _} ->
         # Can't do anything with this
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
+        compact_reduce(cloud, ctx, MapSet.put(cloud_acc, dot))
       {ctx_clock, _} when ctx_clock + 1 == clock ->
         # Add to context, delete from cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
+        compact_reduce(cloud, Map.put(ctx, actor, clock), cloud_acc)
       {ctx_clock, _} when ctx_clock >= clock -> # Dominates
         # Delete from cloud by not accumulating.
         compact_reduce(cloud, ctx, cloud_acc)
       {_, _} ->
         # Can't do anything with this.
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
+        compact_reduce(cloud, ctx, MapSet.put(cloud_acc, dot))
     end
   end
 
   defp dotin(%State.Delta{cloud: cloud}, {_,_}=dot) do
-    Enum.any?(cloud, &(&1==dot))
+    MapSet.member?(cloud, dot)
   end
   defp dotin(%State{ctx: ctx, cloud: cloud}, {actor, clock}=dot) do
     # If this exists in the dot, and is greater than the value *or* is in the cloud
-    (ctx[actor]||0) >= clock or Enum.any?(cloud, &(&1==dot))
+    (ctx[actor]||0) >= clock or MapSet.member?(cloud, dot)
   end
 
   defp do_merge(%{dots: d1, ctx: ctx1, cloud: c1}=set1, %{dots: d2, cloud: c2}=set2) do
@@ -252,9 +267,31 @@ defmodule Phoenix.Tracker.State do
     {new_dots,j,p} = Enum.sort(extract_dots(d1, set2) ++ extract_dots(d2, set1))
                |> merge_dots(set1, {%{},[],[]})
     new_ctx = Dict.merge(ctx1, Map.get(set2, :ctx, %{}), fn (_, a, b) -> max(a, b) end)
-    new_cloud = Enum.uniq(c1 ++ c2)
-    {compact(%{set1|dots: new_dots, ctx: new_ctx, cloud: new_cloud}),j,p}
+    new_cloud = MapSet.union(c1, c2)
+    new_crdt = %{set1|dots: new_dots, ctx: new_ctx, cloud: new_cloud}
+               |> compact
+               |> push_gen1(set2)
+               |> push_gen2(set2)
+    {new_crdt,j,p}
   end
+
+  defp push_gen1(%{delta1: d1}=crdt, %State.Delta{}=d) do
+    if Map.size(d1) > @g1_size do
+      %{crdt|delta1: d}
+    else
+      %{crdt|delta1: Delta.merge(d1, d)}
+    end
+  end
+  defp push_gen1(crdt, _), do: crdt
+
+  defp push_gen2(%{delta1: d1, delta2: d2}=crdt, %State.Delta{}=d) do
+    if Map.size(d2) > @g2_size do
+      %{crdt|delta2: d1}
+    else
+      %{crdt|delta2: Delta.merge(d2, d)}
+    end
+  end
+  defp push_gen2(crdt, _), do: crdt
 
   # Pair each dot with the set opposite it for comparison
   defp extract_dots(dots, set) do
@@ -269,7 +306,7 @@ defmodule Phoenix.Tracker.State do
 
   # Our dot's values aren't the same. This is an invariant and shouldn't happen. ever.
   defp merge_dots([{{dot,_},_}, {{dot,_},_}|_], _, _acc) do
-    raise Phoenix.Tracker.State.InvariantError, "2 dot-pairs with the same dot but different values"
+    raise State.InvariantError, "2 dot-pairs with the same dot but different values"
   end
 
   # Our dots aren't the same.

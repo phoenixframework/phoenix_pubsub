@@ -72,7 +72,7 @@ defmodule Phoenix.Tracker.Clock do
     Map.merge(c1, c2, fn _, v1, v2 -> min(v1, v2) end)
   end
 
-  def is_contiguous?(c1, c2) do
+  def dominates_or_equal?(c1, c2) do
     case Map.keys(c2) -- Map.keys(c1) do
       [] -> Enum.all?(c2, fn {k,v} -> (c1[k]||0) >= v end)
       _ -> false
