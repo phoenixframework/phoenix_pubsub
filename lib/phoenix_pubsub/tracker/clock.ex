@@ -64,4 +64,19 @@ defmodule Phoenix.Tracker.Clock do
     end
   end
 
+  def upperbound(c1, c2) do
+    Map.merge(c1, c2, fn _, v1, v2 -> max(v1, v2) end)
+  end
+
+  def lowerbound(c1, c2) do
+    Map.merge(c1, c2, fn _, v1, v2 -> min(v1, v2) end)
+  end
+
+  def is_contiguous?(c1, c2) do
+    case Map.keys(c2) -- Map.keys(c1) do
+      [] -> Enum.all?(c2, fn {k,v} -> (c1[k]||0) >= v end)
+      _ -> false
+    end
+  end
+
 end
