@@ -27,6 +27,8 @@ defmodule Phoenix.Tracker.State do
     ctx: ctx_clock,
     cloud: [dot],
     delta: Delta.t,
+    delta1: Delta.t,
+    delta2: Delta.t,
     servers: %{ noderef => node_status }
   }
 
@@ -35,6 +37,8 @@ defmodule Phoenix.Tracker.State do
             ctx: %{},  # Current counter values for actors used in the dots
             cloud: [],  # A set of dots that we've seen but haven't been merged.
             delta: %Delta{},
+            delta1: %Delta{}, # Gen1 delta
+            delta2: %Delta{}, # Gen2 delta
             servers: %{}
 
   @spec new(noderef) :: t
@@ -57,8 +61,7 @@ defmodule Phoenix.Tracker.State do
 
   @spec reset_delta(t) :: t
   def reset_delta(%State{actor: actor, ctx: ctx}=set) do
-    current_clock = Map.get(ctx, actor, 0)
-    %State{set| delta: %State.Delta{range: {current_clock,nil}}}
+    %State{set| delta: %State.Delta{start_clock: ctx, end_clock: ctx}}
   end
 
   @spec remove_down_nodes(t, noderef) :: t
