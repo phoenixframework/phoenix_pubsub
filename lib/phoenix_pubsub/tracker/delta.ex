@@ -1,13 +1,15 @@
 defmodule Phoenix.Tracker.State.Delta do
 
-  alias Phoenix.Tracker.{Clock, State}
-  alias Phoenix.Tracker.State.{Delta, InvariantError}
+  alias Phoenix.Tracker.State
+  alias Phoenix.Tracker.Clock
+  alias Phoenix.Tracker.State.InvariantError
 
   @type t :: %__MODULE__{
     cloud: MapSet.t, # The dots that we know are in this delta
     dots: %{State.dot => State.value}, # A list of values
     start_clock: State.tracker_state, # What clock range we recorded this from
     end_clock: State.tracker_state # What clock range we ended this recording from
+
   }
 
   defstruct dots: %{},
@@ -17,10 +19,7 @@ defmodule Phoenix.Tracker.State.Delta do
 
   # TODO: Performance
   @doc "All the context "
-  def is_contiguous?(%Delta{end_clock: d1}, %Delta{start_clock: d2}) do
-    Clock.dominates_or_equal?(d1, d2)
-  end
-  def is_contiguous?(%Delta{end_clock: d1}, d2) do
+  def is_contiguous?(%{end_clock: d1}, %{start_clock: d2}) do
     Clock.dominates_or_equal?(d1, d2)
   end
 
