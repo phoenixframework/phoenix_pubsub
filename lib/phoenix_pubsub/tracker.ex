@@ -21,15 +21,17 @@ defmodule Phoenix.Tracker do
 
   ## Optional `server_opts`:
 
-    * `heartbeat_interval` - The interval in milliseconds to send heartbeats
-      across the cluster. Default `1000`
-    * `nodedown_interval` - The interval in milliseconds to flag a node
-      as down temporarily down.
-      Default `heartbeat_interval * 5` (five missed gossip windows)
-    * `permdown_interval` - The interval in milliseconds to flag a node
+    * `broadcast_period` - The interval in milliseconds to send delta broadcats
+      across the cluster. Default `1500`
+    * `max_silent_periods` - The max integer of broadcast periods for which no
+      delta broadcasts have been sent. Defaults `10` (15s heartbeat)
+    * `nodedown_period` - The interval in milliseconds to flag a node
+      as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
+      (30s nodedown detection).
+    * `permdown_period` - The interval in milliseconds to flag a node
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
-    * `clock_sample_windows` - The numbers of heartbeat windows to sample
+    * `clock_sample_periods` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
     * log_level - The log level to log events, defaults `:debug` and can be
       disabled with `false`
@@ -200,10 +202,11 @@ defmodule Phoenix.Tracker do
     :random.seed(:os.timestamp())
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
-    heartbeat_interval   = opts[:heartbeat_interval] || 1000
-    nodedown_interval    = opts[:nodedown_interval] || (heartbeat_interval * 5)
-    permdown_interval    = opts[:permdown_interval] || 1_200_000
-    clock_sample_windows = opts[:clock_sample_windows] || 2
+    broadcast_period     = opts[:broadcast_period] || 1500
+    max_silent_periods   = opts[:max_silent_periods] || 10
+    nodedown_period      = opts[:nodedown_period] || (broadcast_period * max_silent_periods * 2)
+    permdown_period      = opts[:permdown_period] || 1_200_000
+    clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
     node_name            = Phoenix.PubSub.node_name(pubsub_server)
     namespaced_topic     = namespaced_topic(server_name)
@@ -212,7 +215,7 @@ defmodule Phoenix.Tracker do
     case tracker.init(tracker_opts) do
       {:ok, tracker_state} ->
         Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
-        send_stuttered_heartbeat(self(), heartbeat_interval)
+        send_stuttered_heartbeat(self(), broadcast_period)
 
         {:ok, %{server_name: server_name,
                 pubsub_server: pubsub_server,
@@ -224,13 +227,15 @@ defmodule Phoenix.Tracker do
                 vnodes: %{},
                 pending_clockset: [],
                 presences: State.new(VNode.ref(vnode)),
-                heartbeat_interval: heartbeat_interval,
-                nodedown_interval: nodedown_interval,
-                permdown_interval: permdown_interval,
-                clock_sample_windows: clock_sample_windows,
-                current_sample_count: clock_sample_windows}}
+                broadcast_period: broadcast_period,
+                max_silent_periods: max_silent_periods,
+                silent_periods: 0,
+                nodedown_period: nodedown_period,
+                permdown_period: permdown_period,
+                clock_sample_periods: clock_sample_periods,
+                current_sample_count: clock_sample_periods}}
 
-       other -> other
+      other -> other
     end
   end
 
@@ -239,29 +244,34 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info(:heartbeat, state) do
-    broadcast_from(state, self(), {:pub, :gossip, state.vnode, clock(state)})
     {:noreply, state
+               |> broadcast_delta_heartbeat()
                |> request_transfer_from_nodes_needing_synced()
                |> detect_nodedowns()
                |> schedule_next_heartbeat()}
   end
 
-  def handle_info({:pub, :gossip, from_node, clocks}, state) do
+  def handle_info({:pub, :gossip, {name, vsn}, delta, clocks}, state) do
+    {presences, joined, left} = State.merge(state.presences, delta)
+
     {:noreply, state
+               |> report_diff(joined, left)
+               |> Map.put(:presences, presences)
                |> put_pending_clock(clocks)
-               |> handle_gossip(from_node)}
+               |> handle_gossip({name, vsn})}
   end
 
-  def handle_info({:pub, :transfer_req, ref, from_node, _clocks}, state) do
-    log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect from_node.name}" end
-    msg = {:pub, :transfer_ack, ref, state.vnode, state.presences}
-    direct_broadcast(state, from_node, msg)
+  def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
+    # TODO use compuated delta range for clocks, don't see entire CRDT unless neccessary
+    log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect name}" end
+    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), state.presences}
+    direct_broadcast(state, name, msg)
 
     {:noreply, state}
   end
 
-  def handle_info({:pub, :transfer_ack, _ref, from_node, remote_presences}, state) do
-    if from_node, do: log(state, fn -> "#{state.vnode.name}: transfer_ack from #{inspect from_node.name}" end)
+  def handle_info({:pub, :transfer_ack, _ref, {name, _vsn}, remote_presences}, state) do
+    log(state, fn -> "#{state.vnode.name}: transfer_ack from #{inspect name}" end)
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
     {:noreply, state
@@ -343,8 +353,8 @@ defmodule Phoenix.Tracker do
     |> Map.put(:presences, State.part(state.presences, conn))
   end
 
-  defp handle_gossip(state, %VNode{vsn: vsn} = from_node) do
-    case VNode.put_gossip(state.vnodes, from_node) do
+  defp handle_gossip(state, {name, vsn}) do
+    case VNode.put_gossip(state.vnodes, {name, vsn}) do
       {vnodes, nil, %VNode{status: :up} = upped} ->
         nodeup(%{state | vnodes: vnodes}, upped)
 
@@ -366,20 +376,20 @@ defmodule Phoenix.Tracker do
     needs_synced = clockset_to_sync(state)
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
-    %{state | pending_clockset: [], current_sample_count: state.clock_sample_windows}
+    %{state | pending_clockset: [], current_sample_count: state.clock_sample_periods}
   end
   defp request_transfer_from_nodes_needing_synced(state) do
     %{state | current_sample_count: state.current_sample_count - 1}
   end
 
-  defp request_transfer(state, target_node) do
-    log state, fn -> "#{state.vnode.name}: request_transfer from #{target_node.name}" end
+  defp request_transfer(state, {name, _vsn}) do
+    log state, fn -> "#{state.vnode.name}: request_transfer from #{name}" end
     ref = make_ref()
-    msg = {:pub, :transfer_req, ref, state.vnode, clock(state)}
-    direct_broadcast(state, target_node, msg)
+    msg = {:pub, :transfer_req, ref, VNode.ref(state.vnode), clock(state)}
+    direct_broadcast(state, name, msg)
   end
 
-  defp detect_nodedowns(%{permdown_interval: perm_int, nodedown_interval: temp_int} = state) do
+  defp detect_nodedowns(%{permdown_period: perm_int, nodedown_period: temp_int} = state) do
     Enum.reduce(state.vnodes, state, fn {_name, vnode}, acc ->
       case VNode.detect_down(acc.vnodes, vnode, temp_int, perm_int) do
         {vnodes, %VNode{status: :up}, %VNode{status: :permdown} = down_node} ->
@@ -398,7 +408,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp schedule_next_heartbeat(state) do
-    Process.send_after(self(), :heartbeat, state.heartbeat_interval)
+    Process.send_after(self(), :heartbeat, state.broadcast_period)
     state
   end
 
@@ -408,8 +418,7 @@ defmodule Phoenix.Tracker do
     state.pending_clockset
     |> Clock.append_clock(clock(state))
     |> Clock.clockset_nodes()
-    |> Stream.map(fn {name, _vsn} -> Map.get(state.vnodes, name) end)
-    |> Enum.filter(&(&1))
+    |> Enum.filter(fn {name, _vsn} -> Map.has_key?(state.vnodes, name) end)
   end
 
   defp put_pending_clock(state, clocks) do
@@ -450,9 +459,23 @@ defmodule Phoenix.Tracker do
   end
 
   defp direct_broadcast(state, target_node, msg) do
-    Phoenix.PubSub.direct_broadcast!(target_node.name, state.pubsub_server, state.namespaced_topic, msg)
+    Phoenix.PubSub.direct_broadcast!(target_node, state.pubsub_server, state.namespaced_topic, msg)
   end
 
+  defp broadcast_delta_heartbeat(state) do
+    {presences, delta} = State.delta_reset(state.presences)
+    has_delta? = Enum.any?(delta.cloud)
+
+    cond do
+      has_delta? or state.silent_periods >= state.max_silent_periods ->
+        broadcast_from(state, self(), {:pub, :gossip, VNode.ref(state.vnode), delta, clock(state)})
+        %{state | presences: presences, silent_periods: 0}
+      true ->
+        update_in(state.silent_periods, &(&1 + 1))
+    end
+  end
+
+  defp report_diff(state, [], []), do: state
   defp report_diff(state, joined, left) do
     join_diff = Enum.reduce(joined, %{}, fn {_node, {_conn, topic, key, meta}}, acc ->
       Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->

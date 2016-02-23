@@ -1,8 +1,8 @@
 defmodule Phoenix.PubSub.NodeCase do
 
   @timeout 500
-  @heartbeat 25
-  @permdown 1000
+  @heartbeat 100
+  @permdown 1500
   @pubsub Phoenix.PubSub.Test.PubSub
 
   defmacro __using__(_opts) do
@@ -10,6 +10,10 @@ defmodule Phoenix.PubSub.NodeCase do
       use ExUnit.Case, async: true
       import unquote(__MODULE__)
       @moduletag :clustered
+
+      @timeout unquote(@timeout)
+      @heartbeat unquote(@heartbeat)
+      @permdown unquote(@permdown)
     end
   end
 
@@ -44,18 +48,29 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def subscribe_to_tracker(pid, tracker) do
-    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, "phx_presence:#{tracker}")
+    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, namespaced_topic(tracker))
   end
+
+  defp namespaced_topic(tracker), do: "phx_presence:#{tracker}"
 
   def start_tracker(node_name, opts) do
     call_node(node_name, fn -> start_tracker(opts) end)
   end
 
+  def drop_gossips(pid, tracker) do
+    Phoenix.PubSub.unsubscribe(@pubsub, pid, namespaced_topic(tracker))
+  end
+
+  def resume_gossips(pid, tracker) do
+    Phoenix.PubSub.subscribe(@pubsub, pid, namespaced_topic(tracker), link: true)
+  end
+
   def start_tracker(opts) do
     opts = Keyword.merge([
       pubsub_server: @pubsub,
-      heartbeat_interval: @heartbeat,
-      permdown_interval: @permdown,
+      broadcast_period: @heartbeat,
+      max_silent_periods: 2,
+      permdown_period: @permdown,
     ], opts)
     Phoenix.Tracker.start_link(TestTracker, opts, opts)
   end

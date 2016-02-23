@@ -30,8 +30,8 @@ defmodule Phoenix.Tracker.VNode do
   @spec ref(VNode.t) :: Phoenix.Tracker.State.noderef
   def ref(%VNode{name: name, vsn: vsn}), do: {name, vsn}
 
-  @spec put_gossip(%{name => VNode.t}, VNode.t) :: op_result
-  def put_gossip(vnodes, %VNode{name: name, vsn: vsn}) do
+  @spec put_gossip(%{name => VNode.t}, Phoenix.Tracker.State.noderef) :: op_result
+  def put_gossip(vnodes, {name, vsn}) do
     case Map.fetch(vnodes, name) do
       :error ->
         new_vnode = touch_last_gossip(%VNode{name: name, vsn: vsn, status: :up})
