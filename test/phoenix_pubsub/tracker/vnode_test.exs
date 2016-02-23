@@ -16,35 +16,35 @@ defmodule Phoenix.Tracker.VNodeTest do
     assert VNode.ref(%VNode{name: "name", vsn: {1, 1}}) == {"name", {1, 1}}
   end
 
-  test "put_gossip/2 with no previously tracked name" do
+  test "put_heartbeat/2 with no previously tracked name" do
     new_node = VNode.new("new")
-    assert {vnodes, nil, added_vnode} = VNode.put_gossip(%{}, VNode.ref(new_node))
+    assert {vnodes, nil, added_vnode} = VNode.put_heartbeat(%{}, VNode.ref(new_node))
     assert vnodes["new"] == added_vnode
     assert added_vnode.name == new_node.name
     assert added_vnode.vsn == new_node.vsn
-    assert added_vnode.last_gossip_at
+    assert added_vnode.last_heartbeat_at
     assert added_vnode.status == :up
   end
 
-  test "put_gossip/2 with previously tracked name" do
+  test "put_heartbeat/2 with previously tracked name" do
     for status <- [:up, :down] do
       existing_node = VNode.new("existing") |> Map.put(:status, status)
       assert {vnodes, ^existing_node, updated_node} =
-            VNode.put_gossip(%{ "existing" => existing_node}, VNode.ref(existing_node))
+            VNode.put_heartbeat(%{ "existing" => existing_node}, VNode.ref(existing_node))
 
       assert vnodes["existing"] == updated_node
       assert updated_node.name == existing_node.name
       assert updated_node.vsn == existing_node.vsn
-      assert updated_node.last_gossip_at != existing_node.last_gossip_at
-      assert updated_node.last_gossip_at
+      assert updated_node.last_heartbeat_at != existing_node.last_heartbeat_at
+      assert updated_node.last_heartbeat_at
       assert updated_node.status == :up
     end
   end
 
   test "detect_down/4 with temporarily downed node" do
-    {vnodes, nil, tempdown_node} = VNode.put_gossip(%{}, VNode.ref(VNode.new("tempdown")))
+    {vnodes, nil, tempdown_node} = VNode.put_heartbeat(%{}, VNode.ref(VNode.new("tempdown")))
     assert {vnodes, ^tempdown_node, updated_tempdown} =
-           VNode.detect_down(vnodes, tempdown_node, 5, 10, tempdown_node.last_gossip_at + 6)
+           VNode.detect_down(vnodes, tempdown_node, 5, 10, tempdown_node.last_heartbeat_at + 6)
 
     assert Map.fetch(vnodes, "tempdown") == {:ok, updated_tempdown}
     assert updated_tempdown.name == "tempdown"
@@ -53,9 +53,9 @@ defmodule Phoenix.Tracker.VNodeTest do
   end
 
   test "detect_down/4 with permanently downed node removes from vnodes map" do
-    {vnodes, nil, tempdown_node} = VNode.put_gossip(%{}, VNode.ref(VNode.new("tempdown")))
+    {vnodes, nil, tempdown_node} = VNode.put_heartbeat(%{}, VNode.ref(VNode.new("tempdown")))
     assert {vnodes, ^tempdown_node, updated_tempdown} =
-           VNode.detect_down(vnodes, tempdown_node, 5, 10, tempdown_node.last_gossip_at + 11)
+           VNode.detect_down(vnodes, tempdown_node, 5, 10, tempdown_node.last_heartbeat_at + 11)
 
     assert Map.fetch(vnodes, "tempdown") == :error
     assert updated_tempdown.name == "tempdown"
@@ -64,9 +64,9 @@ defmodule Phoenix.Tracker.VNodeTest do
   end
 
   test "detect_down/4 with up node" do
-    {vnodes, nil, up_node} = VNode.put_gossip(%{}, VNode.ref(VNode.new("up")))
+    {vnodes, nil, up_node} = VNode.put_heartbeat(%{}, VNode.ref(VNode.new("up")))
     assert {vnodes, ^up_node, ^up_node} =
-           VNode.detect_down(vnodes, up_node, 5, 10, up_node.last_gossip_at)
+           VNode.detect_down(vnodes, up_node, 5, 10, up_node.last_heartbeat_at)
 
     assert Map.fetch(vnodes, "up") == {:ok, up_node}
     assert up_node.status == :up

@@ -2,7 +2,7 @@ defmodule Phoenix.Tracker do
   @moduledoc ~S"""
   Provides distributed Presence tracking to processes.
 
-  Tracker servers use a gossip protocol and CRDT to replicate
+  Tracker servers use a heartbeat protocol and CRDT to replicate
   presence information across a cluster in an eventually consistent
   manner, conflict free manner. Under this design, there is no single
   source of truth or global process. Instead, each node runs one or more
@@ -77,7 +77,7 @@ defmodule Phoenix.Tracker do
   The `init/1` calback allows the tracker to manage its own state when
   running within the `Phoenix.Tracker` server. The `handle_diff` callback
   is invoked with a diff of presence join and leaves events, grouped by
-  topic. As nodes gossip and replicate data, the local tracker state is
+  topic. As nodes heartbeat and replicate data, the local tracker state is
   merged with the remote data, and the diff is sent to the callback. The
   handler can use this information to notify subscribers of events, as
   done above.
@@ -251,14 +251,14 @@ defmodule Phoenix.Tracker do
                |> schedule_next_heartbeat()}
   end
 
-  def handle_info({:pub, :gossip, {name, vsn}, delta, clocks}, state) do
+  def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
     {presences, joined, left} = State.merge(state.presences, delta)
 
     {:noreply, state
                |> report_diff(joined, left)
                |> Map.put(:presences, presences)
                |> put_pending_clock(clocks)
-               |> handle_gossip({name, vsn})}
+               |> handle_heartbeat({name, vsn})}
   end
 
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
@@ -353,8 +353,8 @@ defmodule Phoenix.Tracker do
     |> Map.put(:presences, State.part(state.presences, conn))
   end
 
-  defp handle_gossip(state, {name, vsn}) do
-    case VNode.put_gossip(state.vnodes, {name, vsn}) do
+  defp handle_heartbeat(state, {name, vsn}) do
+    case VNode.put_heartbeat(state.vnodes, {name, vsn}) do
       {vnodes, nil, %VNode{status: :up} = upped} ->
         nodeup(%{state | vnodes: vnodes}, upped)
 
@@ -468,7 +468,7 @@ defmodule Phoenix.Tracker do
 
     cond do
       has_delta? or state.silent_periods >= state.max_silent_periods ->
-        broadcast_from(state, self(), {:pub, :gossip, VNode.ref(state.vnode), delta, clock(state)})
+        broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
         %{state | presences: presences, silent_periods: 0}
       true ->
         update_in(state.silent_periods, &(&1 + 1))

@@ -7,13 +7,13 @@ defmodule Phoenix.Tracker.VNode do
   @type t :: %VNode{
     name: name,
     vsn: term,
-    last_gossip_at: pos_integer,
+    last_heartbeat_at: pos_integer,
     status: :up | :down | :permdown
   }
 
   defstruct name: nil,
             vsn: nil,
-            last_gossip_at: nil,
+            last_heartbeat_at: nil,
             status: :up
 
 
@@ -30,22 +30,22 @@ defmodule Phoenix.Tracker.VNode do
   @spec ref(VNode.t) :: Phoenix.Tracker.State.noderef
   def ref(%VNode{name: name, vsn: vsn}), do: {name, vsn}
 
-  @spec put_gossip(%{name => VNode.t}, Phoenix.Tracker.State.noderef) :: op_result
-  def put_gossip(vnodes, {name, vsn}) do
+  @spec put_heartbeat(%{name => VNode.t}, Phoenix.Tracker.State.noderef) :: op_result
+  def put_heartbeat(vnodes, {name, vsn}) do
     case Map.fetch(vnodes, name) do
       :error ->
-        new_vnode = touch_last_gossip(%VNode{name: name, vsn: vsn, status: :up})
+        new_vnode = touch_last_heartbeat(%VNode{name: name, vsn: vsn, status: :up})
         {Map.put(vnodes, name, new_vnode), nil, new_vnode}
 
       {:ok, %VNode{} = prev_vnode} ->
-        updated_vnode = touch_last_gossip(%VNode{prev_vnode | vsn: vsn, status: :up})
+        updated_vnode = touch_last_heartbeat(%VNode{prev_vnode | vsn: vsn, status: :up})
         {Map.put(vnodes, name, updated_vnode), prev_vnode, updated_vnode}
     end
   end
 
   @spec detect_down(%{name => VNode.t}, VNode.t, pos_integer, pos_integer) :: op_result
   def detect_down(vnodes, vnode, temp_interval, perm_interval, now \\ now_ms()) do
-    downtime = now - vnode.last_gossip_at
+    downtime = now - vnode.last_heartbeat_at
     cond do
       downtime > perm_interval -> {Map.delete(vnodes, vnode.name), vnode, permdown(vnode)}
       downtime > temp_interval ->
@@ -59,8 +59,8 @@ defmodule Phoenix.Tracker.VNode do
 
   defp down(vnode), do: %VNode{vnode | status: :down}
 
-  defp touch_last_gossip(vnode) do
-    %VNode{vnode | last_gossip_at: now_ms()}
+  defp touch_last_heartbeat(vnode) do
+    %VNode{vnode | last_heartbeat_at: now_ms()}
   end
 
   defp now_ms, do: :os.timestamp() |> time_to_ms()

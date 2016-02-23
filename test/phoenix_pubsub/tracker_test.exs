@@ -15,11 +15,11 @@ defmodule Phoenix.TrackerTest do
 
   test "heartbeats", %{tracker: tracker} do
     subscribe_to_tracker(self(), tracker)
-    assert_gossip from: @master
+    assert_heartbeat from: @master
     flush()
-    assert_gossip from: @master
+    assert_heartbeat from: @master
     flush()
-    assert_gossip from: @master
+    assert_heartbeat from: @master
   end
 
   test "gossip from unseen node triggers nodeup and transfer request",
@@ -32,14 +32,14 @@ defmodule Phoenix.TrackerTest do
     start_tracker(@slave1, name: tracker)
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{})
     flush()
-    assert_gossip from: @slave1
+    assert_heartbeat from: @slave1
 
     resume_gossips(Process.whereis(tracker), tracker)
     # master sends transfer_req to slave1 after seeing behind
     ref = assert_transfer_req to: @slave1, from: @master
     # slave1 fulfills tranfer request and sends transfer_ack to master
     assert_transfer_ack ref, from: @slave1
-    assert_gossip to: @slave1, from: @master
+    assert_heartbeat to: @slave1, from: @master
     assert [{"slave1", _}] = Tracker.list(tracker, topic)
   end
 
@@ -51,7 +51,7 @@ defmodule Phoenix.TrackerTest do
     for slave <- [@slave1, @slave2] do
       spy_on_tracker(slave, self(), tracker)
       start_tracker(slave, name: tracker)
-      assert_gossip to: slave, from: @master
+      assert_heartbeat to: slave, from: @master
     end
 
     flush()
@@ -61,10 +61,10 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave2, tracker, spawn_pid(), topic, "slave2", %{})
 
     # slave1 sends delta broadcast to slave2
-    assert_receive {@slave1, {:pub, :gossip, {@slave2, _vsn}, %State.Delta{}, _clocks}}, @timeout
+    assert_receive {@slave1, {:pub, :heartbeat, {@slave2, _vsn}, %State.Delta{}, _clocks}}, @timeout
 
     # slave2 sends delta broadcast to slave1
-    assert_receive {@slave2, {:pub, :gossip, {@slave1, _vsn}, %State.Delta{}, _clocks}}, @timeout
+    assert_receive {@slave2, {:pub, :heartbeat, {@slave1, _vsn}, %State.Delta{}, _clocks}}, @timeout
 
     flush()
     resume_gossips(Process.whereis(tracker), tracker)
@@ -79,8 +79,8 @@ defmodule Phoenix.TrackerTest do
     assert_join ^topic, "slave1", %{}
     assert_join ^topic, "slave1.2", %{}
     assert_join ^topic, "slave2", %{}
-    assert_gossip from: @slave1
-    assert_gossip from: @slave2
+    assert_heartbeat from: @slave1
+    assert_heartbeat from: @slave2
 
     assert [{"slave1", _}, {"slave1.2", _}, {"slave2", _}] =
            Tracker.list(tracker, topic)
@@ -111,7 +111,7 @@ defmodule Phoenix.TrackerTest do
     flush()
     :ok = :sys.resume(slave1_tracker)
     assert_join ^topic, @slave1, %{}
-    assert_gossip from: @slave1
+    assert_heartbeat from: @slave1
     assert_map %{@slave1 => %VNode{status: :up, vsn: ^vsn_before},
                  @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
 
@@ -140,7 +140,7 @@ defmodule Phoenix.TrackerTest do
 
     # tempdown => permdown
     flush()
-    for _ <- 0..trunc(@permdown / @heartbeat), do: assert_gossip(from: @master)
+    for _ <- 0..trunc(@permdown / @heartbeat), do: assert_heartbeat(from: @master)
     assert_map %{@slave2 => %VNode{status: :up}}, vnodes(tracker), 1
   end
 
@@ -291,12 +291,12 @@ defmodule Phoenix.TrackerTest do
     end
   end
 
-  def assert_gossip(opts) do
+  def assert_heartbeat(opts) do
     from = Keyword.fetch!(opts, :from)
     if to = opts[:to] do
-      assert_receive {^to, {:pub, :gossip, {^from, _vsn}, %State.Delta{}, _clocks}}, @timeout
+      assert_receive {^to, {:pub, :heartbeat, {^from, _vsn}, %State.Delta{}, _clocks}}, @timeout
     else
-      assert_receive {:pub, :gossip, {^from, _vsn}, %State.Delta{}, _clocks}, @timeout
+      assert_receive {:pub, :heartbeat, {^from, _vsn}, %State.Delta{}, _clocks}, @timeout
     end
   end
 end
