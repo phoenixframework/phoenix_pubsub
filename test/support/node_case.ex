@@ -1,8 +1,8 @@
 defmodule Phoenix.PubSub.NodeCase do
 
   @timeout 500
-  @heartbeat 50
-  @permdown 1000
+  @heartbeat 100
+  @permdown 1500
   @pubsub Phoenix.PubSub.Test.PubSub
 
   defmacro __using__(_opts) do
@@ -69,7 +69,7 @@ defmodule Phoenix.PubSub.NodeCase do
     opts = Keyword.merge([
       pubsub_server: @pubsub,
       broadcast_period: @heartbeat,
-      max_silent_periods: 1,
+      max_silent_periods: 2,
       permdown_period: @permdown,
     ], opts)
     Phoenix.Tracker.start_link(TestTracker, opts, opts)

@@ -79,6 +79,8 @@ defmodule Phoenix.TrackerTest do
     assert_join ^topic, "slave1", %{}
     assert_join ^topic, "slave1.2", %{}
     assert_join ^topic, "slave2", %{}
+    assert_gossip from: @slave1
+    assert_gossip from: @slave2
 
     assert [{"slave1", _}, {"slave1.2", _}, {"slave2", _}] =
            Tracker.list(tracker, topic)

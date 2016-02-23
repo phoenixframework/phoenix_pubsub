@@ -22,12 +22,12 @@ defmodule Phoenix.Tracker do
   ## Optional `server_opts`:
 
     * `broadcast_period` - The interval in milliseconds to send delta broadcats
-      across the cluster. Default `500`
+      across the cluster. Default `1500`
     * `max_silent_periods` - The max integer of broadcast periods for which no
-      delta broadcasts have been sent. Defaults 5
+      delta broadcasts have been sent. Defaults `10` (15s heartbeat)
     * `nodedown_period` - The interval in milliseconds to flag a node
-      as down temporarily down.
-      Default `broadcast_period * 5` (five missed gossip windows)
+      as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
+      (30s nodedown detection).
     * `permdown_period` - The interval in milliseconds to flag a node
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
@@ -202,9 +202,9 @@ defmodule Phoenix.Tracker do
     :random.seed(:os.timestamp())
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
-    broadcast_period     = opts[:broadcast_period] || 1000
-    max_silent_periods   = opts[:max_silent_periods] || 5
-    nodedown_period      = opts[:nodedown_period] || (broadcast_period * max_silent_periods * 3)
+    broadcast_period     = opts[:broadcast_period] || 1500
+    max_silent_periods   = opts[:max_silent_periods] || 10
+    nodedown_period      = opts[:nodedown_period] || (broadcast_period * max_silent_periods * 2)
     permdown_period      = opts[:permdown_period] || 1_200_000
     clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
