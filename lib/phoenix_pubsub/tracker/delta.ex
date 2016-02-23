@@ -24,7 +24,7 @@ defmodule Phoenix.Tracker.State.Delta do
   end
 
   @doc "Naïve test for whether or not we can merge in. Better test will make an exception for remote actor. Returns true/false/:noop"
-  def can_send_for_clock?(%Delta{start_clock: sc, end_clock: ec}, clock) do
+  def can_send_for_clock?(%__MODULE__{start_clock: sc, end_clock: ec}, clock) do
     cond do
       Clock.dominates_or_equal(ec, clock) -> :noop
       true -> Clock.dominates_or_equal(clock, sc)
