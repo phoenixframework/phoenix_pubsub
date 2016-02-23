@@ -18,9 +18,17 @@ defmodule Phoenix.Tracker.State.Delta do
             end_clock: %{}
 
   # TODO: Performance
-  @doc "All the context "
+  @doc "Tests whether the combination of 2 deltas will result in a contiguous start and end clock"
   def is_contiguous?(%{end_clock: d1}, %{start_clock: d2}) do
     Clock.dominates_or_equal?(d1, d2)
+  end
+
+  @doc "Naïve test for whether or not we can merge in. Better test will make an exception for remote actor. Returns true/false/:noop"
+  def can_send_for_clock?(%Delta{start_clock: sc, end_clock: ec}, clock) do
+    cond do
+      Clock.dominates_or_equal(ec, clock) -> :noop
+      true -> Clock.dominates_or_equal(clock, sc)
+    end
   end
 
   def merge(%{cloud: c1, dots: d1, start_clock: sc1, end_clock: ec1}=delta1, %{cloud: c2, dots: d2, start_clock: sc2, end_clock: ec2}=delta2) do
