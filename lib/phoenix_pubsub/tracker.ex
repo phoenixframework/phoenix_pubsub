@@ -229,7 +229,7 @@ defmodule Phoenix.Tracker do
                 presences: State.new(VNode.ref(vnode)),
                 broadcast_period: broadcast_period,
                 max_silent_periods: max_silent_periods,
-                silent_periods: 0,
+                silent_periods: max_silent_periods,
                 nodedown_period: nodedown_period,
                 permdown_period: permdown_period,
                 clock_sample_periods: clock_sample_periods,
