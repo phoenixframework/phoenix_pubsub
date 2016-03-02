@@ -49,7 +49,7 @@ defmodule Phoenix.Tracker do
         @behaviour Phoenix.Tracker
 
         def start_link(opts) do
-          opts = Keyword.merge([name: __MODULE__, opts)
+          opts = Keyword.merge([name: __MODULE__], opts)
           GenServer.start_link(Phoenix.Tracker, [__MODULE__, opts, opts], name: __MODULE__)
         end
 
@@ -59,7 +59,7 @@ defmodule Phoenix.Tracker do
         end
 
         def handle_diff(diff, state) do
-          for {topic, {joins, leaves}}  <- diff do
+          for {topic, {joins, leaves}} <- diff do
             for {key, meta} <- joins do
               IO.puts "presence join: key \"#{key}\" with meta #{inspect meta}"
               direct_broadcast(state, topic, {:join, key, meta})
