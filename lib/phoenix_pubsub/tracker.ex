@@ -9,7 +9,7 @@ defmodule Phoenix.Tracker do
   `Phoenix.Tracker` servers and node-local changes are replicated across
   the cluster and handled locally as a diff of changes.
 
-    * `tracker` - The name of the tracker hanlder module implementing the
+    * `tracker` - The name of the tracker handler module implementing the
       `Phoenix.Tracker` behaviour
     * `tracker_opts` - The list of options to pass to the tracker handler
     * `server_opts` - The list of options to pass to the tracker server
@@ -49,7 +49,7 @@ defmodule Phoenix.Tracker do
         @behaviour Phoenix.Tracker
 
         def start_link(opts) do
-          opts = Keyword.merge([name: __MODULE__, opts)
+          opts = Keyword.merge([name: __MODULE__], opts)
           GenServer.start_link(Phoenix.Tracker, [__MODULE__, opts, opts], name: __MODULE__)
         end
 
@@ -59,7 +59,7 @@ defmodule Phoenix.Tracker do
         end
 
         def handle_diff(diff, state) do
-          for {topic, {joins, leaves}}  <- diff do
+          for {topic, {joins, leaves}} <- diff do
             for {key, meta} <- joins do
               IO.puts "presence join: key \"#{key}\" with meta #{inspect meta}"
               direct_broadcast(state, topic, {:join, key, meta})
