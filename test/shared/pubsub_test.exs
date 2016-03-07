@@ -77,8 +77,10 @@ defmodule Phoenix.PubSubTest do
         assert Process.alive?(local)
       end)
 
-      assert Local.subscription(config.pubsub, config.pool_size, self()) == [config.topic]
-      assert Local.subscription(config.pubsub, config.pool_size, pid) == []
+      {ref, topics} = Local.subscription(config.pubsub, config.pool_size, self())
+      assert is_reference(ref)
+      assert topics == [config.topic]
+      assert Local.subscription(config.pubsub, config.pool_size, pid) == {nil, []}
       assert subscribers(config, config.topic) |> length == 1
     end
 
@@ -131,6 +133,12 @@ defmodule Phoenix.PubSubTest do
 
       PubSub.broadcast_from!(config.test, self, "topic11", :ping)
       refute_received :ping
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: unsubscribe on not subcribed topic noops", config do
+      assert :ok = PubSub.unsubscribe(config.test, self(), config.topic)
+      assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
   end
 end

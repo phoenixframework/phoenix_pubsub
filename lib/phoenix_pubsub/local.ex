@@ -36,13 +36,14 @@ defmodule Phoenix.PubSub.Local do
 
   """
   def subscribe(pubsub_server, pool_size, pid, topic, opts \\ []) when is_atom(pubsub_server) do
-    {:ok, {topics, pids}} =
-      pubsub_server
-      |> local_for_pid(pid, pool_size)
-      |> GenServer.call({:subscribe, pid, topic, opts})
+    {local, gc} =
+      pid
+      |> pid_to_shard(pool_size)
+      |> pools_for_shard(pubsub_server)
 
-    true = :ets.insert(topics, {topic, {pid, opts[:fastlane]}})
-    true = :ets.insert(pids, {pid, topic})
+    :ok = GenServer.call(local, {:subscribe, pid, opts})
+    true = :ets.insert(gc, {pid, topic})
+    true = :ets.insert(local, {topic, {pid, opts[:fastlane]}})
 
     :ok
   end
@@ -62,12 +63,14 @@ defmodule Phoenix.PubSub.Local do
 
   """
   def unsubscribe(pubsub_server, pool_size, pid, topic) when is_atom(pubsub_server) do
-    {local_server, gc_server} =
+    {local, _gc} =
       pid
       |> pid_to_shard(pool_size)
       |> pools_for_shard(pubsub_server)
 
-    :ok = Phoenix.PubSub.GC.unsubscribe(pid, topic, local_server, gc_server)
+    :ok = GenServer.call(local, {:unsubscribe, pid, topic})
+    true = :ets.match_delete(local, {topic, {pid, :_}})
+    :ok
   end
 
   @doc """
@@ -161,12 +164,12 @@ defmodule Phoenix.PubSub.Local do
   @doc false
   # This is an expensive and private operation. DO NOT USE IT IN PROD.
   def subscription(pubsub_server, pool_size, pid) when is_atom(pubsub_server) do
-    {_local, gc_server} =
+    {local, _gc} =
       pid
       |> pid_to_shard(pool_size)
       |> pools_for_shard(pubsub_server)
 
-    GenServer.call(gc_server, {:subscription, pid})
+    GenServer.call(local, {:subscription, pid})
   end
 
   @doc false
@@ -186,28 +189,34 @@ defmodule Phoenix.PubSub.Local do
                         read_concurrency: true, write_concurrency: true])
 
     Process.flag(:trap_exit, true)
-    {:ok, %{topics: local, pids: gc, gc_server: gc}}
+    {:ok, %{monitors: %{}, gc: gc}}
   end
 
-  def handle_call({:subscribe, pid, _topic, opts}, _from, state) do
+  def handle_call({:subscribe, pid, opts}, _from, state) do
     if opts[:link], do: Process.link(pid)
-    Process.monitor(pid)
-    {:reply, {:ok, {state.topics, state.pids}}, state}
+    {:reply, :ok, put_new_monitor(state, pid)}
+  end
+
+  def handle_call({:unsubscribe, pid, topic}, _from, %{gc: gc} = state) do
+    :ets.match_delete(gc, {pid, topic})
+    case :ets.select_count(gc, [{{pid, :_}, [], [true]}]) do
+      0 -> {:reply, :ok, drop_monitor(state, pid)}
+      _ -> {:reply, :ok, state}
+    end
+  end
+
+  def handle_call({:subscription, pid}, _from, state) do
+    topics = GenServer.call(state.gc, {:subscription, pid})
+    {:reply, {state.monitors[pid], topics}, state}
   end
 
   def handle_info({:DOWN, _ref, _type, pid, _info}, state) do
-    Phoenix.PubSub.GC.down(state.gc_server, pid)
-    {:noreply, state}
+    Phoenix.PubSub.GC.down(state.gc, pid)
+    {:noreply, drop_monitor(state, pid)}
   end
 
   def handle_info(_, state) do
     {:noreply, state}
-  end
-
-  defp local_for_pid(pubsub_server, pid, pool_size) do
-    pid
-    |> pid_to_shard(pool_size)
-    |> local_for_shard(pubsub_server)
   end
 
   defp local_for_shard(shard, pubsub_server) do
@@ -231,5 +240,21 @@ defmodule Phoenix.PubSub.Local do
     <<_::size(prefix), id::size(32), _::size(40)>> = binary
 
     id
+  end
+
+  defp put_new_monitor(%{monitors: monitors} = state, pid) do
+    case Map.fetch(monitors, pid) do
+      {:ok, _ref} -> state
+      :error -> %{state | monitors: Map.put(monitors, pid, Process.monitor(pid))}
+    end
+  end
+
+  defp drop_monitor(%{monitors: monitors} = state, pid) do
+    case Map.fetch(monitors, pid) do
+      {:ok, ref} ->
+        Process.demonitor(ref)
+        %{state | monitors: Map.delete(monitors, pid)}
+      :error -> state
+    end
   end
 end
