@@ -25,9 +25,23 @@ defmodule Phoenix.PubSubTest do
     end)
   end
 
+  defp rpc(pid, func) do
+    ref = make_ref()
+    send(pid, {:rpc, self(), ref, func})
+    receive do
+      {^ref, result} -> result
+    after 5000 -> exit(:timeout)
+    end
+  end
   defp spawn_pid do
-    {:ok, pid} = Task.start(fn -> :timer.sleep(:infinity) end)
+    {:ok, pid} = Task.start(fn -> receive_loop() end)
     pid
+  end
+  defp receive_loop() do
+    receive do
+      {:rpc, from, ref, func} -> send(from, {ref, func.()})
+    end
+    receive_loop()
   end
 
   defp each_shard(config, func) do
@@ -45,7 +59,7 @@ defmodule Phoenix.PubSubTest do
     adapter = Application.get_env(:phoenix, :pubsub_test_adapter)
     {:ok, _} = adapter.start_link(config.test, pool_size: size)
     {:ok, %{pubsub: config.test,
-            topic: config.test,
+            topic: to_string(config.test),
             pool_size: size}}
   end
 
@@ -58,17 +72,17 @@ defmodule Phoenix.PubSubTest do
     test "pool #{size}: subscribe and unsubscribe", config do
       pid = spawn_pid()
       assert subscribers(config, config.topic) |> length == 0
-      assert PubSub.subscribe(config.test, pid, config.topic)
+      assert rpc(pid, fn -> PubSub.subscribe(config.test, config.topic) end)
       assert subscribers(config, config.topic) == [pid]
-      assert PubSub.unsubscribe(config.test, pid, config.topic)
+      assert rpc(pid, fn -> PubSub.unsubscribe(config.test, config.topic) end)
       assert subscribers(config, config.topic) |> length == 0
     end
 
     @tag pool_size: size
     test "pool #{size}: subscribe/3 with link does not down adapter", config do
       pid = spawn_pid()
-      assert PubSub.subscribe(config.test, self(), config.topic, link: true)
-      assert PubSub.subscribe(config.test, pid, config.topic, link: true)
+      assert PubSub.subscribe(config.test, config.topic, link: true)
+      assert rpc(pid, fn -> PubSub.subscribe(config.test, config.topic, link: true) end)
       assert subscribers(config, config.topic) |> length == 2
 
       kill_and_wait(pid)
@@ -90,9 +104,9 @@ defmodule Phoenix.PubSubTest do
       non_linked_pid1 = spawn_pid()
       non_linked_pid2 = spawn_pid()
 
-      assert PubSub.subscribe(config.test, pid, config.topic, link: true)
-      assert PubSub.subscribe(config.test, non_linked_pid1, config.topic)
-      assert PubSub.subscribe(config.test, non_linked_pid2, config.topic, link: false)
+      assert rpc(pid, fn -> PubSub.subscribe(config.test, config.topic, link: true) end)
+      assert rpc(non_linked_pid1, fn -> PubSub.subscribe(config.test, non_linked_pid1, config.topic) end)
+      assert rpc(non_linked_pid2, fn -> PubSub.subscribe(config.test, non_linked_pid2, config.topic, link: false) end)
 
       each_shard(config, fn shard ->
         kill_and_wait(Process.whereis(Local.local_name(config.pubsub, shard)))
@@ -105,7 +119,7 @@ defmodule Phoenix.PubSubTest do
 
     @tag pool_size: size
     test "pool #{size}: broadcast/3 and broadcast!/3 publishes message to each subscriber", config do
-      PubSub.subscribe(config.test, self, "topic9")
+      PubSub.subscribe(config.test, "topic9")
       :ok = PubSub.broadcast(config.test, "topic9", :ping)
       assert_receive :ping
       :ok = PubSub.broadcast!(config.test, "topic9", :ping)
@@ -114,10 +128,10 @@ defmodule Phoenix.PubSubTest do
 
     @tag pool_size: size
     test "pool #{size}: broadcast/3 does not publish message to other topic subscribers", config do
-      PubSub.subscribe(config.test, self, "topic9")
+      PubSub.subscribe(config.test, "topic9")
 
       Enum.each 0..10, fn _ ->
-        PubSub.subscribe(config.test, spawn_pid(), "topic10")
+        rpc(spawn_pid(), fn -> PubSub.subscribe(config.test, "topic10") end)
       end
 
       :ok = PubSub.broadcast(config.test, "topic10", :ping)
@@ -126,7 +140,7 @@ defmodule Phoenix.PubSubTest do
 
     @tag pool_size: size
     test "pool #{size}: broadcast_from/4 and broadcast_from!/4 skips sender", config do
-      PubSub.subscribe(config.test, self, "topic11")
+      PubSub.subscribe(config.test, "topic11")
 
       PubSub.broadcast_from(config.test, self, "topic11", :ping)
       refute_received :ping
@@ -137,7 +151,7 @@ defmodule Phoenix.PubSubTest do
 
     @tag pool_size: size
     test "pool #{size}: unsubscribe on not subcribed topic noops", config do
-      assert :ok = PubSub.unsubscribe(config.test, self(), config.topic)
+      assert :ok = PubSub.unsubscribe(config.test, config.topic)
       assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
   end

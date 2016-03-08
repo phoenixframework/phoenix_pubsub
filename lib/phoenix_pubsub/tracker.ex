@@ -214,7 +214,7 @@ defmodule Phoenix.Tracker do
 
     case tracker.init(tracker_opts) do
       {:ok, tracker_state} ->
-        Phoenix.PubSub.subscribe(pubsub_server, self(), namespaced_topic, link: true)
+        Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
         send_stuttered_heartbeat(self(), broadcast_period)
 
         {:ok, %{server_name: server_name,

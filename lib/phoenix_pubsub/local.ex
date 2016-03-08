@@ -41,7 +41,7 @@ defmodule Phoenix.PubSub.Local do
       |> pid_to_shard(pool_size)
       |> pools_for_shard(pubsub_server)
 
-    :ok = GenServer.call(local, {:subscribe, pid, opts})
+    :ok = GenServer.call(local, {:monitor, pid, opts})
     true = :ets.insert(gc, {pid, topic})
     true = :ets.insert(local, {topic, {pid, opts[:fastlane]}})
 
@@ -63,14 +63,18 @@ defmodule Phoenix.PubSub.Local do
 
   """
   def unsubscribe(pubsub_server, pool_size, pid, topic) when is_atom(pubsub_server) do
-    {local, _gc} =
+    {local, gc} =
       pid
       |> pid_to_shard(pool_size)
       |> pools_for_shard(pubsub_server)
 
-    :ok = GenServer.call(local, {:unsubscribe, pid, topic})
+    true = :ets.match_delete(gc, {pid, topic})
     true = :ets.match_delete(local, {topic, {pid, :_}})
-    :ok
+
+    case :ets.select_count(gc, [{{pid, :_}, [], [true]}]) do
+      0 -> :ok = GenServer.call(local, {:demonitor, pid})
+      _ -> :ok
+    end
   end
 
   @doc """
@@ -192,17 +196,13 @@ defmodule Phoenix.PubSub.Local do
     {:ok, %{monitors: %{}, gc: gc}}
   end
 
-  def handle_call({:subscribe, pid, opts}, _from, state) do
+  def handle_call({:monitor, pid, opts}, _from, state) do
     if opts[:link], do: Process.link(pid)
     {:reply, :ok, put_new_monitor(state, pid)}
   end
 
-  def handle_call({:unsubscribe, pid, topic}, _from, %{gc: gc} = state) do
-    :ets.match_delete(gc, {pid, topic})
-    case :ets.select_count(gc, [{{pid, :_}, [], [true]}]) do
-      0 -> {:reply, :ok, drop_monitor(state, pid)}
-      _ -> {:reply, :ok, state}
-    end
+  def handle_call({:demonitor, pid}, _from, state) do
+    {:reply, :ok, drop_monitor(state, pid)}
   end
 
   def handle_call({:subscription, pid}, _from, state) do

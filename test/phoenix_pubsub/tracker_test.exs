@@ -10,11 +10,11 @@ defmodule Phoenix.TrackerTest do
   setup config do
     tracker = config.test
     {:ok, _pid} = start_tracker(name: tracker)
-    {:ok, topic: config.test, tracker: tracker}
+    {:ok, topic: to_string(config.test), tracker: tracker}
   end
 
   test "heartbeats", %{tracker: tracker} do
-    subscribe_to_tracker(self(), tracker)
+    subscribe_to_tracker(tracker)
     assert_heartbeat from: @master
     flush()
     assert_heartbeat from: @master
@@ -26,7 +26,7 @@ defmodule Phoenix.TrackerTest do
     %{tracker: tracker, topic: topic} do
 
     assert Tracker.list(tracker, topic) == []
-    subscribe_to_tracker(self(), tracker)
+    subscribe_to_tracker(tracker)
     drop_gossips(Process.whereis(tracker), tracker)
     spy_on_tracker(@slave1, self(), tracker)
     start_tracker(@slave1, name: tracker)
@@ -46,8 +46,8 @@ defmodule Phoenix.TrackerTest do
   test "requests for transfer collapses clocks",
     %{tracker: tracker, topic: topic} do
 
-    subscribe_to_tracker(self(), tracker)
-    subscribe(self(), topic)
+    subscribe_to_tracker(tracker)
+    subscribe(topic)
     for slave <- [@slave1, @slave2] do
       spy_on_tracker(slave, self(), tracker)
       start_tracker(slave, name: tracker)
@@ -90,8 +90,8 @@ defmodule Phoenix.TrackerTest do
   test "tempdowns with nodeups of new vsn, and permdowns",
     %{tracker: tracker, topic: topic} do
 
-    subscribe_to_tracker(self(), tracker)
-    subscribe(self(), topic)
+    subscribe_to_tracker(tracker)
+    subscribe(topic)
 
     {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     {_slave2_node, {:ok, _slave2_tracker}} = start_tracker(@slave2, name: tracker)
@@ -151,7 +151,7 @@ defmodule Phoenix.TrackerTest do
     remote_pres = spawn_pid()
 
     # local joins
-    subscribe(self(), topic)
+    subscribe(topic)
     assert Tracker.list(tracker, topic) == []
     {:ok, _ref} = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
     assert_join ^topic, "me", %{name: "me"}
@@ -191,7 +191,7 @@ defmodule Phoenix.TrackerTest do
     %{tracker: tracker, topic: topic} do
 
     local_presence = spawn_pid()
-    subscribe(self(), topic)
+    subscribe(topic)
     {node_pid, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     assert Tracker.list(tracker, topic) == []
 
@@ -250,7 +250,7 @@ defmodule Phoenix.TrackerTest do
   test "updating presence sends join/leave and phx_ref_prev",
     %{tracker: tracker, topic: topic} do
 
-    subscribe(self(), topic)
+    subscribe(topic)
     {:ok, _ref} = Tracker.track(tracker, self(), topic, "u1", %{name: "u1"})
     assert [{"u1", %{name: "u1", phx_ref: ref}}] = Tracker.list(tracker, topic)
     {:ok, _ref} = Tracker.update(tracker, self(), topic, "u1", %{name: "u1-updated"})
