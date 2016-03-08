@@ -142,11 +142,12 @@ defmodule Phoenix.PubSub do
     when is_atom(server) and is_pid(pid) and is_binary(topic) do
     subscribe(server, pid, topic, [])
   end
+  @spec subscribe(atom, binary, Keyword.t) :: :ok | {:error, term}
   def subscribe(server, topic, opts)
     when is_atom(server) and is_binary(topic) and is_list(opts) do
     call(server, :subscribe, [self(), topic, opts])
   end
-  @spec subscribe(atom, binary, Keyword.t) :: :ok | {:error, term}
+  @spec subscribe(atom, binary) :: :ok | {:error, term}
   def subscribe(server, topic) when is_atom(server) and is_binary(topic) do
     subscribe(server, topic, [])
   end
