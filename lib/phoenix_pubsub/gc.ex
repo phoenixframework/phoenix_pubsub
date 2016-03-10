@@ -33,25 +33,12 @@ defmodule Phoenix.PubSub.GC do
     GenServer.cast(gc_server, {:down, pid})
   end
 
-  @doc """
-  Removes subscriber's subscription for topic
-  """
-  def unsubscribe(pid, topic, topics_table, pids_table) do
-    true = :ets.match_delete(topics_table, {topic, {pid, :_}})
-    true = :ets.delete_object(pids_table, {pid, topic})
-    :ok
-  end
-
   def init({server_name, local_name}) do
     {:ok, %{topics: local_name, pids: server_name}}
   end
 
   def handle_call({:subscription, pid}, _from, state) do
-    try do
-      {:reply, :ets.lookup_element(state.pids, pid, 2), state}
-    catch
-      :error, :badarg -> {:reply, [], state}
-    end
+    {:reply, subscription(state.pids, pid), state}
   end
 
   def handle_cast({:down, pid}, state) do
@@ -66,5 +53,13 @@ defmodule Phoenix.PubSub.GC do
     end
 
     {:noreply, state}
+  end
+
+  defp subscription(pids_table, pid) do
+    try do
+      :ets.lookup_element(pids_table, pid, 2)
+    catch
+      :error, :badarg -> []
+    end
   end
 end

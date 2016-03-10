@@ -43,12 +43,12 @@ defmodule Phoenix.PubSub.NodeCase do
     end
   end
 
-  def subscribe(pid, topic) do
-    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, topic)
+  def subscribe(topic) do
+    :ok = Phoenix.PubSub.subscribe(@pubsub, topic)
   end
 
-  def subscribe_to_tracker(pid, tracker) do
-    :ok = Phoenix.PubSub.subscribe(@pubsub, pid, namespaced_topic(tracker))
+  def subscribe_to_tracker(tracker) do
+    :ok = Phoenix.PubSub.subscribe(@pubsub, namespaced_topic(tracker))
   end
 
   defp namespaced_topic(tracker), do: "phx_presence:#{tracker}"
@@ -93,7 +93,7 @@ defmodule Phoenix.PubSub.NodeCase do
 
   def spy_on_pubsub(node_name, server \\ @pubsub, target_pid, topic) do
     call_node(node_name, fn ->
-      Phoenix.PubSub.subscribe(server, self(), topic)
+      Phoenix.PubSub.subscribe(server, topic)
       loop = fn next ->
         receive do
           msg -> send target_pid, {node_name, msg}

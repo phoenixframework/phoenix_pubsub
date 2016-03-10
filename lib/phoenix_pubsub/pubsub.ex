@@ -110,10 +110,9 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Subscribes the pid to the PubSub adapter's topic.
+  Subscribes the caller to the PubSub adapter's topic.
 
     * `server` - The Pid registered name of the server
-    * `pid` - The subscriber pid to receive pubsub messages
     * `topic` - The topic to subscribe to, ie: `"users:123"`
     * `opts` - The optional list of options. See below.
 
@@ -135,19 +134,44 @@ defmodule Phoenix.PubSub do
       a `Phoenix.Socket.Broadcast` structs and returns a fastlaned format
       for the handler. For example:
 
-          PubSub.subscribe(MyApp.PubSub, self(), "topic1",
+          PubSub.subscribe(MyApp.PubSub, "topic1",
             fastlane: {fast_pid, Phoenix.Transports.WebSocketSerializer, ["event1"]})
   """
   @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
-  def subscribe(server, pid, topic, opts \\ []) when is_atom(server),
-    do: call(server, :subscribe, [pid, topic, opts])
+  def subscribe(server, pid, topic)
+    when is_atom(server) and is_pid(pid) and is_binary(topic) do
+    subscribe(server, pid, topic, [])
+  end
+  @spec subscribe(atom, binary, Keyword.t) :: :ok | {:error, term}
+  def subscribe(server, topic, opts)
+    when is_atom(server) and is_binary(topic) and is_list(opts) do
+    call(server, :subscribe, [self(), topic, opts])
+  end
+  @spec subscribe(atom, binary) :: :ok | {:error, term}
+  def subscribe(server, topic) when is_atom(server) and is_binary(topic) do
+    subscribe(server, topic, [])
+  end
+  @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
+  def subscribe(server, pid, topic, opts) do
+    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.subscribe is deprecated. " <>
+                      "Only the calling process may subscribe to topics"
+    call(server, :subscribe, [pid, topic, opts])
+  end
 
   @doc """
-  Unsubscribes the pid from the PubSub adapter's topic.
+  Unsubscribes the caller from the PubSub adapter's topic.
   """
   @spec unsubscribe(atom, pid, binary) :: :ok | {:error, term}
-  def unsubscribe(server, pid, topic) when is_atom(server),
-    do: call(server, :unsubscribe, [pid, topic])
+  def unsubscribe(server, pid, topic) when is_atom(server) do
+    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
+                      "Only the calling process may unsubscribe from topics"
+    call(server, :unsubscribe, [pid, topic])
+  end
+
+  @spec unsubscribe(atom, binary) :: :ok | {:error, term}
+  def unsubscribe(server, topic) when is_atom(server) do
+    call(server, :unsubscribe, [self(), topic])
+  end
 
   @doc """
   Broadcasts message on given topic.
