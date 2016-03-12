@@ -23,7 +23,7 @@ defmodule Phoenix.PubSub.PG2Test do
     test "pool #{size}: direct_broadcast targets a specific node", config do
       spy_on_pubsub(@slave1, config.pubsub, self(), "some:topic")
 
-      PubSub.subscribe(config.pubsub, self, "some:topic")
+      PubSub.subscribe(config.pubsub, "some:topic")
       :ok = PubSub.direct_broadcast(@slave1, config.pubsub, "some:topic", :ping)
       assert_receive {@slave1, :ping}
       :ok = PubSub.direct_broadcast!(@slave1, config.pubsub, "some:topic", :ping)
@@ -40,7 +40,7 @@ defmodule Phoenix.PubSub.PG2Test do
     test "pool #{size}: direct_broadcast_from targets a specific node", config do
       spy_on_pubsub(@slave1, config.pubsub, self(), "some:topic")
 
-      PubSub.subscribe(config.pubsub, self, "some:topic")
+      PubSub.subscribe(config.pubsub, "some:topic")
       :ok = PubSub.direct_broadcast_from(@slave1, config.pubsub, self(), "some:topic", :ping)
       assert_receive {@slave1, :ping}
       :ok = PubSub.direct_broadcast_from!(@slave1, config.pubsub, self(), "some:topic", :ping)
