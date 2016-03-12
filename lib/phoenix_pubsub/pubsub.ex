@@ -283,7 +283,9 @@ defmodule Phoenix.PubSub do
     call(server, :node_name, [])
   end
 
-  defp call(server, kind, args) do
+  @doc false
+  # Non-private for test mocking
+  def call(server, kind, args) do
     [{^kind, module, head}] = :ets.lookup(server, kind)
     apply(module, kind, head ++ args)
   end

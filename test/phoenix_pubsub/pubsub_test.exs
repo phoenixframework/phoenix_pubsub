@@ -1,5 +1,6 @@
 defmodule Phoenix.PubSub.PubSubTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false # Bad idea to use async with CaptureIO
+  import ExUnit.CaptureIO
 
   alias Phoenix.PubSub
   @pool_size 1
@@ -107,12 +108,11 @@ defmodule Phoenix.PubSub.PubSubTest do
   end
 
   test "fastlaning skips subscriber and sends directly to fastlane pid" do
-    some_subscriber = spawn_link fn -> :timer.sleep(:infinity) end
     fastlane_pid = spawn_link fn -> :timer.sleep(:infinity) end
 
-    PubSub.subscribe(__MODULE__, some_subscriber, "topic1",
+    PubSub.subscribe(__MODULE__, "topic1",
                      fastlane: {fastlane_pid, Serializer, ["intercepted"]})
-    PubSub.subscribe(__MODULE__, self(), "topic1",
+    PubSub.subscribe(__MODULE__,  "topic1",
                      fastlane: {fastlane_pid, Serializer, ["intercepted"]})
 
     PubSub.broadcast(__MODULE__, "topic1", %Broadcast{event: "fastlaned", topic: "topic1", payload: %{}})
@@ -129,5 +129,17 @@ defmodule Phoenix.PubSub.PubSubTest do
     assert_receive %Broadcast{event: "intercepted", topic: "topic1", payload: %{}}
     assert Process.info(fastlane_pid)[:messages]
            == [fastlaned, fastlaned] # no additional messages received
+  end
+
+  test "deprecation warnings" do
+    rando_pid = spawn_link fn -> :timer.sleep(:infinity) end
+    expected_warning = ~r/warning.*pid.*subscribe.*deprecated/i
+
+    assert Regex.match?(expected_warning,
+             capture_io(:stderr, fn -> PubSub.subscribe(__MODULE__, rando_pid, "topic1") end)),
+             "Subscribe with PID emits deprecation warning."
+    assert Regex.match?(expected_warning,
+             capture_io(:stderr, fn -> PubSub.unsubscribe(__MODULE__, rando_pid, "topic1") end)),
+             "Unsubscribe with PID emits deprecation warning."
   end
 end

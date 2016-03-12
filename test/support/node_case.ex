@@ -58,11 +58,13 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def drop_gossips(pid, tracker) do
-    Phoenix.PubSub.unsubscribe(@pubsub, pid, namespaced_topic(tracker))
+    # Phoenix.PubSub.unsubscribe but able to unsub other PIDs
+    Phoenix.PubSub.call(@pubsub, :unsubscribe, [pid, namespaced_topic(tracker)])
   end
 
   def resume_gossips(pid, tracker) do
-    Phoenix.PubSub.subscribe(@pubsub, pid, namespaced_topic(tracker), link: true)
+    # Phoenix.PubSub.subscribe but able to sub other PIDs
+    Phoenix.PubSub.call(@pubsub, :subscribe, [pid, namespaced_topic(tracker), [link: true]])
   end
 
   def start_tracker(opts) do
