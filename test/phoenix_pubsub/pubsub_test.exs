@@ -107,12 +107,17 @@ defmodule Phoenix.PubSub.PubSubTest do
   end
 
   test "fastlaning skips subscriber and sends directly to fastlane pid" do
-    some_subscriber = spawn_link fn -> :timer.sleep(:infinity) end
     fastlane_pid = spawn_link fn -> :timer.sleep(:infinity) end
+    parent = self()
+    _some_subscriber = spawn_link fn ->
+      PubSub.subscribe(__MODULE__, "topic1",
+                       fastlane: {fastlane_pid, Serializer, ["intercepted"]})
+      send(parent, :resume)
+      :timer.sleep(:infinity)
+    end
+    receive do: (:resume -> :ok)
 
-    PubSub.subscribe(__MODULE__, some_subscriber, "topic1",
-                     fastlane: {fastlane_pid, Serializer, ["intercepted"]})
-    PubSub.subscribe(__MODULE__, self(), "topic1",
+    PubSub.subscribe(__MODULE__, "topic1",
                      fastlane: {fastlane_pid, Serializer, ["intercepted"]})
 
     PubSub.broadcast(__MODULE__, "topic1", %Broadcast{event: "fastlaned", topic: "topic1", payload: %{}})

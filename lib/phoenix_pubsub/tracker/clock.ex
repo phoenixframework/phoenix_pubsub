@@ -10,7 +10,7 @@ defmodule Phoenix.Tracker.Clock do
   end
 
   @spec append_clock([nodeclock], nodeclock) :: [nodeclock]
-  def append_clock(clockset, {_, clock}) when map_size(clock)==0, do: clockset
+  def append_clock(clockset, {_, clock}) when map_size(clock) == 0, do: clockset
   def append_clock(clockset, {node, clock}) do
     big_clock = combine_clocks(clockset)
     cond do

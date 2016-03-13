@@ -187,7 +187,7 @@ defmodule Phoenix.Tracker do
     server_name
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
-    |> Enum.map(fn {_conn, key, meta} -> {key, meta} end)
+    |> Enum.map(fn {_conn, {{_topic, key, meta}, _}} -> {key, meta} end)
   end
 
   ## Server
@@ -214,7 +214,7 @@ defmodule Phoenix.Tracker do
 
     case tracker.init(tracker_opts) do
       {:ok, tracker_state} ->
-        Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
+        subscribe(pubsub_server, namespaced_topic)
         send_stuttered_heartbeat(self(), broadcast_period)
 
         {:ok, %{server_name: server_name,
@@ -251,6 +251,10 @@ defmodule Phoenix.Tracker do
                |> schedule_next_heartbeat()}
   end
 
+  def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, %{ignoring?: true} = state) do
+    IO.puts ">> ignoring"
+    {:noreply, state}
+  end
   def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
     {presences, joined, left} = State.merge(state.presences, delta)
 
@@ -264,7 +268,7 @@ defmodule Phoenix.Tracker do
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
     # TODO use compuated delta range for clocks, don't see entire CRDT unless neccessary
     log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect name}" end
-    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), state.presences}
+    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), State.extract(state.presences)}
     direct_broadcast(state, name, msg)
 
     {:noreply, state}
@@ -290,7 +294,7 @@ defmodule Phoenix.Tracker do
 
   def handle_call({:untrack, pid, topic, key}, _from, state) do
     new_state = drop_presence(state, pid, topic, key)
-    if State.get_by_conn(new_state.presences, pid) == [] do
+    if State.get_by_pid(new_state.presences, pid) == [] do
       Process.unlink(pid)
     end
     {:reply, :ok, new_state}
@@ -302,10 +306,10 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_call({:update, pid, topic, key, new_meta}, _from, state) do
-    case State.get_by_conn(state.presences, pid, topic, key) do
+    case State.get_by_pid(state.presences, pid, topic, key) do
       nil ->
         {:reply, {:error, :nopresence}, state}
-      {{_node, _}, {_pid, _topic, ^key, prev_meta}} ->
+      {_pid, {{_topic, ^key, prev_meta}, {_node, _}}} ->
         {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
         {:reply, {:ok, ref}, state}
     end
@@ -319,9 +323,24 @@ defmodule Phoenix.Tracker do
     {:reply, state.vnodes, state}
   end
 
+  def handle_call(:unsubscribe, _from, state) do
+    # Phoenix.PubSub.unsubscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, Map.put(state, :ignoring?, true)}
+  end
+
+  def handle_call(:resubscribe, _from, state) do
+    IO.inspect(state.vnodes)
+    # subscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, Map.delete(state, :ignoring?)}
+  end
+
+  defp subscribe(pubsub_server, namespaced_topic) do
+    Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
+  end
+
   defp put_update(state, pid, topic, key, meta, %{phx_ref: ref} = prev_meta) do
     state
-    |> Map.put(:presences, State.part(state.presences, pid, topic, key))
+    |> Map.put(:presences, State.leave(state.presences, pid, topic, key))
     |> put_presence(pid, topic, key, Map.put(meta, :phx_ref_prev, ref), prev_meta)
   end
   defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
@@ -337,20 +356,20 @@ defmodule Phoenix.Tracker do
   end
 
   defp drop_presence(state, conn, topic, key) do
-    if leave = State.get_by_conn(state.presences, conn, topic, key) do
+    if leave = State.get_by_pid(state.presences, conn, topic, key) do
       state
       |> report_diff([], [leave])
-      |> Map.put(:presences, State.part(state.presences, conn, topic, key))
+      |> Map.put(:presences, State.leave(state.presences, conn, topic, key))
     else
       state
     end
   end
   defp drop_presence(state, conn) do
-    leaves = State.get_by_conn(state.presences, conn)
+    leaves = State.get_by_pid(state.presences, conn)
 
     state
     |> report_diff([], leaves)
-    |> Map.put(:presences, State.part(state.presences, conn))
+    |> Map.put(:presences, State.leave(state.presences, conn))
   end
 
   defp handle_heartbeat(state, {name, vsn}) do
@@ -412,7 +431,7 @@ defmodule Phoenix.Tracker do
     state
   end
 
-  defp clock(state), do: State.clock(state.presences)
+  defp clock(state), do: State.clocks(state.presences)
 
   defp clockset_to_sync(state) do
     state.pending_clockset
@@ -463,13 +482,15 @@ defmodule Phoenix.Tracker do
   end
 
   defp broadcast_delta_heartbeat(state) do
-    {presences, delta} = State.delta_reset(state.presences)
-    has_delta? = Enum.any?(delta.cloud)
+    # {presences, delta} = State.delta_reset(state.presences)
+    delta = State.extract(state.presences)
+    new_presences = state.presences
+    has_delta? = true # Enum.any?(delta.cloud)
 
     cond do
       has_delta? or state.silent_periods >= state.max_silent_periods ->
         broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
-        %{state | presences: presences, silent_periods: 0}
+        %{state | presences: new_presences, silent_periods: 0}
       true ->
         update_in(state.silent_periods, &(&1 + 1))
     end
@@ -477,12 +498,12 @@ defmodule Phoenix.Tracker do
 
   defp report_diff(state, [], []), do: state
   defp report_diff(state, joined, left) do
-    join_diff = Enum.reduce(joined, %{}, fn {_node, {_conn, topic, key, meta}}, acc ->
+    join_diff = Enum.reduce(joined, %{}, fn {_conn, {{topic, key, meta}, _}}, acc ->
       Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->
         {[{key, meta} | joins], leaves}
       end)
     end)
-    full_diff = Enum.reduce(left, join_diff, fn {_node, {_conn, topic, key, meta}}, acc ->
+    full_diff = Enum.reduce(left, join_diff, fn {_conn, {{topic, key, meta}, _}}, acc ->
       Map.update(acc, topic, {[], [{key, meta}]}, fn {joins, leaves} ->
         {joins, [{key, meta} | leaves]}
       end)

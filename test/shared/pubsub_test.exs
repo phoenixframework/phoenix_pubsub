@@ -105,8 +105,8 @@ defmodule Phoenix.PubSubTest do
       non_linked_pid2 = spawn_pid()
 
       assert rpc(pid, fn -> PubSub.subscribe(config.test, config.topic, link: true) end)
-      assert rpc(non_linked_pid1, fn -> PubSub.subscribe(config.test, non_linked_pid1, config.topic) end)
-      assert rpc(non_linked_pid2, fn -> PubSub.subscribe(config.test, non_linked_pid2, config.topic, link: false) end)
+      assert rpc(non_linked_pid1, fn -> PubSub.subscribe(config.test, config.topic) end)
+      assert rpc(non_linked_pid2, fn -> PubSub.subscribe(config.test, config.topic, link: false) end)
 
       each_shard(config, fn shard ->
         kill_and_wait(Process.whereis(Local.local_name(config.pubsub, shard)))
