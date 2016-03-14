@@ -38,7 +38,7 @@ defmodule Phoenix.PubSub.Local do
   def subscribe(pubsub_server, pool_size, pid, topic, opts \\ []) when is_atom(pubsub_server) do
     {local, gc} =
       pid
-      |> pid_to_shard(pool_size)
+      |> :erlang.phash2(pool_size)
       |> pools_for_shard(pubsub_server)
 
     :ok = GenServer.call(local, {:monitor, pid, opts})
@@ -65,7 +65,7 @@ defmodule Phoenix.PubSub.Local do
   def unsubscribe(pubsub_server, pool_size, pid, topic) when is_atom(pubsub_server) do
     {local, gc} =
       pid
-      |> pid_to_shard(pool_size)
+      |> :erlang.phash2(pool_size)
       |> pools_for_shard(pubsub_server)
 
     true = :ets.match_delete(gc, {pid, topic})
@@ -170,7 +170,7 @@ defmodule Phoenix.PubSub.Local do
   def subscription(pubsub_server, pool_size, pid) when is_atom(pubsub_server) do
     {local, _gc} =
       pid
-      |> pid_to_shard(pool_size)
+      |> :erlang.phash2(pool_size)
       |> pools_for_shard(pubsub_server)
 
     GenServer.call(local, {:subscription, pid})
@@ -227,19 +227,6 @@ defmodule Phoenix.PubSub.Local do
   defp pools_for_shard(shard, pubsub_server) do
     [{^shard, {_, _} = servers}] = :ets.lookup(pubsub_server, shard)
     servers
-  end
-
-  defp pid_to_shard(pid, shard_size) do
-    pid
-    |> pid_id()
-    |> rem(shard_size)
-  end
-  defp pid_id(pid) do
-    binary = :erlang.term_to_binary(pid)
-    prefix = (byte_size(binary) - 9) * 8
-    <<_::size(prefix), id::size(32), _::size(40)>> = binary
-
-    id
   end
 
   defp put_new_monitor(%{monitors: monitors} = state, pid) do
