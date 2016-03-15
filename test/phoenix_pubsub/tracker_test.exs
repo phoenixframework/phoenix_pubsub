@@ -295,9 +295,9 @@ defmodule Phoenix.TrackerTest do
   def assert_heartbeat(opts) do
     from = Keyword.fetch!(opts, :from)
     if to = opts[:to] do
-      assert_receive {^to, {:pub, :heartbeat, {^from, _vsn}, {%State{}, _}, _clocks}}, @timeout
+      assert_receive {^to, {:pub, :heartbeat, {^from, _vsn}, _delta, _clocks}}, @timeout
     else
-      assert_receive {:pub, :heartbeat, {^from, _vsn}, {%State{}, _}, _clocks}, @timeout
+      assert_receive {:pub, :heartbeat, {^from, _vsn}, _delta, _clocks}, @timeout
     end
   end
 end

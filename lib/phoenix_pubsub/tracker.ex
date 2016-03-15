@@ -251,9 +251,10 @@ defmodule Phoenix.Tracker do
                |> schedule_next_heartbeat()}
   end
 
-  def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, %{ignoring?: true} = state) do
-    IO.puts ">> ignoring"
-    {:noreply, state}
+  def handle_info({:pub, :heartbeat, {name, vsn}, :empty, clocks}, state) do
+    {:noreply, state
+               |> put_pending_clock(clocks)
+               |> handle_heartbeat({name, vsn})}
   end
   def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
     {presences, joined, left} = State.merge(state.presences, delta)
@@ -266,12 +267,13 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
+    {presences, extracted} = State.extract(state.presences)
     # TODO use compuated delta range for clocks, don't see entire CRDT unless neccessary
     log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect name}" end
-    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), State.extract(state.presences)}
+    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), {presences, extracted}}
     direct_broadcast(state, name, msg)
 
-    {:noreply, state}
+    {:noreply, %{state | presences: presences}}
   end
 
   def handle_info({:pub, :transfer_ack, _ref, {name, _vsn}, remote_presences}, state) do
@@ -324,14 +326,13 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_call(:unsubscribe, _from, state) do
-    # Phoenix.PubSub.unsubscribe(state.pubsub_server, state.namespaced_topic)
-    {:reply, :ok, Map.put(state, :ignoring?, true)}
+    Phoenix.PubSub.unsubscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, state}
   end
 
   def handle_call(:resubscribe, _from, state) do
-    IO.inspect(state.vnodes)
-    # subscribe(state.pubsub_server, state.namespaced_topic)
-    {:reply, :ok, Map.delete(state, :ignoring?)}
+    subscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, state}
   end
 
   defp subscribe(pubsub_server, namespaced_topic) do
@@ -481,18 +482,18 @@ defmodule Phoenix.Tracker do
     Phoenix.PubSub.direct_broadcast!(target_node, state.pubsub_server, state.namespaced_topic, msg)
   end
 
-  defp broadcast_delta_heartbeat(state) do
-    # {presences, delta} = State.delta_reset(state.presences)
-    delta = State.extract(state.presences)
-    new_presences = state.presences
-    has_delta? = true # Enum.any?(delta.cloud)
-
+  defp broadcast_delta_heartbeat(%{presences: presences} = state) do
     cond do
-      has_delta? or state.silent_periods >= state.max_silent_periods ->
-        broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
-        %{state | presences: new_presences, silent_periods: 0}
-      true ->
-        update_in(state.silent_periods, &(&1 + 1))
+      State.has_delta?(presences) ->
+        delta = State.extract_delta(presences)
+        broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), State.extract(presences), clock(state)})
+        %{state | presences: State.reset_delta(presences), silent_periods: 0}
+
+      state.silent_periods >= state.max_silent_periods ->
+        broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), :empty, clock(state)})
+        %{state | silent_periods: 0}
+
+      true -> update_in(state.silent_periods, &(&1 + 1))
     end
   end
 
