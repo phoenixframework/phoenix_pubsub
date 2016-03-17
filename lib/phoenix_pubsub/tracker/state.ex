@@ -116,7 +116,10 @@ defmodule Phoenix.Tracker.State do
   Used when merging two sets.
   """
   def extract(%State{tab: tab} = state) do
-    {state, :ets.tab2list(tab)}
+    map = foldl(tab, %{}, fn {{pid, topic}, {{key, meta}, id}}, acc ->
+      Map.put(acc, id, {pid, topic, key, meta})
+    end)
+    {state, map}
   end
 
   @doc """
@@ -125,11 +128,7 @@ defmodule Phoenix.Tracker.State do
   Used when merging a delta into another set.
   """
   def extract_delta(%State{delta: delta}) do
-    normalized_list = for {id, {pid, topic, key, meta}} <- delta.tab do
-      {{pid, topic}, {{key, meta}, id}}
-    end
-
-    {delta, normalized_list}
+    {delta, delta.tab}
   end
 
   @doc """
@@ -144,43 +143,37 @@ defmodule Phoenix.Tracker.State do
 
       {%Phoenix.Tracker.State{}, [...], [...]}
   """
-  def merge(%State{cloud: cloud_before} = local, {%State{} = remote, remote_list}) do
-    {cloud, tstones, joins, add_cloud} =
-      remote_list
-      |> Enum.reduce({cloud_before, remote.cloud, [], MapSet.new()}, fn {_, {_, id}} = el, acc ->
-        {cloud, tombstone_cloud, adds, add_cloud} = acc
-        tstones = MapSet.delete(tombstone_cloud, id)
-
-        if in?(local, id) do
-          {cloud, tstones, adds, MapSet.put(add_cloud, id)}
-        else
-          {MapSet.put(cloud, id), tstones, [el | adds], MapSet.put(add_cloud, id)}
-        end
-      end)
-
-    {unioned_cloud, new_delta, tombstone_cloud, adds, removes} =
-      local.tab
-      |> foldl({cloud, local.delta, tstones, joins, []}, fn {_, {_, id}} = el, acc ->
-        {cloud, delta, tstones, adds, removes} = acc
-        tstones = MapSet.delete(tstones, id)
-
-        if in?(remote, id) and not MapSet.member?(add_cloud, id) do
-          cloud = MapSet.delete(cloud, id)
-          delta = remove_from_delta(delta, id)
-
-          {cloud, delta, tstones, adds, [el | removes]}
-        else
-          {cloud, delta, tstones, [el | adds], removes}
-        end
-      end)
-
-    final_cloud = MapSet.union(unioned_cloud, tombstone_cloud)
+  def merge(%State{} = local, {%State{} = remote, remote_map}) do
+    union_task = Task.async(fn -> MapSet.union(local.cloud, remote.cloud) end)
+    joins = accumulate_joins(local, remote_map)
+    {cloud, delta, adds, leaves} = observe_removes(local, remote, remote_map, joins, union_task)
     true = :ets.delete_all_objects(local.tab)
     true = :ets.insert(local.tab, adds)
-    new_ctx = Map.merge(local.context, remote.context, fn _, a, b -> max(a, b) end)
-    new_state = compact(%State{local | context: new_ctx, cloud: final_cloud, delta: new_delta})
+    ctx = Map.merge(local.context, remote.context, fn _, a, b -> max(a, b) end)
+    new_state = compact(%State{local | context: ctx, cloud: cloud, delta: delta})
 
-    {new_state, joins, removes}
+    {new_state, joins, leaves}
+  end
+  defp accumulate_joins(local, remote_map) do
+    Enum.reduce(remote_map, [], fn {id, {pid, topic, key, meta}}, adds ->
+      if in?(local, id) do
+        adds
+      else
+        [{{pid, topic}, {{key, meta}, id}} | adds]
+      end
+    end)
+  end
+  defp observe_removes(local, remote, remote_map, joins, union_task) do
+    unioned_cloud = Task.await(union_task, :infinity)
+    init = {unioned_cloud, local.delta, joins, []}
+
+    foldl(local.tab, init, fn {_, {_, id}} = el, {cloud, delta, adds, leaves} ->
+      if in?(remote, id) and not Map.has_key?(remote_map, id) do
+        {MapSet.delete(cloud, id), remove_delta_id(delta, id), adds, [el | leaves]}
+      else
+        {cloud, delta, [el | adds], leaves}
+      end
+    end)
   end
 
   @doc """
@@ -224,13 +217,13 @@ defmodule Phoenix.Tracker.State do
     true = :ets.match_delete(tab, match_spec)
     {pruned_cloud, new_delta} =
       Enum.reduce(ids, {cloud_before, delta}, fn id, {cloud, delta} ->
-        {MapSet.delete(cloud, id), remove_from_delta(delta, id)}
+        {MapSet.delete(cloud, id), remove_delta_id(delta, id)}
       end)
 
     bump_clock(%State{state | cloud: pruned_cloud, delta: new_delta})
   end
 
-  defp remove_from_delta(%State{mode: :delta, tab: tab, cloud: cloud} = delta, id) do
+  defp remove_delta_id(%State{mode: :delta, tab: tab, cloud: cloud} = delta, id) do
     %State{delta | cloud: MapSet.put(cloud, id), tab: Map.delete(tab, id)}
   end
 

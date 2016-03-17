@@ -22,7 +22,8 @@ defmodule Phoenix.StateTest do
 
   test "that this is set up correctly" do
     a = newp(:a)
-    assert {_a, []} = State.extract(a)
+    assert {_a, map} = State.extract(a)
+    assert map == %{}
   end
 
   test "user added online is online" do

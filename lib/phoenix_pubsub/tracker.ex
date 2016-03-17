@@ -395,10 +395,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
-    # IO.inspect {:clocks, clock(state)}
-    # IO.inspect {:pending, state.pending_clockset}
     needs_synced = clockset_to_sync(state)
-    # IO.inspect {:needs_synced, needs_synced}
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
     %{state | pending_clockset: [], current_sample_count: state.clock_sample_periods}
@@ -491,7 +488,6 @@ defmodule Phoenix.Tracker do
     cond do
       State.has_delta?(presences) ->
         delta = State.extract_delta(presences)
-        # IO.inspect {:broadcast_delta, :delta}
         broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
         %{state | presences: State.reset_delta(presences), silent_periods: 0}
 
