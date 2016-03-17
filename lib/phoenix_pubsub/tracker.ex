@@ -200,6 +200,7 @@ defmodule Phoenix.Tracker do
   def init([tracker, tracker_opts, opts]) do
     Process.flag(:trap_exit, true)
     :random.seed(:os.timestamp())
+    # TODO add invariants for configuration periods
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
     broadcast_period     = opts[:broadcast_period] || 1500
@@ -436,6 +437,7 @@ defmodule Phoenix.Tracker do
 
   defp clock(state), do: State.clocks(state.presences)
 
+  @spec clockset_to_sync(%{pending_clockset: [State.replica_context]}) :: [State.replica_name]
   defp clockset_to_sync(state) do
     state.pending_clockset
     |> Clock.append_clock(clock(state))
