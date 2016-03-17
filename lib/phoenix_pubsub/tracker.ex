@@ -261,14 +261,14 @@ defmodule Phoenix.Tracker do
 
     {:noreply, state
                |> report_diff(joined, left)
-               |> Map.put(:presences, presences)
+               |> put_presences(presences)
                |> put_pending_clock(clocks)
                |> handle_heartbeat({name, vsn})}
   end
 
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
     {presences, extracted} = State.extract(state.presences)
-    # TODO use compuated delta range for clocks, don't see entire CRDT unless neccessary
+    # TODO use computed delta range for clocks, don't send entire CRDT unless neccessary
     log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect name}" end
     msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), {presences, extracted}}
     direct_broadcast(state, name, msg)
@@ -282,7 +282,7 @@ defmodule Phoenix.Tracker do
 
     {:noreply, state
                |> report_diff(joined, left)
-               |> Map.put(:presences, presences)}
+               |> put_presences(presences)}
   end
 
   def handle_info({:EXIT, pid, _reason}, state) do
@@ -341,7 +341,7 @@ defmodule Phoenix.Tracker do
 
   defp put_update(state, pid, topic, key, meta, %{phx_ref: ref} = prev_meta) do
     state
-    |> Map.put(:presences, State.leave(state.presences, pid, topic, key))
+    |> put_presences(State.leave(state.presences, pid, topic, key))
     |> put_presence(pid, topic, key, Map.put(meta, :phx_ref_prev, ref), prev_meta)
   end
   defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
@@ -351,16 +351,18 @@ defmodule Phoenix.Tracker do
     new_state =
       state
       |> report_diff_join(topic, key, meta, prev_meta)
-      |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
+      |> put_presences(State.join(state.presences, pid, topic, key, meta))
 
     {new_state, ref}
   end
+
+  defp put_presences(state, %State{} = presences), do: %{state | presences: presences}
 
   defp drop_presence(state, conn, topic, key) do
     if leave = State.get_by_pid(state.presences, conn, topic, key) do
       state
       |> report_diff([], [leave])
-      |> Map.put(:presences, State.leave(state.presences, conn, topic, key))
+      |> put_presences(State.leave(state.presences, conn, topic, key))
     else
       state
     end
@@ -370,7 +372,7 @@ defmodule Phoenix.Tracker do
 
     state
     |> report_diff([], leaves)
-    |> Map.put(:presences, State.leave(state.presences, conn))
+    |> put_presences(State.leave(state.presences, conn))
   end
 
   defp handle_heartbeat(state, {name, vsn}) do
@@ -393,7 +395,10 @@ defmodule Phoenix.Tracker do
   end
 
   defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
+    # IO.inspect {:clocks, clock(state)}
+    # IO.inspect {:pending, state.pending_clockset}
     needs_synced = clockset_to_sync(state)
+    # IO.inspect {:needs_synced, needs_synced}
     for target_node <- needs_synced, do: request_transfer(state, target_node)
 
     %{state | pending_clockset: [], current_sample_count: state.clock_sample_periods}
@@ -451,7 +456,7 @@ defmodule Phoenix.Tracker do
 
     state
     |> report_diff(joined, [])
-    |> Map.put(:presences, presences)
+    |> put_presences(presences)
   end
 
   defp nodedown(state, remote_node) do
@@ -460,7 +465,7 @@ defmodule Phoenix.Tracker do
 
     state
     |> report_diff([], left)
-    |> Map.put(:presences, presences)
+    |> put_presences(presences)
   end
 
   defp permdown(state, remote_node) do
@@ -486,6 +491,7 @@ defmodule Phoenix.Tracker do
     cond do
       State.has_delta?(presences) ->
         delta = State.extract_delta(presences)
+        # IO.inspect {:broadcast_delta, :delta}
         broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
         %{state | presences: State.reset_delta(presences), silent_periods: 0}
 

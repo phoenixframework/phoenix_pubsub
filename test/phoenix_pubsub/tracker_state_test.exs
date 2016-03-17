@@ -52,7 +52,8 @@ defmodule Phoenix.StateTest do
     assert [:alice,:bob] = keys(State.online_list(a))
 
     # Merging twice doesn't dupe events
-    assert {^a,[],[]} = State.merge(a, State.extract(b))
+    assert {newa,[],[]} = State.merge(a, State.extract(b))
+    assert newa == a
 
     assert {b,[{_,{{:alice,_}, _}}],[]} = State.merge(b, State.extract(a))
     assert {^b,[],[]} = State.merge(b, State.extract(a))
@@ -82,11 +83,18 @@ defmodule Phoenix.StateTest do
     b = State.join(b, bob, "lobby", :bob)
 
     assert {b, [{_, {{:alice, _}, _}}], []} = State.merge(b, State.extract_delta(a))
+    assert {{:b, 1}, %{{:a, 1} => 1, {:b, 1} => 1}} = State.clocks(b)
 
     a = State.reset_delta(a)
     a = State.leave(a, alice, "lobby", :alice)
 
-    assert {_, [], [{_, {{:alice, _}, _}}]} = State.merge(b, State.extract_delta(a))
+    assert {b, [], [{_, {{:alice, _}, _}}]} = State.merge(b, State.extract_delta(a))
+    assert {{:b, 1}, %{{:a, 1} => 2, {:b, 1} => 1}} = State.clocks(b)
+
+    a = State.join(a, alice, "lobby", :alice)
+    assert {b, [{_, {{:alice, _}, _}}], []} = State.merge(b, State.extract_delta(a))
+    assert {{:b, 1}, %{{:a, 1} => 3, {:b, 1} => 1}} = State.clocks(b)
+    assert Enum.empty?(b.cloud)
   end
 
   test "basic netsplit" do

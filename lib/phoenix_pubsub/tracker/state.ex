@@ -145,29 +145,40 @@ defmodule Phoenix.Tracker.State do
       {%Phoenix.Tracker.State{}, [...], [...]}
   """
   def merge(%State{cloud: cloud_before} = local, {%State{} = remote, remote_list}) do
-    {new_cloud, joins, add_cloud} =
-      Enum.reduce(remote_list, {cloud_before, [], MapSet.new()}, fn {_, {_, id}} = el, {cloud, adds, add_cloud} ->
+    {cloud, tstones, joins, add_cloud} =
+      remote_list
+      |> Enum.reduce({cloud_before, remote.cloud, [], MapSet.new()}, fn {_, {_, id}} = el, acc ->
+        {cloud, tombstone_cloud, adds, add_cloud} = acc
+        tstones = MapSet.delete(tombstone_cloud, id)
+
         if in?(local, id) do
-          {cloud, adds, MapSet.put(add_cloud, id)}
+          {cloud, tstones, adds, MapSet.put(add_cloud, id)}
         else
-          {MapSet.put(cloud, id), [el | adds], MapSet.put(add_cloud, id)}
+          {MapSet.put(cloud, id), tstones, [el | adds], MapSet.put(add_cloud, id)}
         end
       end)
 
-    {unioned_cloud, adds, removes} =
-      ets_foldl(local.tab, {new_cloud, joins, []}, fn {_, {_, id}} = el, {cloud, adds, removes} ->
+    {unioned_cloud, new_delta, tombstone_cloud, adds, removes} =
+      local.tab
+      |> foldl({cloud, local.delta, tstones, joins, []}, fn {_, {_, id}} = el, acc ->
+        {cloud, delta, tstones, adds, removes} = acc
+        tstones = MapSet.delete(tstones, id)
+
         if in?(remote, id) and not MapSet.member?(add_cloud, id) do
-          {MapSet.delete(cloud, id), adds, [el | removes]}
+          cloud = MapSet.delete(cloud, id)
+          delta = remove_from_delta(delta, id)
+
+          {cloud, delta, tstones, adds, [el | removes]}
         else
-          {cloud, [el | adds], removes}
+          {cloud, delta, tstones, [el | adds], removes}
         end
       end)
 
+    final_cloud = MapSet.union(unioned_cloud, tombstone_cloud)
     true = :ets.delete_all_objects(local.tab)
     true = :ets.insert(local.tab, adds)
     new_ctx = Map.merge(local.context, remote.context, fn _, a, b -> max(a, b) end)
-    new_delta = prune_delta(local.delta, cloud_before, unioned_cloud, adds)
-    new_state = compact(%State{local | context: new_ctx, cloud: unioned_cloud, delta: new_delta})
+    new_state = compact(%State{local | context: new_ctx, cloud: final_cloud, delta: new_delta})
 
     {new_state, joins, removes}
   end
@@ -209,29 +220,22 @@ defmodule Phoenix.Tracker.State do
   end
 
   defp remove(%State{tab: tab, cloud: cloud_before, delta: delta} = state, match_spec) do
-    ids = for {_, {{_, _}, id}} <- :ets.match_object(tab, match_spec), do: id
+    ids = Enum.map(:ets.match_object(tab, match_spec), fn {_, {{_, _}, id}} -> id end)
     true = :ets.match_delete(tab, match_spec)
-    pruned_cloud = Enum.reduce(ids, cloud_before, fn id, acc ->
-      MapSet.delete(acc, id)
-    end)
-    new_delta = prune_delta(delta, cloud_before, pruned_cloud, [])
+    {pruned_cloud, new_delta} =
+      Enum.reduce(ids, {cloud_before, delta}, fn id, {cloud, delta} ->
+        {MapSet.delete(cloud, id), remove_from_delta(delta, id)}
+      end)
 
     bump_clock(%State{state | cloud: pruned_cloud, delta: new_delta})
   end
 
-  defp prune_delta(%State{mode: :delta} = delta, cloud_before, pruned_cloud, adds) do
-    removed_cloud = MapSet.difference(cloud_before, pruned_cloud)
-    new_cloud = MapSet.union(delta.cloud, removed_cloud)
-    pruned_tab = Map.drop(delta.tab, removed_cloud)
-    new_tab = Enum.reduce(adds, pruned_tab, fn {pid_topic, {data, id}}, acc ->
-      Map.put(acc, id, {pid_topic, data})
-    end)
-
-    %State{delta | cloud: new_cloud, tab: new_tab}
+  defp remove_from_delta(%State{mode: :delta, tab: tab, cloud: cloud} = delta, id) do
+    %State{delta | cloud: MapSet.put(cloud, id), tab: Map.delete(tab, id)}
   end
 
   defp compact(%State{context: ctx, cloud: cloud} = state) do
-    {new_ctx, new_cloud} = do_compact(ctx, cloud)
+    {new_ctx, new_cloud} = do_compact(ctx, Enum.sort(cloud))
     %State{state | context: new_ctx, cloud: new_cloud}
   end
   defp do_compact(ctx, cloud) do
@@ -275,7 +279,7 @@ defmodule Phoenix.Tracker.State do
     for {replica, :up} <- nodes, do: replica
   end
 
-  defp ets_foldl(tab, initial, func), do: :ets.foldl(func, initial, tab)
+  defp foldl(tab, initial, func), do: :ets.foldl(func, initial, tab)
 
   defp node_users(%State{tab: tab}, replica) do
     :ets.match_object(tab, {:_, {:_, {replica, :_}}})
