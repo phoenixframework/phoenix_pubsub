@@ -20,8 +20,10 @@ defmodule Phoenix.TrackerClockTest do
     assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock1) |> Enum.sort
     assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock2) |> Enum.sort
     assert [clock1, clock2, clock3] == Clock.append_clock([clock1, clock3], clock2) |> Enum.sort
-    # This is how you get the nodes back you need to request:
-    assert [:b, :c] == Clock.append_clock([clock2, clock3], clock1) |> Clock.clockset_nodes |> Enum.sort
+    assert [:b, :c] == [clock2, clock3]
+                       |> Clock.append_clock(clock1)
+                       |> Clock.clockset_replicas()
+                       |> Enum.sort()
   end
 
 end

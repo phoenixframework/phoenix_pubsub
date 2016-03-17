@@ -1,15 +1,15 @@
 defmodule Phoenix.Tracker.Clock do
 
   @type context :: Phoenix.Tracker.State.ctx_clock
-  @type nodespec :: term
-  @type nodeclock :: {nodespec, context}
+  @type replica_name :: term
+  @type clock :: {replica_name, context}
 
-  @spec clockset_nodes([nodeclock]) :: [nodespec]
-  def clockset_nodes(clockset) do
-    for {node, _} <- clockset, do: node
+  @spec clockset_replicas([clock]) :: [replica_name]
+  def clockset_replicas(clockset) do
+    for {replica, _} <- clockset, do: replica
   end
 
-  @spec append_clock([nodeclock], nodeclock) :: [nodeclock]
+  @spec append_clock([clock], clock) :: [clock]
   def append_clock(clockset, {_, clock}) when map_size(clock) == 0, do: clockset
   def append_clock(clockset, {node, clock}) do
     big_clock = combine_clocks(clockset)

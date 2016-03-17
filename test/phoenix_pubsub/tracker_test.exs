@@ -1,7 +1,7 @@
 defmodule Phoenix.TrackerTest do
   use Phoenix.PubSub.NodeCase
   alias Phoenix.Tracker
-  alias Phoenix.Tracker.{VNode, State}
+  alias Phoenix.Tracker.{Replica, State}
 
   @master :"master@127.0.0.1"
   @slave1 :"slave1@127.0.0.1"
@@ -100,49 +100,49 @@ defmodule Phoenix.TrackerTest do
       track_presence(slave, tracker, spawn_pid(), topic, slave, %{})
       assert_join ^topic, ^slave, %{}
     end
-    assert_map %{@slave1 => %VNode{status: :up, vsn: vsn_before},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :up, vsn: vsn_before},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
 
     # tempdown netsplit
     flush()
     :ok = :sys.suspend(slave1_tracker)
     assert_leave ^topic, @slave1, %{}
-    assert_map %{@slave1 => %VNode{status: :down, vsn: ^vsn_before},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :down, vsn: ^vsn_before},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
     flush()
     :ok = :sys.resume(slave1_tracker)
     assert_join ^topic, @slave1, %{}
     assert_heartbeat from: @slave1
-    assert_map %{@slave1 => %VNode{status: :up, vsn: ^vsn_before},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :up, vsn: ^vsn_before},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
 
     # tempdown crash
     Process.unlink(slave1_node)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, @slave1, %{}
-    assert_map %{@slave1 => %VNode{status: :down},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :down},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
 
     # tempdown => nodeup with new vsn
     {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1-back", %{})
     assert_join ^topic, "slave1-back", %{}
     assert [{@slave2, _}, {"slave1-back", _}] = Enum.sort(Tracker.list(tracker, topic))
-    assert_map %{@slave1 => %VNode{status: :up, vsn: new_vsn},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :up, vsn: new_vsn},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
     assert vsn_before != new_vsn
 
     # tempdown again
     Process.unlink(slave1_node)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, "slave1-back", %{}
-    assert_map %{@slave1 => %VNode{status: :down},
-                 @slave2 => %VNode{status: :up}}, vnodes(tracker), 2
+    assert_map %{@slave1 => %Replica{status: :down},
+                 @slave2 => %Replica{status: :up}}, replicas(tracker), 2
 
     # tempdown => permdown
     flush()
     for _ <- 0..trunc(@permdown / @heartbeat), do: assert_heartbeat(from: @master)
-    assert_map %{@slave2 => %VNode{status: :up}}, vnodes(tracker), 1
+    assert_map %{@slave2 => %Replica{status: :up}}, replicas(tracker), 1
   end
 
   test "replicates and locally broadcasts presence_join/leave",
@@ -165,11 +165,11 @@ defmodule Phoenix.TrackerTest do
            Enum.sort(Tracker.list(tracker, topic))
 
     # remote joins
-    assert vnodes(tracker) == %{}
+    assert replicas(tracker) == %{}
     start_tracker(@slave1, name: tracker)
     track_presence(@slave1, tracker, remote_pres, topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
-    assert_map %{@slave1 => %VNode{status: :up}}, vnodes(tracker), 1
+    assert_map %{@slave1 => %Replica{status: :up}}, replicas(tracker), 1
     assert [{"me", %{name: "me", phx_ref: _}},
             {"me2",%{name: "me2", phx_ref: _}},
             {"slave1", %{name: "s1", phx_ref: _}}] =
@@ -201,14 +201,14 @@ defmodule Phoenix.TrackerTest do
 
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
-    assert %{@slave1 => %VNode{status: :up}} = vnodes(tracker)
+    assert %{@slave1 => %Replica{status: :up}} = replicas(tracker)
     assert [{"local1", _}, {"slave1", _}] = Enum.sort(Tracker.list(tracker, topic))
 
     # nodedown
     Process.unlink(node_pid)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
-    assert %{@slave1 => %VNode{status: :down}} = vnodes(tracker)
+    assert %{@slave1 => %Replica{status: :down}} = replicas(tracker)
     assert [{"local1", _}] = Tracker.list(tracker, topic)
   end
 
@@ -268,7 +268,7 @@ defmodule Phoenix.TrackerTest do
 
   def spawn_pid, do: spawn(fn -> :timer.sleep(:infinity) end)
 
-  def vnodes(tracker), do: GenServer.call(tracker, :vnodes)
+  def replicas(tracker), do: GenServer.call(tracker, :replicas)
 
   def refute_transfer_req(opts) do
     to = Keyword.fetch!(opts, :to)

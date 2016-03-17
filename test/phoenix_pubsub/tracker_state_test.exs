@@ -1,12 +1,11 @@
 defmodule Phoenix.StateTest do
   use ExUnit.Case
-
-  alias Phoenix.Tracker.State, as: State
+  alias Phoenix.Tracker.State
 
   # Partial netsplit multiple joins
 
   # New print-callback Presence
-  defp newp(node) do
+  defp new(node) do
     State.new({node, 1})
   end
 
@@ -21,13 +20,13 @@ defmodule Phoenix.StateTest do
   end
 
   test "that this is set up correctly" do
-    a = newp(:a)
+    a = new(:a)
     assert {_a, map} = State.extract(a)
     assert map == %{}
   end
 
   test "user added online is online" do
-    a = newp(:a)
+    a = new(:a)
     john = new_conn()
     a = State.join(a, john, "lobby", :john)
     assert [{_, {{:john, _}, _}}] = State.get_by_topic(a, "lobby")
@@ -36,10 +35,10 @@ defmodule Phoenix.StateTest do
   end
 
   test "users from other servers merge" do
-    a = newp(:a)
-    b = newp(:b)
-    {a, _, _} = State.node_up(a, b.replica)
-    {b, _, _} = State.node_up(b, a.replica)
+    a = new(:a)
+    b = new(:b)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
 
     alice = new_conn
     bob = new_conn
@@ -74,8 +73,8 @@ defmodule Phoenix.StateTest do
   end
 
   test "basic deltas" do
-    a = newp(:a)
-    b = newp(:b)
+    a = new(:a)
+    b = new(:b)
 
     alice = new_conn
     bob = new_conn
@@ -99,10 +98,10 @@ defmodule Phoenix.StateTest do
   end
 
   test "basic netsplit" do
-    a = newp(:a)
-    b = newp(:b)
-    {a, _, _} = State.node_up(a, b.replica)
-    {b, _, _} = State.node_up(b, a.replica)
+    a = new(:a)
+    b = new(:b)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
 
     alice = new_conn
     bob = new_conn
@@ -120,21 +119,21 @@ defmodule Phoenix.StateTest do
     a = State.leave(a, alice, "lobby", :alice)
     a = State.join(a, david, "lobby", :david)
 
-    assert {a,[],[{_,{{:bob,_}, _}}]} = State.node_down(a, {:b,1})
+    assert {a,[],[{_,{{:bob,_}, _}}]} = State.replica_down(a, {:b,1})
 
     assert [:carol, :david] = keys(State.online_list(a))
 
     assert {a,[],[]} = State.merge(a, State.extract(b))
     assert [:carol, :david] = keys(State.online_list(a))
 
-    assert {a,[{_,{{:bob,_}, _}}],[]} = State.node_up(a, {:b,1})
+    assert {a,[{_,{{:bob,_}, _}}],[]} = State.replica_up(a, {:b,1})
 
     assert [:bob, :carol, :david] = keys(State.online_list(a))
   end
 
   test "get_by_pid" do
     pid = self()
-    state = newp(:node1)
+    state = new(:node1)
 
     assert [] = State.get_by_pid(state, pid)
     state = State.join(state, pid, "topic", "key1", %{})
@@ -150,7 +149,7 @@ defmodule Phoenix.StateTest do
 
   test "get_by_topic" do
     pid = self()
-    state = newp(:node1)
+    state = new(:node1)
 
     assert [] = State.get_by_topic(state, "topic")
     state = State.join(state, pid, "topic", "key1", %{})
@@ -163,10 +162,10 @@ defmodule Phoenix.StateTest do
   end
 
   test "remove_down_nodes" do
-    state1 = newp(:node1)
-    state2 = newp(:node2)
-    {state1, _, _} = State.node_up(state1, state2.replica)
-    {state2, _, _} = State.node_up(state2, state1.replica)
+    state1 = new(:node1)
+    state2 = new(:node2)
+    {state1, _, _} = State.replica_up(state1, state2.replica)
+    {state2, _, _} = State.replica_up(state2, state1.replica)
 
     alice = new_conn
     bob = new_conn
@@ -176,9 +175,9 @@ defmodule Phoenix.StateTest do
     {state2, _, _} = State.merge(state2, State.extract(state1))
     assert keys(State.online_list(state2)) == [:alice, :bob]
 
-    {state2, _, _} = State.node_down(state2, {:node1, 1})
-    state2 = State.remove_down_nodes(state2, {:node1, 1})
-    {state2, _, _} = State.node_up(state2, {:node1, 1})
+    {state2, _, _} = State.replica_down(state2, {:node1, 1})
+    state2 = State.remove_down_replicas(state2, {:node1, 1})
+    {state2, _, _} = State.replica_up(state2, {:node1, 1})
     assert keys(State.online_list(state2)) == [:bob]
   end
 end
