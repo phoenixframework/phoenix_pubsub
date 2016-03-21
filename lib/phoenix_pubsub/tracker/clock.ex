@@ -1,16 +1,23 @@
 defmodule Phoenix.Tracker.Clock do
+  @moduledoc false
+  alias Phoenix.Tracker.State
 
-  @type context :: Phoenix.Tracker.State.ctx_clock
-  @type nodespec :: term
-  @type nodeclock :: {nodespec, context}
+  @type context :: State.context
+  @type clock :: {State.name, context}
 
-  @spec clockset_nodes([nodeclock]) :: [nodespec]
-  def clockset_nodes(clockset) do
-    for {node, _} <- clockset, do: node
+  @doc """
+  Returns a list of replicas from a list of contexts.
+  """
+  @spec clockset_replicas([clock]) :: [State.name]
+  def clockset_replicas(clockset) do
+    for {replica, _} <- clockset, do: replica
   end
 
-  @spec append_clock([nodeclock], nodeclock) :: [nodeclock]
-  def append_clock(clockset, {_, clock}) when map_size(clock)==0, do: clockset
+  @doc """
+  Adds a replicas context to a clockset, keeping only dominate contexts.
+  """
+  @spec append_clock([clock], clock) :: [clock]
+  def append_clock(clockset, {_, clock}) when map_size(clock) == 0, do: clockset
   def append_clock(clockset, {node, clock}) do
     big_clock = combine_clocks(clockset)
     cond do
@@ -20,8 +27,52 @@ defmodule Phoenix.Tracker.Clock do
     end
   end
 
-  def filter_clocks(clockset, {node, clock}) do
-    # The acc in the reduce is a tuple of the new clockset, and the current status
+  @doc """
+  Checks of one clock causally dominates the other for all replicas.
+  """
+  @spec dominates?(context, context) :: boolean
+  def dominates?(c1, c2) when map_size(c1) < map_size(c2), do: false
+  def dominates?(c1, c2) do
+    Enum.reduce_while(c2, true, fn {replica, clock}, true ->
+      if Map.get(c1, replica, 0) >= clock do
+        {:cont, true}
+      else
+        {:halt, false}
+      end
+    end)
+  end
+
+  @doc """
+  Checks of one clock causally dominates the other for their shared replicas.
+  """
+  def dominates_or_equal?(c1, c2) when c1 == %{} and c2 == %{}, do: true
+  def dominates_or_equal?(c1, _c2) when c1 == %{}, do: false
+  def dominates_or_equal?(c1, c2) do
+    Enum.reduce_while(c1, true, fn {replica, clock}, true ->
+      if clock >= Map.get(c2, replica, 0) do
+        {:cont, true}
+      else
+        {:halt, false}
+      end
+    end)
+  end
+
+  @doc """
+  Returns the upper bound causal context of two clocks.
+  """
+  def upperbound(c1, c2) do
+    Map.merge(c1, c2, fn _, v1, v2 -> max(v1, v2) end)
+  end
+
+  @doc """
+  Returns the lower bound causal context of two clocks.
+  """
+  def lowerbound(c1, c2) do
+    Map.merge(c1, c2, fn _, v1, v2 -> min(v1, v2) end)
+  end
+
+
+  defp filter_clocks(clockset, {node, clock}) do
     clockset
     |> Enum.reduce({[], false}, fn {node2, clock2}, {set, insert} ->
       if dominates?(clock, clock2) do
@@ -39,29 +90,6 @@ defmodule Phoenix.Tracker.Clock do
   defp combine_clocks(clockset) do
     clockset
     |> Enum.map(fn {_, clocks} -> clocks end)
-    |> Enum.reduce(%{}, &Map.merge(&1, &2, fn _,a,b -> max(a,b) end))
+    |> Enum.reduce(%{}, &Map.merge(&1, &2, fn _, a, b -> max(a, b) end))
   end
-
-  @spec dominates?(context, context) :: boolean
-  # Really fast short-circuit that is just too easy to pass up
-  def dominates?(a, b) when map_size(a) < map_size(b), do: false
-  def dominates?(a, b) do
-    # acc is the map which we will reduce and the status of whether we still dominate
-    Enum.reduce(a, {b, true}, &dominates_dot/2) |> does_dominate
-  end
-
-  # A simple way of destructuring the return from the reduce...
-  # NOTE: assert that b has no leftover data that will cause it to dominate
-  defp does_dominate({_, false}), do: false
-  defp does_dominate({map, true}), do: map_size(map) == 0
-
-  # How we actually know that we dominate for all clocks in a over those clocks in b
-  defp dominates_dot(_, {_, false}), do: {nil, false}
-  defp dominates_dot({actor_a, clock_a}, {b, true}) do
-    case Map.pop(b, actor_a, 0) do
-      {n, _} when n > clock_a -> {nil, false}
-      {_, b2} -> {b2, true}
-    end
-  end
-
 end

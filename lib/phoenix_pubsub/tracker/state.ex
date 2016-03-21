@@ -1,291 +1,366 @@
 defmodule Phoenix.Tracker.State do
-  alias Phoenix.Tracker.State.Delta
-  alias __MODULE__
+  @moduledoc """
+  Provides an ORSWOT CRDT.
+  """
+  alias Phoenix.Tracker.{State, Clock}
 
-  require Delta
+  @type name      :: term
+  @type topic     :: String.t
+  @type key       :: term
+  @type meta      :: Map.t
+  @type ets_id    :: pos_integer
+  @type clock     :: pos_integer
+  @type tag       :: {name, clock}
+  @type cloud     :: MapSet.t
+  @type context   :: %{name => clock}
+  @type values    :: ets_id | :extracted | %{tag => {pid, topic, key, meta}}
+  @type value     :: {{pid, topic}, {{key, meta}, tag}}
+  @type delta     :: %State{mode: :delta}
 
-  @type actor :: term
-  @type clock :: pos_integer
-  @type dot :: {actor, clock}
-  @type ctx_clock :: %{ actor => clock }
-  @type conn :: term
-  @type key :: term
-  @type topic :: term
-  @type metadata :: %{}
-  @type value :: {conn, topic, key, metadata}
-  @type opts :: Keyword.t
-
-  @type joins :: [value]
-  @type parts :: [value]
-  @type noderef :: {node, term}
-  @type node_status :: :up | :down
-  @type entry :: {noderef, value}
-
-  @opaque t :: %State{
-    actor: nil,
-    dots: %{dot => value},
-    ctx: ctx_clock,
-    cloud: [dot],
-    delta: Delta.t,
-    servers: %{ noderef => node_status }
+  @type t :: %State{
+    replica:  name,
+    context:  context,
+    cloud:    cloud,
+    values:   values,
+    mode:     :unset | :delta | :normal,
+    delta:    :unset | delta,
+    replicas: %{name => :up | :down},
+    range:    {context, context}
   }
 
-  defstruct actor: nil,
-            dots: %{}, # A map of dots (version-vector pairs) to values
-            ctx: %{},  # Current counter values for actors used in the dots
-            cloud: [],  # A set of dots that we've seen but haven't been merged.
-            delta: %Delta{},
-            servers: %{}
+  defstruct replica: nil,
+            context: %{},
+            cloud: MapSet.new(),
+            values: nil,
+            mode: :unset,
+            delta: :unset,
+            replicas: %{},
+            range: {%{}, %{}}
 
-  @spec new(noderef) :: t
-  def new({_,_}=node) do
-    servers = Enum.into([{node, :up}], %{})
-    %State{actor: node, actor: node, servers: servers}
+  @doc """
+  Creates a new set for the replica.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.State.new(:replica1)
+      %Phoenix.Tracker.State{...}
+
+  """
+  @spec new(name) :: t
+  def new(replica) do
+    reset_delta(%State{
+      replica: replica,
+      mode: :normal,
+      values: :ets.new(:values, [:duplicate_bag]),
+      replicas: %{replica => :up}})
   end
 
-  @spec actor(t) :: actor
-  def actor(%State{actor: actor}), do: actor
+  @doc """
+  Returns the causal context for the set.
+  """
+  @spec clocks(t) :: {name, context}
+  def clocks(%State{replica: rep, context: ctx}), do: {rep, ctx}
 
-  @spec clock(t) :: {actor, ctx_clock}
-  def clock(%State{actor: actor, ctx: ctx_clock}), do: {actor, ctx_clock}
-
-  @spec delta(t) :: Delta.t
-  def delta(%State{delta: d}), do: d
-
-  @spec delta_reset(t) :: {State.t, Delta.t}
-  def delta_reset(set), do: {reset_delta(set), delta(set)}
-
-  @spec reset_delta(t) :: t
-  def reset_delta(%State{actor: actor, ctx: ctx}=set) do
-    current_clock = Map.get(ctx, actor, 0)
-    %State{set| delta: %State.Delta{range: {current_clock,nil}}}
+  @doc """
+  Adds a new element to the set.
+  """
+  @spec join(t, pid, topic, key, meta) :: t
+  def join(%State{} = state, pid, topic, key, meta \\ %{}) do
+    add(state, pid, topic, key, meta)
   end
 
-  @spec remove_down_nodes(t, noderef) :: t
-  def remove_down_nodes(%{ctx: ctx, dots: dots} = set, noderef) do
-    new_ctx = Enum.reject(ctx, &match?({^noderef, _}, &1)) |> Enum.into(%{})
-    new_dots = for {{dot, _} = nodespec, v} <- dots, dot != noderef, into: %{} do
-      {nodespec, v}
-    end
-
-    %{set | ctx: new_ctx, dots: new_dots}
+  @doc """
+  Removes an element from the set.
+  """
+  @spec leave(t, pid, topic, key) :: t
+  def leave(%State{} = state, pid, topic, key) do
+    remove(state, {{pid, topic}, {{key, :_}, :_}})
   end
 
-  @spec node_down(t, noderef) :: {t, joins, parts}
-  def node_down(%State{servers: servers}=set, {_,_}=node) do
-    new_set = %State{set|servers: Map.put(servers, node, :down)}
-    {new_set, [], node_users(new_set, node)}
+  @doc """
+  Removes all elements from the set for the given pid.
+  """
+  @spec leave(t, pid) :: t
+  def leave(%State{} = state, pid) do
+    remove(state, {{pid, :_}, :_})
   end
 
-  @spec node_up(t, noderef) :: {t, joins, parts}
-  def node_up(%State{servers: servers}=set, {_,_}=node) do
-    new_set = %State{set|servers: Map.put(servers, node, :up)}
-    {new_set, node_users(new_set, node), []}
+  @doc """
+  Returns a list of elements in the set belonging to an online replica.
+  """
+  @spec online_list(t) :: [value]
+  def online_list(%State{values: values} = state) do
+    :ets.select(values, Enum.map(up_replicas(state), fn replica ->
+      {{:_, {:_, {replica, :_}}}, [], [:"$_"]}
+    end))
   end
 
-  @spec join(t, conn, topic, key) :: t
-  @spec join(t, conn, topic, key, metadata) :: t
-  def join(%State{}=set, conn, topic, key, metadata \\ %{}) do
-    add(set, {conn, topic, key, metadata})
+  @doc """
+  Returns a list of elements for the topic who belong to an online replica.
+  """
+  @spec get_by_topic(t, topic) :: [value]
+  def get_by_topic(%State{values: values} = state, topic) do
+    :ets.select(values, Enum.map(up_replicas(state), fn replica ->
+      {{{:_, topic}, {:_, {replica, :_}}}, [], [:"$_"]}
+    end))
   end
 
-  @spec part(t, conn) :: t
-  def part(%State{}=set, conn) do
-    remove(set, &match?({^conn,_,_,_}, &1))
-  end
-
-  @spec part(t, conn, topic, key) :: t
-  def part(%State{}=set, conn, topic, key) do
-    remove(set, &match?({^conn,^topic,^key,_}, &1))
-  end
-
-  @spec get_by_conn(t, conn) :: [entry]
-  def get_by_conn(%State{dots: dots, servers: servers}, conn) do
-    for {{nodespec, _}, {^conn, _topic, _key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
-      entry
-    end
-  end
-
-  @spec get_by_conn(t, conn, topic, key) :: entry | nil
-  def get_by_conn(%State{dots: dots, servers: servers}, conn, topic, key) do
-    results = for {{nodespec, _}, {^conn, ^topic, ^key, _metadata}} = entry <- dots, Map.get(servers, nodespec, :up)==:up do
-      entry
-    end
-
-    case results do
-      [result] -> result
+  @doc """
+  Returns the element matching the pid, topic, and key.
+  """
+  @spec get_by_pid(t, pid, topic, key) :: value | nil
+  def get_by_pid(%State{values: values}, pid, topic, key) do
+    case :ets.match_object(values, {{pid, topic}, {{key, :_}, :_}}) do
       [] -> nil
+      [one] -> one
     end
   end
 
-  @spec get_by_key(t, key) :: [{conn, topic, metadata}]
-  def get_by_key(%State{dots: dots, servers: servers}, key) do
-    for {{nodespec, _}, {conn, topic, ^key, metadata}} <- dots, Map.get(servers, nodespec, :up)==:up, do: {conn, topic, metadata}
-  end
-
-  @spec get_by_topic(t, topic) :: [{conn, key, metadata}]
-  def get_by_topic(%State{dots: dots, servers: servers}, topic) do
-    for {{nodespec, _}, {conn, ^topic, key, metadata}} <- dots, Map.get(servers, nodespec, :up)==:up, do: {conn, key, metadata}
-  end
-
-  @spec online_users(t) :: [value]
-  def online_users(%{dots: dots, servers: servers}) do
-    for {{node,_}, {_, _, user, _}} <- dots, Map.get(servers, node, :up) == :up do
-      user
-    end |> Enum.uniq
-  end
-
-  defp node_users(%{dots: dots}, node) do
-    for {{n,_}, user} <- dots, n===node do
-      {node, user}
-    end |> Enum.uniq
-  end
-
-  @spec offline_users(t) :: [value]
-  def offline_users(%{dots: dots, servers: servers}) do
-    for {{node,_}, {_, _, user, _}} <- dots, Map.get(servers, node, :up) == :down do
-      user
-    end |> Enum.uniq
-  end
-
-  @spec down_servers(t) :: [noderef]
-  def down_servers(%State{servers: servers}) do
-    for {node, :down} <- servers, do: node
+  @doc """
+  Returns all elements for the pid.
+  """
+  @spec get_by_pid(t, pid) :: [value]
+  def get_by_pid(%State{values: values}, pid) do
+    :ets.match_object(values, {{pid, :_}, :_})
   end
 
   @doc """
-  Compact the dots.
-
-  This merges any newly-contiguously-joined deltas. This is usually called
-  automatically as needed.
+  Checks if set has a non-empty delta.
   """
-  @spec compact(t) :: t
-  def compact(dots), do: do_compact(dots)
+  @spec has_delta?(t) :: boolean
+  def has_delta?(%State{delta: %State{cloud: cloud}}) do
+    MapSet.size(cloud) != 0
+  end
 
   @doc """
-  Joins any 2 dots together.
-
-  Automatically compacts any contiguous dots.
+  Resets the set's delta.
   """
-  @spec merge(t, t | Delta.t | [Delta.t]) :: {t, joins, parts}
-  def merge(dots1, dots2), do: do_merge(dots1, dots2)
-
-  # @doc """
-  # Adds and associates a value with a new dot for an actor.
-  # """
-  # @spec add(t, value) :: t
-  defp add(%State{}=set, {_,_,_,_}=value) do
-    %{actor: actor, dots: dots, ctx: ctx, delta: delta} = set
-    clock = Dict.get(ctx, actor, 0) + 1 # What's the value of our clock?
-    %{cloud: cloud, dots: delta_dots} = delta
-
-    new_ctx = Dict.put(ctx, actor, clock) # Add the actor/clock to the context
-    new_dots = Dict.put(dots, {actor, clock}, value) # Add the value to the dot values
-
-    new_cloud = [{actor, clock}|cloud]
-    new_delta_dots = Dict.put(delta_dots, {actor,clock}, value)
-
-    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots}
-    %{set| ctx: new_ctx, delta: new_delta, dots: new_dots}
+  @spec reset_delta(t) :: t
+  def reset_delta(%State{context: ctx, replica: replica} = state) do
+    delta_ctx = Map.take(ctx, [replica])
+    delta = %State{replica: replica,
+                   values: %{},
+                   range: {delta_ctx, delta_ctx},
+                   mode: :delta}
+    %State{state | delta: delta}
   end
 
-  # @doc """
-  # Removes a value from the set
-  # """
-  # @spec remove(t | {t, t}, value | (value -> boolean)) :: t
-  defp remove(%State{}=set, pred) when is_function(pred) do
-    %{actor: actor, ctx: ctx, dots: dots, delta: delta} = set
-    %{cloud: cloud, dots: delta_dots} = delta
+  @doc """
+  Extracts the set's elements from ets into a mergable list.
 
-    clock = Dict.get(ctx, actor, 0) + 1
-    new_ctx = Dict.put(ctx, actor, clock)
-    new_dots = for {dot, v} <- dots, !pred.(v), into: %{}, do: {dot, v}
-
-    new_cloud = [{actor, clock}|cloud] ++ Enum.filter_map(dots, fn {_, v} -> pred.(v) end, fn {dot,_} -> dot end)
-    new_delta_dots = for {dot, v} <- delta_dots, !pred.(v), into: %{}, do: {dot, v}
-    new_delta = %{delta| cloud: new_cloud, dots: new_delta_dots}
-
-    %{set| ctx: new_ctx, dots: new_dots, delta: new_delta}
+  Used when merging two sets.
+  """
+  @spec extract(t) :: {t, values}
+  def extract(%State{values: values} = state) do
+    map = foldl(values, %{}, fn {{pid, topic}, {{key, meta}, tag}}, acc ->
+      Map.put(acc, tag, {pid, topic, key, meta})
+    end)
+    {%{state | delta: :unset}, map}
   end
 
-  defp do_compact(%{ctx: ctx, cloud: c}=dots) do
-    {new_ctx, new_cloud} = compact_reduce(Enum.sort(c), ctx, [])
-    %{dots|ctx: new_ctx, cloud: new_cloud}
+  @doc """
+  Merges two sets, or a delta into a set.
+
+  Returns a 3-tuple of the updated set, and the joiend and left elements.
+
+  ## Examples
+
+      iex> {s1, joined, left} =
+           Phoenix.Tracker.State.merge(s1, Phoenix.Tracker.State.extract(s2))
+
+      {%Phoenix.Tracker.State{}, [...], [...]}
+  """
+  @spec merge(local :: t, {remote :: t, values} | delta) :: {new_local :: t, joins :: [value], leaves :: [value]}
+  def merge(%State{} = local, %State{mode: :delta} = remote) do
+    merge(local, {remote, remote.values})
+  end
+  def merge(%State{} = local, {%State{} = remote, remote_map}) do
+    joins = accumulate_joins(local, remote_map)
+    {cloud, delta, adds, leaves} = observe_removes(local, remote, remote_map, joins)
+    true = :ets.delete_all_objects(local.values)
+    true = :ets.insert(local.values, adds)
+    ctx = Clock.upperbound(local.context, remote.context)
+    new_state =
+      %State{local | cloud: cloud, delta: delta}
+      |> put_context(ctx)
+      |> compact()
+
+    {new_state, joins, leaves}
   end
 
-  defp compact_reduce([], ctx, cloud_acc) do
-    {ctx, Enum.reverse(cloud_acc)}
-  end
-  defp compact_reduce([{actor, clock}=dot|cloud], ctx, cloud_acc) do
-    case {ctx[actor], clock} do
-      {nil, 1} ->
-        # We can merge nil with 1 in the cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
-      {nil, _} ->
-        # Can't do anything with this
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
-      {ctx_clock, _} when ctx_clock + 1 == clock ->
-        # Add to context, delete from cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
-      {ctx_clock, _} when ctx_clock >= clock -> # Dominates
-        # Delete from cloud by not accumulating.
-        compact_reduce(cloud, ctx, cloud_acc)
-      {_, _} ->
-        # Can't do anything with this.
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
-    end
+  @spec accumulate_joins(t, values) :: joins :: [values]
+  defp accumulate_joins(local, remote_map) do
+    Enum.reduce(remote_map, [], fn {tag, {pid, topic, key, meta}}, adds ->
+      if in?(local, tag) do
+        adds
+      else
+        [{{pid, topic}, {{key, meta}, tag}} | adds]
+      end
+    end)
   end
 
-  defp dotin(%State.Delta{cloud: cloud}, {_,_}=dot) do
-    Enum.any?(cloud, &(&1==dot))
-  end
-  defp dotin(%State{ctx: ctx, cloud: cloud}, {actor, clock}=dot) do
-    # If this exists in the dot, and is greater than the value *or* is in the cloud
-    (ctx[actor]||0) >= clock or Enum.any?(cloud, &(&1==dot))
-  end
+  @spec observe_removes(t, t, values, [value]) :: {cloud, delta, adds :: [value], leaves :: [value]}
+  defp observe_removes(local, remote, remote_map, joins) do
+    unioned_cloud = MapSet.union(local.cloud, remote.cloud)
+    init = {unioned_cloud, local.delta, joins, []}
 
-  defp do_merge(%{dots: d1, ctx: ctx1, cloud: c1}=set1, %{dots: d2, cloud: c2}=set2) do
-    # new_dots = do_merge_dots(Enum.sort(d1), Enum.sort(d2), {dots1, dots2}, [])
-    {new_dots,j,p} = Enum.sort(extract_dots(d1, set2) ++ extract_dots(d2, set1))
-               |> merge_dots(set1, {%{},[],[]})
-    new_ctx = Dict.merge(ctx1, Map.get(set2, :ctx, %{}), fn (_, a, b) -> max(a, b) end)
-    new_cloud = Enum.uniq(c1 ++ c2)
-    {compact(%{set1|dots: new_dots, ctx: new_ctx, cloud: new_cloud}),j,p}
+    foldl(local.values, init, fn {_, {_, tag}} = el, {cloud, delta, adds, leaves} ->
+      if in?(remote, tag) and not Map.has_key?(remote_map, tag) do
+        {MapSet.delete(cloud, tag), remove_delta_tag(delta, tag), adds, [el | leaves]}
+      else
+        {cloud, delta, [el | adds], leaves}
+      end
+    end)
   end
 
-  # Pair each dot with the set opposite it for comparison
-  defp extract_dots(dots, set) do
-    for pair <- dots, do: {pair, set}
-  end
+  def merge_deltas(%State{mode: :delta} = local, %State{mode: :delta, values: remote_values} = remote) do
+    local_values = local.values
+    {local_start, local_end} = local.range
+    {remote_start, remote_end} = remote.range
 
-  defp merge_dots([], _, acc), do: acc
+    if Clock.dominates_or_equal?(local_end, remote_start) do
+      new_start = Clock.lowerbound(local_start, remote_start)
+      new_end = Clock.upperbound(local_end, remote_end)
+      cloud  = MapSet.union(local.cloud, remote.cloud)
 
-  defp merge_dots([{{dot,value}=pair,_}, {pair,_} |rest], set1, {acc,j,p}) do
-    merge_dots(rest, set1, {Map.put(acc, dot, value),j,p})
-  end
+      filtered_locals = for {tag, value} <- local_values,
+                        Map.has_key?(remote_values, tag) or not in?(remote, tag),
+                        into: %{},
+                        do: {tag, value}
 
-  # Our dot's values aren't the same. This is an invariant and shouldn't happen. ever.
-  defp merge_dots([{{dot,_},_}, {{dot,_},_}|_], _, _acc) do
-    raise Phoenix.Tracker.State.InvariantError, "2 dot-pairs with the same dot but different values"
-  end
+      merged_vals = for {tag, value} <- remote_values,
+                    !Map.has_key?(local_values, tag) and not in?(local, tag),
+                    into: filtered_locals,
+                    do: {tag, value}
 
-  # Our dots aren't the same.
-  # TODO: FILTER PARTS AND JOINS FOR DOWN NODES!
-  defp merge_dots([{{{actor, _}=dot,value}, oppset}|rest], %{actor: me, delta: delta}=set1, {acc,j,p}) do
-    # Check to see if this dot is in the opposite CRDT
-    %{cloud: cloud, dots: delta_dots} = delta
-    {new_acc, new_delta} = if dotin(oppset, dot) do
-      # It *was* here, we drop it (observed-delete dot-pair)
-      new_p = if actor != me, do: [{actor, value}|p], else: p
-      {{acc,j,new_p}, %{delta| cloud: [dot|cloud]}}
+      {:ok, %State{local | cloud: cloud, values: merged_vals, range: {new_start, new_end}}}
     else
-      # If it wasn't here, we keep it (concurrent update)
-      new_j = if actor != me, do: [{actor, value}|j], else: j
-      acc = Map.put(acc, dot, value)
-      new_delta_dots = Map.put(delta_dots, dot, value)
-      {{acc,new_j,p}, %{delta| cloud: [dot|cloud], dots: new_delta_dots}}
+      {:error, :not_contiguous}
     end
-    merge_dots(rest, %{set1| delta: new_delta}, new_acc)
   end
 
+  @doc """
+  Marks a replica as up in the set and returns rejoined users.
+  """
+  @spec replica_up(t, name) :: {t, joins :: [values], leaves :: []}
+  def replica_up(%State{replicas: replicas} = state, replica) do
+    {%State{state | replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
+  end
+
+  @doc """
+  Marks a replica as down in the set and returns left users.
+  """
+  @spec replica_down(t, name) :: {t, joins:: [], leaves :: [values]}
+  def replica_down(%State{replicas: replicas} = state, replica) do
+    {%State{state | replicas: Map.put(replicas, replica, :down)}, [], replica_users(state, replica)}
+  end
+
+  @doc """
+  Removes all elements for replicas that are permanently gone.
+  """
+  # TODO: double check cleaning up cloud/delta for this case
+  @spec remove_down_replicas(t, name) :: t
+  def remove_down_replicas(%State{context: ctx, values: values} = state, replica) do
+    new_ctx = for {rep, clock} <- ctx, rep != replica, into: %{}, do: {rep, clock}
+    true = :ets.match_delete(values, {:_, {:_, {replica, :_}}})
+
+    %State{state | context: new_ctx}
+  end
+
+  def size(%State{mode: :delta, cloud: cloud, values: values}) do
+    MapSet.size(cloud) + map_size(values)
+  end
+
+  @spec add(t, pid, topic, key, meta) :: t
+  defp add(%State{} = state, pid, topic, key, meta) do
+    state
+    |> bump_clock()
+    |> do_add(pid, topic, key, meta)
+  end
+  defp do_add(%State{values: values, delta: delta} = state, pid, topic, key, meta) do
+    true = :ets.insert(values, {{pid, topic}, {{key, meta}, tag(state)}})
+    new_delta = %State{delta | values: Map.put(delta.values, tag(state), {pid, topic, key, meta})}
+    %State{state | delta: new_delta}
+  end
+
+  @spec remove(t, match_spec :: tuple) :: t
+  defp remove(%State{values: values, cloud: cloud_before, delta: delta} = state, match_spec) do
+    tags = Enum.map(:ets.match_object(values, match_spec), fn {_, {{_, _}, tag}} -> tag end)
+    true = :ets.match_delete(values, match_spec)
+    {pruned_cloud, new_delta} =
+      Enum.reduce(tags, {cloud_before, delta}, fn tag, {cloud, delta} ->
+        {MapSet.delete(cloud, tag), remove_delta_tag(delta, tag)}
+      end)
+
+    bump_clock(%State{state | cloud: pruned_cloud, delta: new_delta})
+  end
+
+  @spec remove_delta_tag(delta, tag) :: delta
+  defp remove_delta_tag(%State{mode: :delta, values: values, cloud: cloud} = delta, tag) do
+    %State{delta | cloud: MapSet.put(cloud, tag), values: Map.delete(values, tag)}
+  end
+
+  @spec compact(t) :: t
+  defp compact(%State{context: ctx, cloud: cloud} = state) do
+    {new_ctx, new_cloud} = do_compact(ctx, Enum.sort(cloud))
+    put_context(%State{state | cloud: new_cloud}, new_ctx)
+  end
+  @spec do_compact(context, sorted_cloud_list :: list) :: {context, cloud}
+  defp do_compact(ctx, cloud) do
+    Enum.reduce(cloud, {ctx, MapSet.new()}, fn {replica, clock} = tag, {ctx_acc, cloud_acc} ->
+      case {Map.get(ctx_acc, replica), clock} do
+        {nil, 1} ->
+          {Map.put(ctx_acc, replica, clock), cloud_acc}
+        {nil, _} ->
+          {ctx_acc, MapSet.put(cloud_acc, tag)}
+        {ctx_clock, clock} when ctx_clock + 1 == clock ->
+          {Map.put(ctx_acc, replica, clock), cloud_acc}
+        {ctx_clock, clock} when ctx_clock >= clock ->
+          {ctx_acc, cloud_acc}
+        {_, _} ->
+          {ctx_acc, MapSet.put(cloud_acc, tag)}
+      end
+    end)
+  end
+
+  @spec in?(t, tag) :: boolean
+  defp in?(%State{context: ctx, cloud: cloud}, {replica, clock} = tag) do
+    Map.get(ctx, replica, 0) >= clock or MapSet.member?(cloud, tag)
+  end
+
+  @spec tag(t) :: tag
+  defp tag(%State{replica: rep} = state), do: {rep, clock(state)}
+
+  @spec clock(t) :: clock
+  defp clock(%State{replica: rep, context: ctx}), do: Map.get(ctx, rep, 0)
+
+  @spec bump_clock(t) :: t
+  defp bump_clock(%State{mode: :normal, replica: rep, cloud: cloud, context: ctx, delta: delta} = state) do
+    new_clock = clock(state) + 1
+    new_ctx = Map.put(ctx, rep, new_clock)
+
+    %State{state |
+           cloud: MapSet.put(cloud, {rep, new_clock}),
+           delta: %State{delta | cloud: MapSet.put(delta.cloud, {rep, new_clock})}}
+    |> put_context(new_ctx)
+  end
+  defp put_context(%State{delta: delta, replica: rep} = state, new_ctx) do
+    {start_clock, end_clock} = delta.range
+    new_end = Map.put(end_clock, rep, Map.get(new_ctx, rep, 0))
+    %State{state |
+           context: new_ctx,
+           delta: %State{delta | range: {start_clock, new_end}}}
+  end
+
+  @spec up_replicas(t) :: [name]
+  defp up_replicas(%State{replicas: replicas})  do
+    for {replica, :up} <- replicas, do: replica
+  end
+
+  @spec replica_users(t, name) :: [value]
+  defp replica_users(%State{values: values}, replica) do
+    :ets.match_object(values, {:_, {:_, {replica, :_}}})
+  end
+
+  defp foldl(values, initial, func), do: :ets.foldl(func, initial, values)
 end

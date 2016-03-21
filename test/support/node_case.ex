@@ -57,12 +57,12 @@ defmodule Phoenix.PubSub.NodeCase do
     call_node(node_name, fn -> start_tracker(opts) end)
   end
 
-  def drop_gossips(pid, tracker) do
-    Phoenix.PubSub.unsubscribe(@pubsub, pid, namespaced_topic(tracker))
+  def drop_gossips(tracker) do
+    :ok = GenServer.call(tracker, :unsubscribe)
   end
 
-  def resume_gossips(pid, tracker) do
-    Phoenix.PubSub.subscribe(@pubsub, pid, namespaced_topic(tracker), link: true)
+  def resume_gossips(tracker) do
+    :ok = GenServer.call(tracker, :resubscribe)
   end
 
   def start_tracker(opts) do

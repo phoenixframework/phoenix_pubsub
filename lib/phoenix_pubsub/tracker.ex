@@ -25,14 +25,16 @@ defmodule Phoenix.Tracker do
       across the cluster. Default `1500`
     * `max_silent_periods` - The max integer of broadcast periods for which no
       delta broadcasts have been sent. Defaults `10` (15s heartbeat)
-    * `nodedown_period` - The interval in milliseconds to flag a node
+    * `down_period` - The interval in milliseconds to flag a replica
       as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
-      (30s nodedown detection).
-    * `permdown_period` - The interval in milliseconds to flag a node
+      (30s down detection).
+    * `permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
       Default `1_200_000` (20 minutes)
     * `clock_sample_periods` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
+    * `max_delta_sizes` - The list of delta generation sizes to keep before
+      falling back to sending entire state. Defaults `[100, 1000, 10_000]`.
     * log_level - The log level to log events, defaults `:debug` and can be
       disabled with `false`
 
@@ -77,7 +79,7 @@ defmodule Phoenix.Tracker do
   The `init/1` calback allows the tracker to manage its own state when
   running within the `Phoenix.Tracker` server. The `handle_diff` callback
   is invoked with a diff of presence join and leaves events, grouped by
-  topic. As nodes heartbeat and replicate data, the local tracker state is
+  topic. As replicas heartbeat and replicate data, the local tracker state is
   merged with the remote data, and the diff is sent to the callback. The
   handler can use this information to notify subscribers of events, as
   done above.
@@ -91,7 +93,7 @@ defmodule Phoenix.Tracker do
   offloaded with a `Task.Supervisor` spawned process.
   """
   use GenServer
-  alias Phoenix.Tracker.{Clock, State, VNode}
+  alias Phoenix.Tracker.{Clock, State, Replica, DeltaGeneration}
   require Logger
 
   @type presence :: {key :: String.t, meta :: Map.t}
@@ -187,7 +189,7 @@ defmodule Phoenix.Tracker do
     server_name
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
-    |> Enum.map(fn {_conn, key, meta} -> {key, meta} end)
+    |> Enum.map(fn {{_pid, _topic}, {{key, meta}, _tag}} -> {key, meta} end)
   end
 
   ## Server
@@ -199,40 +201,42 @@ defmodule Phoenix.Tracker do
 
   def init([tracker, tracker_opts, opts]) do
     Process.flag(:trap_exit, true)
-    :random.seed(:os.timestamp())
+    # TODO add invariants for configuration periods
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
     broadcast_period     = opts[:broadcast_period] || 1500
     max_silent_periods   = opts[:max_silent_periods] || 10
-    nodedown_period      = opts[:nodedown_period] || (broadcast_period * max_silent_periods * 2)
+    down_period          = opts[:down_period] || (broadcast_period * max_silent_periods * 2)
     permdown_period      = opts[:permdown_period] || 1_200_000
     clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
     node_name            = Phoenix.PubSub.node_name(pubsub_server)
     namespaced_topic     = namespaced_topic(server_name)
-    vnode                = VNode.new(node_name)
+    replica              = Replica.new(node_name)
 
     case tracker.init(tracker_opts) do
       {:ok, tracker_state} ->
-        Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
+        subscribe(pubsub_server, namespaced_topic)
         send_stuttered_heartbeat(self(), broadcast_period)
 
         {:ok, %{server_name: server_name,
                 pubsub_server: pubsub_server,
                 tracker: tracker,
                 tracker_state: tracker_state,
-                vnode: vnode,
+                replica: replica,
                 namespaced_topic: namespaced_topic,
                 log_level: log_level,
-                vnodes: %{},
+                replicas: %{},
                 pending_clockset: [],
-                presences: State.new(VNode.ref(vnode)),
+                presences: State.new(Replica.ref(replica)),
                 broadcast_period: broadcast_period,
                 max_silent_periods: max_silent_periods,
                 silent_periods: max_silent_periods,
-                nodedown_period: nodedown_period,
+                down_period: down_period,
                 permdown_period: permdown_period,
                 clock_sample_periods: clock_sample_periods,
+                deltas: [],
+                max_delta_sizes: [100, 1000, 10_000],
                 current_sample_count: clock_sample_periods}}
 
       other -> other
@@ -246,37 +250,44 @@ defmodule Phoenix.Tracker do
   def handle_info(:heartbeat, state) do
     {:noreply, state
                |> broadcast_delta_heartbeat()
-               |> request_transfer_from_nodes_needing_synced()
-               |> detect_nodedowns()
+               |> request_transfer_from_replicas_needing_synced()
+               |> detect_downs()
                |> schedule_next_heartbeat()}
   end
 
+  def handle_info({:pub, :heartbeat, {name, vsn}, :empty, clocks}, state) do
+    {:noreply, state
+               |> put_pending_clock(clocks)
+               |> handle_heartbeat({name, vsn})}
+  end
   def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
     {presences, joined, left} = State.merge(state.presences, delta)
 
     {:noreply, state
                |> report_diff(joined, left)
-               |> Map.put(:presences, presences)
+               |> put_presences(presences)
                |> put_pending_clock(clocks)
+               |> push_delta_generation(delta)
                |> handle_heartbeat({name, vsn})}
   end
 
-  def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
-    # TODO use compuated delta range for clocks, don't see entire CRDT unless neccessary
-    log state, fn -> "#{state.vnode.name}: transfer_req from #{inspect name}" end
-    msg = {:pub, :transfer_ack, ref, VNode.ref(state.vnode), state.presences}
+  def handle_info({:pub, :transfer_req, ref, {name, _vsn}, {_, clocks}}, state) do
+    delta = DeltaGeneration.extract(state.presences, state.deltas, clocks)
+    log state, fn -> "#{state.replica.name}: transfer_req from #{inspect name}" end
+    msg = {:pub, :transfer_ack, ref, Replica.ref(state.replica), delta}
     direct_broadcast(state, name, msg)
 
     {:noreply, state}
   end
 
   def handle_info({:pub, :transfer_ack, _ref, {name, _vsn}, remote_presences}, state) do
-    log(state, fn -> "#{state.vnode.name}: transfer_ack from #{inspect name}" end)
+    log(state, fn -> "#{state.replica.name}: transfer_ack from #{inspect name}" end)
     {presences, joined, left} = State.merge(state.presences, remote_presences)
 
     {:noreply, state
                |> report_diff(joined, left)
-               |> Map.put(:presences, presences)}
+               |> push_delta_generation(remote_presences)
+               |> put_presences(presences)}
   end
 
   def handle_info({:EXIT, pid, _reason}, state) do
@@ -290,7 +301,7 @@ defmodule Phoenix.Tracker do
 
   def handle_call({:untrack, pid, topic, key}, _from, state) do
     new_state = drop_presence(state, pid, topic, key)
-    if State.get_by_conn(new_state.presences, pid) == [] do
+    if State.get_by_pid(new_state.presences, pid) == [] do
       Process.unlink(pid)
     end
     {:reply, :ok, new_state}
@@ -302,10 +313,10 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_call({:update, pid, topic, key, new_meta}, _from, state) do
-    case State.get_by_conn(state.presences, pid, topic, key) do
+    case State.get_by_pid(state.presences, pid, topic, key) do
       nil ->
         {:reply, {:error, :nopresence}, state}
-      {{_node, _}, {_pid, _topic, ^key, prev_meta}} ->
+      {{_pid, _topic}, {{^key, prev_meta}, {_replica, _}}} ->
         {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
         {:reply, {:ok, ref}, state}
     end
@@ -315,13 +326,27 @@ defmodule Phoenix.Tracker do
     {:reply, state.presences, state}
   end
 
-  def handle_call(:vnodes, _from, state) do
-    {:reply, state.vnodes, state}
+  def handle_call(:replicas, _from, state) do
+    {:reply, state.replicas, state}
+  end
+
+  def handle_call(:unsubscribe, _from, state) do
+    Phoenix.PubSub.unsubscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:resubscribe, _from, state) do
+    subscribe(state.pubsub_server, state.namespaced_topic)
+    {:reply, :ok, state}
+  end
+
+  defp subscribe(pubsub_server, namespaced_topic) do
+    Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
   end
 
   defp put_update(state, pid, topic, key, meta, %{phx_ref: ref} = prev_meta) do
     state
-    |> Map.put(:presences, State.part(state.presences, pid, topic, key))
+    |> put_presences(State.leave(state.presences, pid, topic, key))
     |> put_presence(pid, topic, key, Map.put(meta, :phx_ref_prev, ref), prev_meta)
   end
   defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
@@ -331,78 +356,80 @@ defmodule Phoenix.Tracker do
     new_state =
       state
       |> report_diff_join(topic, key, meta, prev_meta)
-      |> Map.put(:presences, State.join(state.presences, pid, topic, key, meta))
+      |> put_presences(State.join(state.presences, pid, topic, key, meta))
 
     {new_state, ref}
   end
 
+  defp put_presences(state, %State{} = presences), do: %{state | presences: presences}
+
   defp drop_presence(state, conn, topic, key) do
-    if leave = State.get_by_conn(state.presences, conn, topic, key) do
+    if leave = State.get_by_pid(state.presences, conn, topic, key) do
       state
       |> report_diff([], [leave])
-      |> Map.put(:presences, State.part(state.presences, conn, topic, key))
+      |> put_presences(State.leave(state.presences, conn, topic, key))
     else
       state
     end
   end
   defp drop_presence(state, conn) do
-    leaves = State.get_by_conn(state.presences, conn)
+    leaves = State.get_by_pid(state.presences, conn)
 
     state
     |> report_diff([], leaves)
-    |> Map.put(:presences, State.part(state.presences, conn))
+    |> put_presences(State.leave(state.presences, conn))
   end
 
   defp handle_heartbeat(state, {name, vsn}) do
-    case VNode.put_heartbeat(state.vnodes, {name, vsn}) do
-      {vnodes, nil, %VNode{status: :up} = upped} ->
-        nodeup(%{state | vnodes: vnodes}, upped)
+    case Replica.put_heartbeat(state.replicas, {name, vsn}) do
+      {replicas, nil, %Replica{status: :up} = upped} ->
+        up(%{state | replicas: replicas}, upped)
 
-      {vnodes, %VNode{vsn: ^vsn, status: :up}, %VNode{vsn: ^vsn, status: :up}} ->
-        %{state | vnodes: vnodes}
+      {replicas, %Replica{vsn: ^vsn, status: :up}, %Replica{vsn: ^vsn, status: :up}} ->
+        %{state | replicas: replicas}
 
-      {vnodes, %VNode{vsn: ^vsn, status: :down}, %VNode{vsn: ^vsn, status: :up} = upped} ->
-        nodeup(%{state | vnodes: vnodes}, upped)
+      {replicas, %Replica{vsn: ^vsn, status: :down}, %Replica{vsn: ^vsn, status: :up} = upped} ->
+        up(%{state | replicas: replicas}, upped)
 
-      {vnodes, %VNode{vsn: old, status: :up} = downed, %VNode{vsn: ^vsn, status: :up} = upped} when old != vsn ->
-        %{state | vnodes: vnodes} |> nodedown(downed) |> permdown(downed) |> nodeup(upped)
+      {replicas, %Replica{vsn: old, status: :up} = downed, %Replica{vsn: ^vsn, status: :up} = upped} when old != vsn ->
+        %{state | replicas: replicas} |> down(downed) |> permdown(downed) |> up(upped)
 
-      {vnodes, %VNode{vsn: old, status: :down} = downed, %VNode{vsn: ^vsn, status: :up} = upped} when old != vsn ->
-        %{state | vnodes: vnodes} |> permdown(downed) |> nodeup(upped)
+      {replicas, %Replica{vsn: old, status: :down} = downed, %Replica{vsn: ^vsn, status: :up} = upped} when old != vsn ->
+        %{state | replicas: replicas} |> permdown(downed) |> up(upped)
     end
   end
 
-  defp request_transfer_from_nodes_needing_synced(%{current_sample_count: 1} = state) do
+  defp request_transfer_from_replicas_needing_synced(%{current_sample_count: 1} = state) do
     needs_synced = clockset_to_sync(state)
-    for target_node <- needs_synced, do: request_transfer(state, target_node)
+    for replica <- needs_synced, do: request_transfer(state, replica)
 
     %{state | pending_clockset: [], current_sample_count: state.clock_sample_periods}
   end
-  defp request_transfer_from_nodes_needing_synced(state) do
+  defp request_transfer_from_replicas_needing_synced(state) do
     %{state | current_sample_count: state.current_sample_count - 1}
   end
 
   defp request_transfer(state, {name, _vsn}) do
-    log state, fn -> "#{state.vnode.name}: request_transfer from #{name}" end
+    log state, fn -> "#{state.replica.name}: request_transfer from #{name}" end
     ref = make_ref()
-    msg = {:pub, :transfer_req, ref, VNode.ref(state.vnode), clock(state)}
+    msg = {:pub, :transfer_req, ref, Replica.ref(state.replica), clock(state)}
     direct_broadcast(state, name, msg)
   end
 
-  defp detect_nodedowns(%{permdown_period: perm_int, nodedown_period: temp_int} = state) do
-    Enum.reduce(state.vnodes, state, fn {_name, vnode}, acc ->
-      case VNode.detect_down(acc.vnodes, vnode, temp_int, perm_int) do
-        {vnodes, %VNode{status: :up}, %VNode{status: :permdown} = down_node} ->
-          %{acc | vnodes: vnodes} |> nodedown(down_node) |> permdown(down_node)
+  defp detect_downs(%{permdown_period: perm_int, down_period: temp_int} = state) do
+    Enum.reduce(state.replicas, state, fn {_name, replica}, acc ->
+      case Replica.detect_down(acc.replicas, replica, temp_int, perm_int) do
+        {replicas, %Replica{status: :up}, %Replica{status: :permdown} = down_rep} ->
+          %{acc | replicas: replicas} |> down(down_rep) |> permdown(down_rep)
 
-        {vnodes, %VNode{status: :down}, %VNode{status: :permdown} = down_node} ->
-          permdown(%{acc | vnodes: vnodes}, down_node)
+        {replicas, %Replica{status: :down}, %Replica{status: :permdown} = down_rep} ->
+          permdown(%{acc | replicas: replicas}, down_rep)
 
-        {vnodes, %VNode{status: :up}, %VNode{status: :down} = down_node} ->
-          nodedown(%{acc | vnodes: vnodes}, down_node)
+        {replicas, %Replica{status: :up}, %Replica{status: :down} = down_rep} ->
+          down(%{acc | replicas: replicas}, down_rep)
 
-        {vnodes, %VNode{status: unchanged}, %VNode{status: unchanged}} ->
-          %{acc | vnodes: vnodes}
+        {replicas, %Replica{status: unchanged}, %Replica{status: unchanged}} ->
+          %{acc | replicas: replicas}
       end
     end)
   end
@@ -412,40 +439,43 @@ defmodule Phoenix.Tracker do
     state
   end
 
-  defp clock(state), do: State.clock(state.presences)
+  defp clock(state), do: State.clocks(state.presences)
 
+  @spec clockset_to_sync(%{pending_clockset: [State.replica_context]}) :: [State.replica_name]
   defp clockset_to_sync(state) do
+    my_ref = Replica.ref(state.replica)
+
     state.pending_clockset
     |> Clock.append_clock(clock(state))
-    |> Clock.clockset_nodes()
-    |> Enum.filter(fn {name, _vsn} -> Map.has_key?(state.vnodes, name) end)
+    |> Clock.clockset_replicas()
+    |> Enum.filter(fn ref -> ref != my_ref end)
   end
 
   defp put_pending_clock(state, clocks) do
     %{state | pending_clockset: Clock.append_clock(state.pending_clockset, clocks)}
   end
 
-  defp nodeup(state, remote_node) do
-    log state, fn -> "#{state.vnode.name}: nodeup from #{inspect remote_node.name}" end
-    {presences, joined, []} = State.node_up(state.presences, VNode.ref(remote_node))
+  defp up(state, remote_replica) do
+    log state, fn -> "#{state.replica.name}: replica up from #{inspect remote_replica.name}" end
+    {presences, joined, []} = State.replica_up(state.presences, Replica.ref(remote_replica))
 
     state
     |> report_diff(joined, [])
-    |> Map.put(:presences, presences)
+    |> put_presences(presences)
   end
 
-  defp nodedown(state, remote_node) do
-    log state, fn -> "#{state.vnode.name}: nodedown from #{inspect remote_node.name}" end
-    {presences, [], left} = State.node_down(state.presences, VNode.ref(remote_node))
+  defp down(state, remote_replica) do
+    log state, fn -> "#{state.replica.name}: replica down from #{inspect remote_replica.name}" end
+    {presences, [], left} = State.replica_down(state.presences, Replica.ref(remote_replica))
 
     state
     |> report_diff([], left)
-    |> Map.put(:presences, presences)
+    |> put_presences(presences)
   end
 
-  defp permdown(state, remote_node) do
-    log state, fn -> "#{state.vnode.name}: permanent nodedown detected #{remote_node.name}" end
-    presences = State.remove_down_nodes(state.presences, VNode.ref(remote_node))
+  defp permdown(state, remote_replica) do
+    log state, fn -> "#{state.replica.name}: permanent replica down detected #{remote_replica.name}" end
+    presences = State.remove_down_replicas(state.presences, Replica.ref(remote_replica))
 
     %{state | presences: presences}
   end
@@ -462,27 +492,31 @@ defmodule Phoenix.Tracker do
     Phoenix.PubSub.direct_broadcast!(target_node, state.pubsub_server, state.namespaced_topic, msg)
   end
 
-  defp broadcast_delta_heartbeat(state) do
-    {presences, delta} = State.delta_reset(state.presences)
-    has_delta? = Enum.any?(delta.cloud)
-
+  defp broadcast_delta_heartbeat(%{presences: presences} = state) do
     cond do
-      has_delta? or state.silent_periods >= state.max_silent_periods ->
-        broadcast_from(state, self(), {:pub, :heartbeat, VNode.ref(state.vnode), delta, clock(state)})
-        %{state | presences: presences, silent_periods: 0}
-      true ->
-        update_in(state.silent_periods, &(&1 + 1))
+      State.has_delta?(presences) ->
+        delta = presences.delta
+
+        broadcast_from(state, self(), {:pub, :heartbeat, Replica.ref(state.replica), delta, clock(state)})
+        %{state | presences: State.reset_delta(presences), silent_periods: 0}
+        |> push_delta_generation(delta)
+
+      state.silent_periods >= state.max_silent_periods ->
+        broadcast_from(state, self(), {:pub, :heartbeat, Replica.ref(state.replica), :empty, clock(state)})
+        %{state | silent_periods: 0}
+
+      true -> update_in(state.silent_periods, &(&1 + 1))
     end
   end
 
   defp report_diff(state, [], []), do: state
   defp report_diff(state, joined, left) do
-    join_diff = Enum.reduce(joined, %{}, fn {_node, {_conn, topic, key, meta}}, acc ->
+    join_diff = Enum.reduce(joined, %{}, fn {{_pid, topic}, {{key, meta}, _}}, acc ->
       Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->
         {[{key, meta} | joins], leaves}
       end)
     end)
-    full_diff = Enum.reduce(left, join_diff, fn {_node, {_conn, topic, key, meta}}, acc ->
+    full_diff = Enum.reduce(left, join_diff, fn {{_pid, topic}, {{key, meta}, _}}, acc ->
       Map.update(acc, topic, {[], [{key, meta}]}, fn {joins, leaves} ->
         {joins, [{key, meta} | leaves]}
       end)
@@ -513,6 +547,14 @@ defmodule Phoenix.Tracker do
 
         #{inspect other}
     """
+  end
+
+  defp push_delta_generation(state, {%State{mode: :normal}, _}) do
+    %{state | deltas: []}
+  end
+  defp push_delta_generation(%{deltas: deltas} = state, %State{mode: :delta} = delta) do
+    new_deltas = DeltaGeneration.push(state.presences, deltas, delta, state.max_delta_sizes)
+    %{state | deltas: new_deltas}
   end
 
   defp random_ref() do
