@@ -62,10 +62,10 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave2, tracker, spawn_pid(), topic, "slave2", %{})
 
     # slave1 sends delta broadcast to slave2
-    assert_receive {@slave1, {:pub, :heartbeat, {@slave2, _vsn}, {%State{}, _}, _clocks}}, @timeout
+    assert_receive {@slave1, {:pub, :heartbeat, {@slave2, _vsn}, %State{mode: :delta}, _clocks}}, @timeout
 
     # slave2 sends delta broadcast to slave1
-    assert_receive {@slave2, {:pub, :heartbeat, {@slave1, _vsn}, {%State{}, _}, _clocks}}, @timeout
+    assert_receive {@slave2, {:pub, :heartbeat, {@slave1, _vsn}, %State{mode: :delta}, _clocks}}, @timeout
 
     flush()
     resume_gossips(tracker)

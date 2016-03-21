@@ -33,6 +33,8 @@ defmodule Phoenix.Tracker do
       Default `1_200_000` (20 minutes)
     * `clock_sample_periods` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
+    * `max_delta_sizes` - The list of delta generation sizes to keep before
+      falling back to sending entire state. Defaults `[100, 1000, 10_000]`.
     * log_level - The log level to log events, defaults `:debug` and can be
       disabled with `false`
 
@@ -91,7 +93,7 @@ defmodule Phoenix.Tracker do
   offloaded with a `Task.Supervisor` spawned process.
   """
   use GenServer
-  alias Phoenix.Tracker.{Clock, State, Replica}
+  alias Phoenix.Tracker.{Clock, State, Replica, DeltaGeneration}
   require Logger
 
   @type presence :: {key :: String.t, meta :: Map.t}
@@ -199,7 +201,6 @@ defmodule Phoenix.Tracker do
 
   def init([tracker, tracker_opts, opts]) do
     Process.flag(:trap_exit, true)
-    :random.seed(:os.timestamp())
     # TODO add invariants for configuration periods
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
@@ -234,6 +235,8 @@ defmodule Phoenix.Tracker do
                 down_period: down_period,
                 permdown_period: permdown_period,
                 clock_sample_periods: clock_sample_periods,
+                deltas: [],
+                max_delta_sizes: [100, 1000, 10_000],
                 current_sample_count: clock_sample_periods}}
 
       other -> other
@@ -264,17 +267,17 @@ defmodule Phoenix.Tracker do
                |> report_diff(joined, left)
                |> put_presences(presences)
                |> put_pending_clock(clocks)
+               |> push_delta_generation(delta)
                |> handle_heartbeat({name, vsn})}
   end
 
-  def handle_info({:pub, :transfer_req, ref, {name, _vsn}, _clocks}, state) do
-    {presences, extracted} = State.extract(state.presences)
-    # TODO use computed delta range for clocks, don't send entire CRDT unless neccessary
+  def handle_info({:pub, :transfer_req, ref, {name, _vsn}, {_, clocks}}, state) do
+    delta = DeltaGeneration.extract(state.presences, state.deltas, clocks)
     log state, fn -> "#{state.replica.name}: transfer_req from #{inspect name}" end
-    msg = {:pub, :transfer_ack, ref, Replica.ref(state.replica), {presences, extracted}}
+    msg = {:pub, :transfer_ack, ref, Replica.ref(state.replica), delta}
     direct_broadcast(state, name, msg)
 
-    {:noreply, %{state | presences: presences}}
+    {:noreply, state}
   end
 
   def handle_info({:pub, :transfer_ack, _ref, {name, _vsn}, remote_presences}, state) do
@@ -283,6 +286,7 @@ defmodule Phoenix.Tracker do
 
     {:noreply, state
                |> report_diff(joined, left)
+               |> push_delta_generation(remote_presences)
                |> put_presences(presences)}
   end
 
@@ -439,10 +443,12 @@ defmodule Phoenix.Tracker do
 
   @spec clockset_to_sync(%{pending_clockset: [State.replica_context]}) :: [State.replica_name]
   defp clockset_to_sync(state) do
+    my_ref = Replica.ref(state.replica)
+
     state.pending_clockset
     |> Clock.append_clock(clock(state))
     |> Clock.clockset_replicas()
-    |> Enum.filter(fn {name, _vsn} -> Map.has_key?(state.replicas, name) end)
+    |> Enum.filter(fn ref -> ref != my_ref end)
   end
 
   defp put_pending_clock(state, clocks) do
@@ -489,9 +495,11 @@ defmodule Phoenix.Tracker do
   defp broadcast_delta_heartbeat(%{presences: presences} = state) do
     cond do
       State.has_delta?(presences) ->
-        delta = State.extract_delta(presences)
+        delta = presences.delta
+
         broadcast_from(state, self(), {:pub, :heartbeat, Replica.ref(state.replica), delta, clock(state)})
         %{state | presences: State.reset_delta(presences), silent_periods: 0}
+        |> push_delta_generation(delta)
 
       state.silent_periods >= state.max_silent_periods ->
         broadcast_from(state, self(), {:pub, :heartbeat, Replica.ref(state.replica), :empty, clock(state)})
@@ -539,6 +547,14 @@ defmodule Phoenix.Tracker do
 
         #{inspect other}
     """
+  end
+
+  defp push_delta_generation(state, {%State{mode: :normal}, _}) do
+    %{state | deltas: []}
+  end
+  defp push_delta_generation(%{deltas: deltas} = state, %State{mode: :delta} = delta) do
+    new_deltas = DeltaGeneration.push(state.presences, deltas, delta, state.max_delta_sizes)
+    %{state | deltas: new_deltas}
   end
 
   defp random_ref() do

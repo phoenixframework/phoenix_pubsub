@@ -2,16 +2,17 @@ defmodule Phoenix.TrackerClockTest do
   use ExUnit.Case
   alias Phoenix.Tracker.Clock
 
-  test "basic dominates" do
+  test "dominates?" do
     clock1 = %{a: 1, b: 2, c: 3}
     clock2 = %{b: 2, c: 3, d: 1}
     clock3 = %{a: 1, b: 2}
-    assert true == Clock.dominates?(clock1, clock3)
-    assert false == Clock.dominates?(clock3, clock1)
-    assert false == Clock.dominates?(clock1, clock2)
+    assert Clock.dominates?(clock1, clock3)
+    refute Clock.dominates?(clock3, clock1)
+    refute Clock.dominates?(clock1, clock2)
+    assert Clock.dominates?(clock1, clock1)
   end
 
-  test "test the set trims..." do
+  test "test the set trims" do
     clock1 = {:a, %{a: 1, b: 2, c: 3}}
     clock2 = {:b, %{b: 2, c: 3, d: 1}}
     clock3 = {:c, %{a: 1, b: 2}}
@@ -26,4 +27,19 @@ defmodule Phoenix.TrackerClockTest do
                        |> Enum.sort()
   end
 
+  test "upperbound" do
+    assert Clock.upperbound(%{a: 1, b: 2, c: 2}, %{a: 3, b: 1, d: 2}) ==
+      %{a: 3, b: 2, c: 2, d: 2}
+
+    assert Clock.upperbound(%{}, %{a: 3, b: 1, d: 2}) == %{a: 3, b: 1, d: 2}
+    assert Clock.upperbound(%{a: 3, b: 1, d: 2}, %{}) == %{a: 3, b: 1, d: 2}
+  end
+
+  test "lowerbound" do
+    assert Clock.lowerbound(%{a: 1, b: 2, c: 2}, %{a: 3, b: 1, d: 2}) ==
+      %{a: 1, b: 1, c: 2, d: 2}
+
+    assert Clock.lowerbound(%{}, %{a: 3, b: 1, d: 2}) == %{a: 3, b: 1, d: 2}
+    assert Clock.lowerbound(%{a: 3, b: 1, d: 2}, %{}) == %{a: 3, b: 1, d: 2}
+  end
 end

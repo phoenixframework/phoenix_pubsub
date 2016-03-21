@@ -2,31 +2,30 @@ defmodule Phoenix.Tracker.State do
   @moduledoc """
   Provides an ORSWOT CRDT.
   """
-  alias Phoenix.Tracker.State
+  alias Phoenix.Tracker.{State, Clock}
 
-  @type name :: term
-  @type topic :: String.t
-  @type key :: term
-  @type meta :: Map.t
-  @type ets_id :: pos_integer
-  @type clock :: pos_integer
-  @type tag :: {name, clock}
-  @type cloud :: MapSet.t
-  @type context :: %{name => clock}
-  @type replica_context :: {name, context}
-  @type values :: ets_id | %{tag => {pid, topic, key, meta}}
-  @type value :: {{pid, topic}, {{key, meta}, tag}}
-  @type delta :: %State{mode: :delta}
+  @type name      :: term
+  @type topic     :: String.t
+  @type key       :: term
+  @type meta      :: Map.t
+  @type ets_id    :: pos_integer
+  @type clock     :: pos_integer
+  @type tag       :: {name, clock}
+  @type cloud     :: MapSet.t
+  @type context   :: %{name => clock}
+  @type values    :: ets_id | :extracted | %{tag => {pid, topic, key, meta}}
+  @type value     :: {{pid, topic}, {{key, meta}, tag}}
+  @type delta     :: %State{mode: :delta}
 
   @type t :: %State{
-    replica: name,
-    context: context,
-    cloud: cloud,
-    values: values,
-    mode: :unset | :delta | :normal,
-    delta: :unset | delta,
+    replica:  name,
+    context:  context,
+    cloud:    cloud,
+    values:   values,
+    mode:     :unset | :delta | :normal,
+    delta:    :unset | delta,
     replicas: %{name => :up | :down},
-    range: {clock, clock}
+    range:    {context, context}
   }
 
   defstruct replica: nil,
@@ -36,7 +35,7 @@ defmodule Phoenix.Tracker.State do
             mode: :unset,
             delta: :unset,
             replicas: %{},
-            range: {0, 0}
+            range: {%{}, %{}}
 
   @doc """
   Creates a new set for the replica.
@@ -59,7 +58,7 @@ defmodule Phoenix.Tracker.State do
   @doc """
   Returns the causal context for the set.
   """
-  @spec clocks(t) :: replica_context
+  @spec clocks(t) :: {name, context}
   def clocks(%State{replica: rep, context: ctx}), do: {rep, ctx}
 
   @doc """
@@ -137,11 +136,11 @@ defmodule Phoenix.Tracker.State do
   Resets the set's delta.
   """
   @spec reset_delta(t) :: t
-  def reset_delta(%State{replica: replica} = state) do
-    clock = clock(state)
+  def reset_delta(%State{context: ctx, replica: replica} = state) do
+    delta_ctx = Map.take(ctx, [replica])
     delta = %State{replica: replica,
                    values: %{},
-                   range: {clock, clock},
+                   range: {delta_ctx, delta_ctx},
                    mode: :delta}
     %State{state | delta: delta}
   end
@@ -156,17 +155,7 @@ defmodule Phoenix.Tracker.State do
     map = foldl(values, %{}, fn {{pid, topic}, {{key, meta}, tag}}, acc ->
       Map.put(acc, tag, {pid, topic, key, meta})
     end)
-    {state, map}
-  end
-
-  @doc """
-  Extracts the set's delta elements into a mergable list.
-
-  Used when merging a delta into another set.
-  """
-  @spec extract_delta(t) :: {t, values}
-  def extract_delta(%State{delta: delta}) do
-    {delta, delta.values}
+    {%{state | delta: :unset}, map}
   end
 
   @doc """
@@ -181,14 +170,20 @@ defmodule Phoenix.Tracker.State do
 
       {%Phoenix.Tracker.State{}, [...], [...]}
   """
-  @spec merge(local :: t, {remote :: t, values}) :: {new_local :: t, joins :: [value], leaves :: [value]}
+  @spec merge(local :: t, {remote :: t, values} | delta) :: {new_local :: t, joins :: [value], leaves :: [value]}
+  def merge(%State{} = local, %State{mode: :delta} = remote) do
+    merge(local, {remote, remote.values})
+  end
   def merge(%State{} = local, {%State{} = remote, remote_map}) do
     joins = accumulate_joins(local, remote_map)
     {cloud, delta, adds, leaves} = observe_removes(local, remote, remote_map, joins)
     true = :ets.delete_all_objects(local.values)
     true = :ets.insert(local.values, adds)
-    ctx = Map.merge(local.context, remote.context, fn _, a, b -> max(a, b) end)
-    new_state = compact(%State{local | context: ctx, cloud: cloud, delta: delta})
+    ctx = Clock.upperbound(local.context, remote.context)
+    new_state =
+      %State{local | cloud: cloud, delta: delta}
+      |> put_context(ctx)
+      |> compact()
 
     {new_state, joins, leaves}
   end
@@ -218,6 +213,32 @@ defmodule Phoenix.Tracker.State do
     end)
   end
 
+  def merge_deltas(%State{mode: :delta} = local, %State{mode: :delta, values: remote_values} = remote) do
+    local_values = local.values
+    {local_start, local_end} = local.range
+    {remote_start, remote_end} = remote.range
+
+    if Clock.dominates_or_equal?(local_end, remote_start) do
+      new_start = Clock.lowerbound(local_start, remote_start)
+      new_end = Clock.upperbound(local_end, remote_end)
+      cloud  = MapSet.union(local.cloud, remote.cloud)
+
+      filtered_locals = for {tag, value} <- local_values,
+                        Map.has_key?(remote_values, tag) or not in?(remote, tag),
+                        into: %{},
+                        do: {tag, value}
+
+      merged_vals = for {tag, value} <- remote_values,
+                    !Map.has_key?(local_values, tag) and not in?(local, tag),
+                    into: filtered_locals,
+                    do: {tag, value}
+
+      {:ok, %State{local | cloud: cloud, values: merged_vals, range: {new_start, new_end}}}
+    else
+      {:error, :not_contiguous}
+    end
+  end
+
   @doc """
   Marks a replica as up in the set and returns rejoined users.
   """
@@ -244,6 +265,10 @@ defmodule Phoenix.Tracker.State do
     true = :ets.match_delete(values, {:_, {:_, {replica, :_}}})
 
     %State{state | context: new_ctx}
+  end
+
+  def size(%State{mode: :delta, cloud: cloud, values: values}) do
+    MapSet.size(cloud) + map_size(values)
   end
 
   @spec add(t, pid, topic, key, meta) :: t
@@ -278,7 +303,7 @@ defmodule Phoenix.Tracker.State do
   @spec compact(t) :: t
   defp compact(%State{context: ctx, cloud: cloud} = state) do
     {new_ctx, new_cloud} = do_compact(ctx, Enum.sort(cloud))
-    %State{state | context: new_ctx, cloud: new_cloud}
+    put_context(%State{state | cloud: new_cloud}, new_ctx)
   end
   @spec do_compact(context, sorted_cloud_list :: list) :: {context, cloud}
   defp do_compact(ctx, cloud) do
@@ -311,15 +336,20 @@ defmodule Phoenix.Tracker.State do
 
   @spec bump_clock(t) :: t
   defp bump_clock(%State{mode: :normal, replica: rep, cloud: cloud, context: ctx, delta: delta} = state) do
-    %State{cloud: delta_cloud, range: delta_range} = delta
     new_clock = clock(state) + 1
+    new_ctx = Map.put(ctx, rep, new_clock)
 
     %State{state |
            cloud: MapSet.put(cloud, {rep, new_clock}),
-           context: Map.put(ctx, rep, new_clock),
-           delta: %State{delta |
-                         cloud: MapSet.put(delta_cloud, {rep, new_clock}),
-                         range: put_elem(delta_range, 1, new_clock)}}
+           delta: %State{delta | cloud: MapSet.put(delta.cloud, {rep, new_clock})}}
+    |> put_context(new_ctx)
+  end
+  defp put_context(%State{delta: delta, replica: rep} = state, new_ctx) do
+    {start_clock, end_clock} = delta.range
+    new_end = Map.put(end_clock, rep, Map.get(new_ctx, rep, 0))
+    %State{state |
+           context: new_ctx,
+           delta: %State{delta | range: {start_clock, new_end}}}
   end
 
   @spec up_replicas(t) :: [name]
