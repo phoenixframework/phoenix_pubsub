@@ -78,11 +78,11 @@ defmodule Phoenix.Tracker.Clock do
       if dominates?(clock, clock2) do
         {set, true}
       else
-        {[{node2, clock2}|set], insert || !dominates?(clock2, clock)}
+        {[{node2, clock2}| set], insert || !dominates?(clock2, clock)}
       end
     end)
     |> case do
-      {new_clockset, true} -> [{node, clock}|new_clockset]
+      {new_clockset, true} -> [{node, clock} | new_clockset]
       {new_clockset, false} -> new_clockset
     end
   end
@@ -90,6 +90,6 @@ defmodule Phoenix.Tracker.Clock do
   defp combine_clocks(clockset) do
     clockset
     |> Enum.map(fn {_, clocks} -> clocks end)
-    |> Enum.reduce(%{}, &Map.merge(&1, &2, fn _, a, b -> max(a, b) end))
+    |> Enum.reduce(%{}, &upperbound(&1, &2))
   end
 end
