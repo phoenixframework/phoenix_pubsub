@@ -25,7 +25,7 @@ defmodule Phoenix.TrackerTest do
   test "gossip from unseen node triggers nodeup and transfer request",
     %{tracker: tracker, topic: topic} do
 
-    assert Tracker.list(tracker, topic) == []
+    assert list(tracker, topic) == []
     subscribe_to_tracker(tracker)
     drop_gossips(tracker)
     spy_on_tracker(@slave1, self(), tracker)
@@ -40,7 +40,7 @@ defmodule Phoenix.TrackerTest do
     # slave1 fulfills tranfer request and sends transfer_ack to master
     assert_transfer_ack ref, from: @slave1
     assert_heartbeat to: @slave1, from: @master
-    assert [{"slave1", _}] = Tracker.list(tracker, topic)
+    assert [{"slave1", _}] = list(tracker, topic)
   end
 
   test "requests for transfer collapses clocks",
@@ -83,8 +83,7 @@ defmodule Phoenix.TrackerTest do
     assert_heartbeat from: @slave1
     assert_heartbeat from: @slave2
 
-    assert [{"slave1", _}, {"slave1.2", _}, {"slave2", _}] =
-           Enum.sort(Tracker.list(tracker, topic))
+    assert [{"slave1", _}, {"slave1.2", _}, {"slave2", _}] = list(tracker, topic)
   end
 
   # TODO split into multiple testscases
@@ -127,7 +126,7 @@ defmodule Phoenix.TrackerTest do
     {slave1_node, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1-back", %{})
     assert_join ^topic, "slave1-back", %{}
-    assert [{@slave2, _}, {"slave1-back", _}] = Enum.sort(Tracker.list(tracker, topic))
+    assert [{@slave2, _}, {"slave1-back", _}] = list(tracker, topic)
     assert_map %{@slave1 => %Replica{status: :up, vsn: new_vsn},
                  @slave2 => %Replica{status: :up}}, replicas(tracker), 2
     assert vsn_before != new_vsn
@@ -153,16 +152,16 @@ defmodule Phoenix.TrackerTest do
 
     # local joins
     subscribe(topic)
-    assert Tracker.list(tracker, topic) == []
+    assert list(tracker, topic) == []
     {:ok, _ref} = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
     assert_join ^topic, "me", %{name: "me"}
-    assert [{"me", %{name: "me", phx_ref: _}}] = Tracker.list(tracker, topic)
+    assert [{"me", %{name: "me", phx_ref: _}}] = list(tracker, topic)
 
     {:ok, _ref} = Tracker.track(tracker, local_presence , topic, "me2", %{name: "me2"})
     assert_join ^topic, "me2", %{name: "me2"}
     assert [{"me", %{name: "me", phx_ref: _}},
             {"me2",%{name: "me2", phx_ref: _}}] =
-           Enum.sort(Tracker.list(tracker, topic))
+           list(tracker, topic)
 
     # remote joins
     assert replicas(tracker) == %{}
@@ -173,19 +172,19 @@ defmodule Phoenix.TrackerTest do
     assert [{"me", %{name: "me", phx_ref: _}},
             {"me2",%{name: "me2", phx_ref: _}},
             {"slave1", %{name: "s1", phx_ref: _}}] =
-           Enum.sort(Tracker.list(tracker, topic))
+           list(tracker, topic)
 
     # local leaves
     Process.exit(local_presence, :kill)
     assert_leave ^topic, "me2", %{name: "me2"}
     assert [{"me", %{name: "me", phx_ref: _}},
             {"slave1", %{name: "s1", phx_ref: _}}] =
-           Enum.sort(Tracker.list(tracker, topic))
+           list(tracker, topic)
 
     # remote leaves
     Process.exit(remote_pres, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
-    assert [{"me", %{name: "me", phx_ref: _}}] = Tracker.list(tracker, topic)
+    assert [{"me", %{name: "me", phx_ref: _}}] = list(tracker, topic)
   end
 
   test "detects nodedown and locally broadcasts leaves",
@@ -194,7 +193,7 @@ defmodule Phoenix.TrackerTest do
     local_presence = spawn_pid()
     subscribe(topic)
     {node_pid, {:ok, slave1_tracker}} = start_tracker(@slave1, name: tracker)
-    assert Tracker.list(tracker, topic) == []
+    assert list(tracker, topic) == []
 
     {:ok, _ref} = Tracker.track(tracker, local_presence , topic, "local1", %{name: "l1"})
     assert_join ^topic, "local1", %{}
@@ -202,14 +201,14 @@ defmodule Phoenix.TrackerTest do
     track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{name: "s1"})
     assert_join ^topic, "slave1", %{name: "s1"}
     assert %{@slave1 => %Replica{status: :up}} = replicas(tracker)
-    assert [{"local1", _}, {"slave1", _}] = Enum.sort(Tracker.list(tracker, topic))
+    assert [{"local1", _}, {"slave1", _}] = list(tracker, topic)
 
     # nodedown
     Process.unlink(node_pid)
     Process.exit(slave1_tracker, :kill)
     assert_leave ^topic, "slave1", %{name: "s1"}
     assert %{@slave1 => %Replica{status: :down}} = replicas(tracker)
-    assert [{"local1", _}] = Tracker.list(tracker, topic)
+    assert [{"local1", _}] = list(tracker, topic)
   end
 
 
@@ -223,14 +222,14 @@ defmodule Phoenix.TrackerTest do
 
     Tracker.track(tracker, self(), topic, "user1", %{name: "user1"})
     Tracker.track(tracker, self(), "another:topic", "user2", %{name: "user2"})
-    assert [{"user1", %{name: "user1"}}] = Tracker.list(tracker, topic)
-    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert [{"user1", %{name: "user1"}}] = list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = list(tracker, "another:topic")
     assert Tracker.untrack(tracker, self(), topic, "user1") == :ok
-    assert [] = Tracker.list(tracker, topic)
-    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert [] = list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = list(tracker, "another:topic")
     assert Process.whereis(tracker) in Process.info(self())[:links]
     assert Tracker.untrack(tracker, self(), "another:topic", "user2") == :ok
-    assert [] = Tracker.list(tracker, "another:topic")
+    assert [] = list(tracker, "another:topic")
     refute Process.whereis(tracker) in Process.info(self())[:links]
   end
 
@@ -239,12 +238,12 @@ defmodule Phoenix.TrackerTest do
 
     Tracker.track(tracker, self(), topic, "user1", %{name: "user1"})
     Tracker.track(tracker, self(), "another:topic", "user2", %{name: "user2"})
-    assert [{"user1", %{name: "user1"}}] = Tracker.list(tracker, topic)
-    assert [{"user2", %{name: "user2"}}] = Tracker.list(tracker, "another:topic")
+    assert [{"user1", %{name: "user1"}}] = list(tracker, topic)
+    assert [{"user2", %{name: "user2"}}] = list(tracker, "another:topic")
     assert Process.whereis(tracker) in Process.info(self())[:links]
     assert Tracker.untrack(tracker, self()) == :ok
-    assert [] = Tracker.list(tracker, topic)
-    assert [] = Tracker.list(tracker, "another:topic")
+    assert [] = list(tracker, topic)
+    assert [] = list(tracker, "another:topic")
     refute Process.whereis(tracker) in Process.info(self())[:links]
   end
 
@@ -253,7 +252,7 @@ defmodule Phoenix.TrackerTest do
 
     subscribe(topic)
     {:ok, _ref} = Tracker.track(tracker, self(), topic, "u1", %{name: "u1"})
-    assert [{"u1", %{name: "u1", phx_ref: ref}}] = Tracker.list(tracker, topic)
+    assert [{"u1", %{name: "u1", phx_ref: ref}}] = list(tracker, topic)
     {:ok, _ref} = Tracker.update(tracker, self(), topic, "u1", %{name: "u1-updated"})
     assert_leave ^topic, "u1", %{name: "u1", phx_ref: ^ref}
     assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
@@ -263,6 +262,22 @@ defmodule Phoenix.TrackerTest do
     %{tracker: tracker, topic: topic} do
     assert {:error, :nopresence} = Tracker.update(tracker, self, topic, "u1", %{})
   end
+
+  test "graceful exits with permdown", %{tracker: tracker, topic: topic} do
+    subscribe(topic)
+    {_node_pid, {:ok, _slave1_tracker}} = start_tracker(@slave1, name: tracker)
+    track_presence(@slave1, tracker, spawn_pid(), topic, "slave1", %{name: "s1"})
+    assert_join ^topic, "slave1", %{name: "s1"}
+    assert %{@slave1 => %Replica{status: :up}} = replicas(tracker)
+    assert [{"slave1", _}] = list(tracker, topic)
+
+    # graceful permdown
+    {_, :ok} = graceful_permdown(@slave1, tracker)
+    assert_leave ^topic, "slave1", %{name: "s1"}
+    assert [] = list(tracker, topic)
+    assert replicas(tracker) == %{}
+  end
+
 
   ## Helpers
 
@@ -299,5 +314,9 @@ defmodule Phoenix.TrackerTest do
     else
       assert_receive {:pub, :heartbeat, {^from, _vsn}, _delta, _clocks}, @timeout
     end
+  end
+
+  defp list(tracker, topic) do
+    Enum.sort(Tracker.list(tracker, topic))
   end
 end

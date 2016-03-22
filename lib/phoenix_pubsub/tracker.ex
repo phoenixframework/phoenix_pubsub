@@ -192,6 +192,20 @@ defmodule Phoenix.Tracker do
     |> Enum.map(fn {{_pid, _topic}, {{key, meta}, _tag}} -> {key, meta} end)
   end
 
+  @doc """
+  Gracefully shuts down by broadcasting permdown to all replicas.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.graceful_permdown(MyTracker)
+      :ok
+  """
+  @spec graceful_permdown(atom) :: :ok
+  def graceful_permdown(server_name) do
+    GenServer.call(server_name, :graceful_permdown)
+  end
+
+
   ## Server
 
   def start_link(tracker, tracker_opts, server_opts) do
@@ -272,8 +286,8 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, {_, clocks}}, state) do
-    delta = DeltaGeneration.extract(state.presences, state.deltas, clocks)
     log state, fn -> "#{state.replica.name}: transfer_req from #{inspect name}" end
+    delta = DeltaGeneration.extract(state.presences, state.deltas, clocks)
     msg = {:pub, :transfer_ack, ref, Replica.ref(state.replica), delta}
     direct_broadcast(state, name, msg)
 
@@ -288,6 +302,13 @@ defmodule Phoenix.Tracker do
                |> report_diff(joined, left)
                |> push_delta_generation(remote_presences)
                |> put_presences(presences)}
+  end
+
+  def handle_info({:pub, :graceful_permdown, {_name, _vsn} = ref}, state) do
+    case Replica.fetch_by_ref(state.replicas, ref) do
+      {:ok, replica} -> {:noreply, state |> down(replica) |> permdown(replica)}
+      :error         -> {:noreply, state}
+    end
   end
 
   def handle_info({:EXIT, pid, _reason}, state) do
@@ -320,6 +341,11 @@ defmodule Phoenix.Tracker do
         {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
         {:reply, {:ok, ref}, state}
     end
+  end
+
+  def handle_call(:graceful_permdown, _from, state) do
+    broadcast_from(state, self(), {:pub, :graceful_permdown, Replica.ref(state.replica)})
+    {:stop, :normal, :ok, state}
   end
 
   def handle_call({:list, _topic}, _from, state) do
@@ -473,11 +499,16 @@ defmodule Phoenix.Tracker do
     |> put_presences(presences)
   end
 
-  defp permdown(state, remote_replica) do
-    log state, fn -> "#{state.replica.name}: permanent replica down detected #{remote_replica.name}" end
+  defp permdown(state, %Replica{name: name} = remote_replica) do
+    log state, fn -> "#{state.replica.name}: permanent replica down detected #{name}" end
     presences = State.remove_down_replicas(state.presences, Replica.ref(remote_replica))
 
-    %{state | presences: presences}
+    case Replica.fetch_by_ref(state.replicas, Replica.ref(remote_replica)) do
+      {:ok, _replica} ->
+        %{state | presences: presences, replicas: Map.delete(state.replicas, name)}
+      _ ->
+        %{state | presences: presences}
+    end
   end
 
   defp namespaced_topic(server_name) do

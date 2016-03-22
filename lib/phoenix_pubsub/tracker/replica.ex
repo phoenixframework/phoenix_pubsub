@@ -3,10 +3,12 @@ defmodule Phoenix.Tracker.Replica do
   alias Phoenix.Tracker.Replica
 
   @type name :: String.t
+  @type vsn :: term
+  @type replica_ref :: {name, vsn}
 
   @type t :: %Replica{
     name: name,
-    vsn: term,
+    vsn: vsn,
     last_heartbeat_at: pos_integer,
     status: :up | :down | :permdown
   }
@@ -27,10 +29,10 @@ defmodule Phoenix.Tracker.Replica do
     %Replica{name: name, vsn: {now_ms(), System.unique_integer()}}
   end
 
-  @spec ref(Replica.t) :: Phoenix.Tracker.State.noderef
+  @spec ref(Replica.t) :: replica_ref
   def ref(%Replica{name: name, vsn: vsn}), do: {name, vsn}
 
-  @spec put_heartbeat(%{name => Replica.t}, Phoenix.Tracker.State.noderef) :: op_result
+  @spec put_heartbeat(%{name => Replica.t}, replica_ref) :: op_result
   def put_heartbeat(replicas, {name, vsn}) do
     case Map.fetch(replicas, name) do
       :error ->
@@ -52,6 +54,18 @@ defmodule Phoenix.Tracker.Replica do
         updated_replica = down(replica)
         {Map.put(replicas, replica.name, updated_replica), replica, updated_replica}
       true -> {replicas, replica, replica}
+    end
+  end
+
+  @doc """
+  Fetches a replica from the map with matching name and version from the ref.
+  """
+  @spec fetch_by_ref(%{name => Replica.t}, replica_ref) :: {:ok, Replica.t} | :error
+  def fetch_by_ref(replicas, {name, vsn}) do
+    case Map.fetch(replicas, name) do
+      {:ok, %Replica{vsn: ^vsn} = replica} -> {:ok, replica}
+      {:ok, %Replica{vsn: _vsn}} -> :error
+      :error -> :error
     end
   end
 

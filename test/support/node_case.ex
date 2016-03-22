@@ -57,6 +57,10 @@ defmodule Phoenix.PubSub.NodeCase do
     call_node(node_name, fn -> start_tracker(opts) end)
   end
 
+  def graceful_permdown(node_name, tracker) do
+    call_node(node_name, fn -> Phoenix.Tracker.graceful_permdown(tracker) end)
+  end
+
   def drop_gossips(tracker) do
     :ok = GenServer.call(tracker, :unsubscribe)
   end
