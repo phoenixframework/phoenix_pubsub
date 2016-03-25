@@ -146,7 +146,7 @@ defmodule Phoenix.Tracker.State do
   end
 
   @doc """
-  Extracts the set's elements from ets into a mergable list.
+  Extracts the set's elements from ets into a mergeable list.
 
   Used when merging two sets.
   """
@@ -161,7 +161,7 @@ defmodule Phoenix.Tracker.State do
   @doc """
   Merges two sets, or a delta into a set.
 
-  Returns a 3-tuple of the updated set, and the joiend and left elements.
+  Returns a 3-tuple of the updated set, and the joined and left elements.
 
   ## Examples
 

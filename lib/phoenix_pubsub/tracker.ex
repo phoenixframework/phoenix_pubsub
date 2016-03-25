@@ -389,21 +389,21 @@ defmodule Phoenix.Tracker do
 
   defp put_presences(state, %State{} = presences), do: %{state | presences: presences}
 
-  defp drop_presence(state, conn, topic, key) do
-    if leave = State.get_by_pid(state.presences, conn, topic, key) do
+  defp drop_presence(state, pid, topic, key) do
+    if leave = State.get_by_pid(state.presences, pid, topic, key) do
       state
       |> report_diff([], [leave])
-      |> put_presences(State.leave(state.presences, conn, topic, key))
+      |> put_presences(State.leave(state.presences, pid, topic, key))
     else
       state
     end
   end
-  defp drop_presence(state, conn) do
-    leaves = State.get_by_pid(state.presences, conn)
+  defp drop_presence(state, pid) do
+    leaves = State.get_by_pid(state.presences, pid)
 
     state
     |> report_diff([], leaves)
-    |> put_presences(State.leave(state.presences, conn))
+    |> put_presences(State.leave(state.presences, pid))
   end
 
   defp handle_heartbeat(state, {name, vsn}) do
