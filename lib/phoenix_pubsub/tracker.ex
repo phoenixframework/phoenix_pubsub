@@ -64,11 +64,11 @@ defmodule Phoenix.Tracker do
           for {topic, {joins, leaves}} <- diff do
             for {key, meta} <- joins do
               IO.puts "presence join: key \"#{key}\" with meta #{inspect meta}"
-              direct_broadcast(state, topic, {:join, key, meta})
+              Phoenix.PubSub.direct_broadcast(state.pubsub_server, topic, {:join, key, meta})
             end
             for {key, meta} <- leaves do
               IO.puts "presence leave: key \"#{key}\" with meta #{inspect meta}"
-              direct_broadcast(state, topic, {:leave, key, meta})
+              Phoenix.PubSub.direct_broadcast(state.pubsub_server, topic, {:leave, key, meta})
             end
           end
           {:ok, state}
@@ -527,9 +527,10 @@ defmodule Phoenix.Tracker do
     cond do
       State.has_delta?(presences) ->
         delta = presences.delta
+        new_presences = presences |> State.reset_delta() |> State.compact()
 
         broadcast_from(state, self(), {:pub, :heartbeat, Replica.ref(state.replica), delta, clock(state)})
-        %{state | presences: State.reset_delta(presences), silent_periods: 0}
+        %{state | presences: new_presences, silent_periods: 0}
         |> push_delta_generation(delta)
 
       state.silent_periods >= state.max_silent_periods ->

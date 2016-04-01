@@ -300,8 +300,13 @@ defmodule Phoenix.Tracker.State do
     %State{delta | cloud: MapSet.put(cloud, tag), values: Map.delete(values, tag)}
   end
 
+  @doc """
+  Compacts a sets causal history.
+
+  Called as needed and after merges.
+  """
   @spec compact(t) :: t
-  defp compact(%State{context: ctx, cloud: cloud} = state) do
+  def compact(%State{context: ctx, cloud: cloud} = state) do
     {new_ctx, new_cloud} = do_compact(ctx, Enum.sort(cloud))
     put_context(%State{state | cloud: new_cloud}, new_ctx)
   end
