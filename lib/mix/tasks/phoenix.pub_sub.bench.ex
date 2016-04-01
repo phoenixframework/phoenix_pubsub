@@ -1,7 +1,14 @@
 defmodule Mix.Tasks.Phoenix.PubSub.Bench do
+  @moduledoc """
+  Runs simple benchmarks for merge operations.
+
+  ## Examples
+
+      mix phoenix.pub_sub.bench --size 25000 --delta-size 1000
+  """
   use Mix.Task
   alias Phoenix.Tracker.State
-  # alias Phoenix.Tracker.State.ShardedState, as: State
+
 
   def run(opts) do
     Mix.Task.run("app.start", [])
@@ -38,8 +45,11 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
       end)
     end
 
-    {s2, _, _} = time "Merging delta with #{delta_size} elements into #{size} element set", fn ->
-      State.merge(s2, State.delta(s1))
+    s1 = State.compact(s1)
+    s2 = State.compact(s2)
+
+    {_is2, _, _} = time "Merging delta with #{delta_size} elements into #{size} element set", fn ->
+      State.merge(s2, s1.delta)
     end
   end
 
