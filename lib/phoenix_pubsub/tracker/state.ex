@@ -152,9 +152,9 @@ defmodule Phoenix.Tracker.State do
   """
   @spec extract(t) :: {t, values}
   def extract(%State{values: values} = state) do
-    map = foldl(values, %{}, fn {{pid, topic}, {{key, meta}, tag}}, acc ->
-      Map.put(acc, tag, {pid, topic, key, meta})
-    end)
+    map = foldl(values, [], fn {{pid, topic}, {{key, meta}, tag}}, acc ->
+      [{tag, {pid, topic, key, meta}} | acc]
+    end) |> :maps.from_list()
     {%{state | delta: :unset}, map}
   end
 
@@ -176,9 +176,8 @@ defmodule Phoenix.Tracker.State do
   end
   def merge(%State{} = local, {%State{} = remote, remote_map}) do
     joins = accumulate_joins(local, remote_map)
-    {cloud, delta, adds, leaves} = observe_removes(local, remote, remote_map, joins)
-    true = :ets.delete_all_objects(local.values)
-    true = :ets.insert(local.values, adds)
+    {cloud, delta, leaves} = observe_removes(local, remote, remote_map)
+    true = :ets.insert(local.values, joins)
     ctx = Clock.upperbound(local.context, remote.context)
     new_state =
       %State{local | cloud: cloud, delta: delta}
@@ -199,16 +198,17 @@ defmodule Phoenix.Tracker.State do
     end)
   end
 
-  @spec observe_removes(t, t, values, [value]) :: {cloud, delta, adds :: [value], leaves :: [value]}
-  defp observe_removes(local, remote, remote_map, joins) do
+  @spec observe_removes(t, t, [value]) :: {cloud, delta, leaves :: [value]}
+  defp observe_removes(%State{values: values} = local, remote, remote_map) do
     unioned_cloud = MapSet.union(local.cloud, remote.cloud)
-    init = {unioned_cloud, local.delta, joins, []}
+    init = {unioned_cloud, local.delta, []}
 
-    foldl(local.values, init, fn {_, {_, tag}} = el, {cloud, delta, adds, leaves} ->
+    foldl(local.values, init, fn {_, {_, tag}} = el, {cloud, delta, leaves} ->
       if in?(remote, tag) and not Map.has_key?(remote_map, tag) do
-        {MapSet.delete(cloud, tag), remove_delta_tag(delta, tag), adds, [el | leaves]}
+        true = :ets.delete_object(values, el)
+        {MapSet.delete(cloud, tag), remove_delta_tag(delta, tag), [el | leaves]}
       else
-        {cloud, delta, [el | adds], leaves}
+        {cloud, delta, leaves}
       end
     end)
   end
