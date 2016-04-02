@@ -27,9 +27,10 @@ defmodule Phoenix.Tracker do
       delta broadcasts have been sent. Defaults `10` (15s heartbeat)
     * `down_period` - The interval in milliseconds to flag a replica
       as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
-      (30s down detection).
+      (30s down detection). Note: This must be at least 2x the `broadcast_period`.
     * `permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
+      Note: This must be at least greater than the `down_period`.
       Default `1_200_000` (20 minutes)
     * `clock_sample_periods` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
@@ -215,7 +216,6 @@ defmodule Phoenix.Tracker do
 
   def init([tracker, tracker_opts, opts]) do
     Process.flag(:trap_exit, true)
-    # TODO add invariants for configuration periods
     pubsub_server        = Keyword.fetch!(opts, :pubsub_server)
     server_name          = Keyword.fetch!(opts, :name)
     broadcast_period     = opts[:broadcast_period] || 1500
@@ -224,6 +224,15 @@ defmodule Phoenix.Tracker do
     permdown_period      = opts[:permdown_period] || 1_200_000
     clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
+
+    if down_period <= (2 * broadcast_period) do
+      raise ArgumentError, message: "down_period must be at least twice as large as the broadcast_period"
+    end
+
+    if permdown_period <= down_period do
+      raise ArgumentError, message: "permdown_period must be at least larger than the down_period"
+    end
+
     node_name            = Phoenix.PubSub.node_name(pubsub_server)
     namespaced_topic     = namespaced_topic(server_name)
     replica              = Replica.new(node_name)
