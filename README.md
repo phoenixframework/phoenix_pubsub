@@ -22,7 +22,7 @@
 
 ## Testing
 
-Testing by default spawns replica nodes internally for distributed tests.
-To run tests that do not require replica nodes, exclude  the `clustered` tag:
+Testing by default spawns nodes internally for distributed tests.
+To run tests that do not require clustering, exclude  the `clustered` tag:
 
     $ mix test --exclude clustered
