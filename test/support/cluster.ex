@@ -2,13 +2,13 @@ defmodule Phoenix.PubSub.Cluster do
 
   def spawn do
     # Turn node into a distributed node with the given long name
-    :net_kernel.start([:"master@127.0.0.1"])
+    :net_kernel.start([:"primary@127.0.0.1"])
 
-    # Allow slave nodes to fetch all code from this node
+    # Allow replica nodes to fetch all code from this node
     :erl_boot_server.start([])
     allow_boot to_char_list("127.0.0.1")
 
-    # Start configured nodes as slaves
+    # Start configured nodes as replicas
     nodes = Application.get_env(:phoenix_pubsub, :nodes, [])
 
     nodes
@@ -17,15 +17,15 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp spawn_node(node_host) do
-    {:ok, slave} = :slave.start(to_char_list("127.0.0.1"), node_name(node_host), inet_loader_args())
-    add_code_paths(slave)
-    transfer_configuration(slave)
-    ensure_applications_started(slave)
-    {:ok, slave}
+    {:ok, replica} = :slave.start(to_char_list("127.0.0.1"), node_name(node_host), inet_loader_args())
+    add_code_paths(replica)
+    transfer_configuration(replica)
+    ensure_applications_started(replica)
+    {:ok, replica}
   end
 
-  defp rpc(slave, module, method, args) do
-    :rpc.block_call(slave, module, method, args)
+  defp rpc(replica, module, method, args) do
+    :rpc.block_call(replica, module, method, args)
   end
 
   defp inet_loader_args do
@@ -37,23 +37,23 @@ defmodule Phoenix.PubSub.Cluster do
     :erl_boot_server.add_slave(ipv4)
   end
 
-  defp add_code_paths(slave) do
-    :rpc.block_call(slave, :code, :add_paths, [:code.get_path()])
+  defp add_code_paths(replica) do
+    :rpc.block_call(replica, :code, :add_paths, [:code.get_path()])
   end
 
-  defp transfer_configuration(slave) do
+  defp transfer_configuration(replica) do
     for {app_name, _, _} <- Application.loaded_applications do
       for {key, val} <- Application.get_all_env(app_name) do
-        rpc(slave, Application, :put_env, [app_name, key, val])
+        rpc(replica, Application, :put_env, [app_name, key, val])
       end
     end
   end
 
-  defp ensure_applications_started(slave) do
-    rpc(slave, Application, :ensure_all_started, [:mix])
-    rpc(slave, Mix, :env, [Mix.env()])
+  defp ensure_applications_started(replica) do
+    rpc(replica, Application, :ensure_all_started, [:mix])
+    rpc(replica, Mix, :env, [Mix.env()])
     for {app_name, _, _} <- Application.loaded_applications do
-      rpc(slave, Application, :ensure_all_started, [app_name])
+      rpc(replica, Application, :ensure_all_started, [app_name])
     end
   end
 
