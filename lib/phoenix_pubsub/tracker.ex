@@ -189,7 +189,7 @@ defmodule Phoenix.Tracker do
     server_name
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
-    |> Enum.map(fn {{_pid, _topic}, {{key, meta}, _tag}} -> {key, meta} end)
+    |> Enum.map(fn {{_topic, _pid, key},  meta, _tag} -> {key, meta} end)
   end
 
   @doc """
@@ -337,7 +337,7 @@ defmodule Phoenix.Tracker do
     case State.get_by_pid(state.presences, pid, topic, key) do
       nil ->
         {:reply, {:error, :nopresence}, state}
-      {{_pid, _topic}, {{^key, prev_meta}, {_replica, _}}} ->
+      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
         {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
         {:reply, {:ok, ref}, state}
     end
@@ -543,12 +543,12 @@ defmodule Phoenix.Tracker do
 
   defp report_diff(state, [], []), do: state
   defp report_diff(state, joined, left) do
-    join_diff = Enum.reduce(joined, %{}, fn {{_pid, topic}, {{key, meta}, _}}, acc ->
+    join_diff = Enum.reduce(joined, %{}, fn {{topic, _pid, key}, meta, _}, acc ->
       Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->
         {[{key, meta} | joins], leaves}
       end)
     end)
-    full_diff = Enum.reduce(left, join_diff, fn {{_pid, topic}, {{key, meta}, _}}, acc ->
+    full_diff = Enum.reduce(left, join_diff, fn {{topic, _pid, key}, meta, _}, acc ->
       Map.update(acc, topic, {[], [{key, meta}]}, fn {joins, leaves} ->
         {joins, [{key, meta} | leaves]}
       end)

@@ -16,10 +16,12 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
                                                        delta_size: :integer])
     size       = opts[:size] || 100_000
     delta_size = opts[:delta_size] || 100
+    topic_size = trunc(size / 10)
 
     {s1, s2} = time "Creating 2 #{size} element sets", fn ->
       s1 = Enum.reduce(1..size, State.new(:s1), fn i, acc ->
-        State.join(acc, make_ref(), "topic#{i}", "user#{i}", %{name: i})
+
+        State.join(acc, make_ref(), "topic#{:erlang.phash2(i, topic_size)}", "user#{i}", %{name: i})
       end)
 
       s2 = Enum.reduce(1..size, State.new(:s2), fn i, acc ->
@@ -28,6 +30,8 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
 
       {s1, s2}
     end
+    user = make_ref()
+    s1 = State.join(s1, user, "topic100", "user100", %{name: 100})
 
     {_, s2_vals} = extracted_s2 = time "extracting #{size} element set", fn ->
       State.extract(s2)
@@ -39,6 +43,18 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
 
     {s1, [], []} = time "merging again #{size} element sets", fn ->
       State.merge(s1, extracted_s2)
+    end
+
+    time "get_by_topic for 1000 members of #{size * 2} element set", fn ->
+      State.get_by_topic(s1, "topic10")
+    end
+
+    [{{topic, pid, key}, _meta, _tag} | _] = time "get_by_pid/2 for #{size * 2} element set", fn ->
+      State.get_by_pid(s1, user)
+    end
+
+    time "get_by_pid/4 for #{size * 2} element set", fn ->
+      State.get_by_pid(s1, pid, topic, key) || raise(:none)
     end
 
     s1 = State.compact(s1)
@@ -57,9 +73,16 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
       end)
     end
 
-
-    {_s1, _, _} = time "Merging delta with #{delta_size} joins and leaves into #{size * 2} element set", fn ->
+    {s1, _, _} = time "Merging delta with #{delta_size} joins and leaves into #{size * 2} element set", fn ->
       State.merge(s1, s2.delta)
+    end
+
+    {s1, _, _} = time "replica_down from #{size *2} replica with downed holding #{size} elements", fn ->
+      State.replica_down(s1, s2.replica)
+    end
+
+    _s1 = time "remove_down_replicas from #{size *2} replica with downed holding #{size} elements", fn ->
+      State.remove_down_replicas(s1, s2.replica)
     end
   end
 
