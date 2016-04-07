@@ -26,7 +26,7 @@ defmodule Phoenix.Tracker.Replica do
   """
   @spec new(name) :: Replica.t
   def new(name) do
-    %Replica{name: name, vsn: {now_ms(), System.unique_integer()}}
+    %Replica{name: name, vsn: unique_vsn()}
   end
 
   @spec ref(Replica.t) :: replica_ref
@@ -77,8 +77,9 @@ defmodule Phoenix.Tracker.Replica do
     %Replica{replica | last_heartbeat_at: now_ms()}
   end
 
-  defp now_ms, do: :os.timestamp() |> time_to_ms()
-  defp time_to_ms({mega, sec, micro}) do
-    trunc(((mega * 1000000 + sec) * 1000) + (micro / 1000))
+  defp now_ms, do: System.system_time(:milli_seconds)
+
+  defp unique_vsn do
+    System.system_time(:micro_seconds) + System.unique_integer([:positive])
   end
 end

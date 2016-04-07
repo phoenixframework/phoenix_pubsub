@@ -33,7 +33,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
   defp do_push([gen | generations], delta, [gen_max | opts], {prev, acc}) do
     case State.merge_deltas(gen, delta) do
       {:ok, merged} ->
-        if State.size(merged) <= gen_max do
+        if State.delta_size(merged) <= gen_max do
           do_push(generations, delta, opts, {merged, [merged | acc]})
         else
           do_push(generations, delta, opts, {merged, [prev | acc]})

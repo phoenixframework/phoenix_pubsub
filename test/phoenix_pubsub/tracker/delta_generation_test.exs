@@ -17,7 +17,7 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     |> Enum.sort()
   end
 
-  test "empty generations" do
+  test "generations" do
     s1 = new(:s1)
     s2 = new(:s2)
     s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
