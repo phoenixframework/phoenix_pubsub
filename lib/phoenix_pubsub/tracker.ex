@@ -225,46 +225,49 @@ defmodule Phoenix.Tracker do
     clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
 
-    if down_period <= (2 * broadcast_period) do
-      raise ArgumentError, message: "down_period must be at least twice as large as the broadcast_period"
-    end
+    with :ok <- validate_down_period(down_period, broadcast_period),
+         :ok <- validate_permdown_period(permdown_period, down_period),
+         {:ok, tracker_state} <- tracker.init(tracker_opts) do
 
-    if permdown_period <= down_period do
-      raise ArgumentError, message: "permdown_period must be at least larger than the down_period"
-    end
+      node_name        = Phoenix.PubSub.node_name(pubsub_server)
+      namespaced_topic = namespaced_topic(server_name)
+      replica          = Replica.new(node_name)
 
-    node_name            = Phoenix.PubSub.node_name(pubsub_server)
-    namespaced_topic     = namespaced_topic(server_name)
-    replica              = Replica.new(node_name)
+      subscribe(pubsub_server, namespaced_topic)
+      send_stuttered_heartbeat(self(), broadcast_period)
 
-    case tracker.init(tracker_opts) do
-      {:ok, tracker_state} ->
-        subscribe(pubsub_server, namespaced_topic)
-        send_stuttered_heartbeat(self(), broadcast_period)
-
-        {:ok, %{server_name: server_name,
-                pubsub_server: pubsub_server,
-                tracker: tracker,
-                tracker_state: tracker_state,
-                replica: replica,
-                namespaced_topic: namespaced_topic,
-                log_level: log_level,
-                replicas: %{},
-                pending_clockset: [],
-                presences: State.new(Replica.ref(replica)),
-                broadcast_period: broadcast_period,
-                max_silent_periods: max_silent_periods,
-                silent_periods: max_silent_periods,
-                down_period: down_period,
-                permdown_period: permdown_period,
-                clock_sample_periods: clock_sample_periods,
-                deltas: [],
-                max_delta_sizes: [100, 1000, 10_000],
-                current_sample_count: clock_sample_periods}}
-
-      other -> other
+      {:ok, %{server_name: server_name,
+              pubsub_server: pubsub_server,
+              tracker: tracker,
+              tracker_state: tracker_state,
+              replica: replica,
+              namespaced_topic: namespaced_topic,
+              log_level: log_level,
+              replicas: %{},
+              pending_clockset: [],
+              presences: State.new(Replica.ref(replica)),
+              broadcast_period: broadcast_period,
+              max_silent_periods: max_silent_periods,
+              silent_periods: max_silent_periods,
+              down_period: down_period,
+              permdown_period: permdown_period,
+              clock_sample_periods: clock_sample_periods,
+              deltas: [],
+              max_delta_sizes: [100, 1000, 10_000],
+              current_sample_count: clock_sample_periods}}
     end
   end
+
+  def validate_down_period(d_period, b_period) when d_period <= (2 * b_period) do
+    {:error, "down_period must be at least twice as large as the broadcast_period"}
+  end
+  def validate_down_period(_d_period, _b_period), do: :ok
+
+  def validate_permdown_period(p_period, d_period) when p_period <= d_period do
+    {:error, "permdown_period must be at least larger than the down_period"}
+  end
+  def validate_permdown_period(_p_period, _d_period), do: :ok
+
 
   defp send_stuttered_heartbeat(pid, interval) do
     Process.send_after(pid, :heartbeat, Enum.random(0..trunc(interval * 0.25)))
