@@ -12,8 +12,12 @@ defmodule Phoenix.PubSub.PG2Test do
   @node2 :"node2@127.0.0.1"
 
   setup config do
-    size = config[:pool_size] || 1
-    {:ok, _} = PG2.start_link(config.test, pool_size: size)
+    size = config[:pool_size]
+    if size do
+      {:ok, _} = PG2.start_link(config.test, pool_size: size)
+    else
+      {:ok, _} = PG2.start_link(config.test, [])
+    end
     {_, {:ok, _}} = start_pubsub(@node1, PG2, config.test, [pool_size: size])
     {:ok, %{pubsub: config.test, pool_size: size}}
   end
@@ -52,5 +56,10 @@ defmodule Phoenix.PubSub.PG2Test do
       :ok = PubSub.direct_broadcast_from!(@node2, config.pubsub, self(), "some:topic", :ping)
       refute_receive {@node1, :ping}
     end
+  end
+
+  test "pool size defaults to number of schedulers", config do
+    last_shard = :erlang.system_info(:schedulers) - 1
+    assert Phoenix.PubSub.Local.subscribers(config.pubsub, "some:topic", last_shard) == []
   end
 end
