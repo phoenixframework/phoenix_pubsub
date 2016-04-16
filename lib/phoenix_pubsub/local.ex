@@ -92,11 +92,11 @@ defmodule Phoenix.PubSub.Local do
       :ok
 
   """
-  def broadcast(fastlane, pubsub_server, 1 = _pool_size, from, topic, msg) when is_atom(pubsub_server) do
+  def broadcast(nil = _interceptor, fastlane, pubsub_server, 1 = _pool_size, from, topic, msg) when is_atom(pubsub_server) do
     do_broadcast(fastlane, pubsub_server, _shard = 0, from, topic, msg)
     :ok
   end
-  def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
+  def broadcast(nil = _interceptor, fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
     parent = self
     for shard <- 0..(pool_size - 1) do
       Task.async(fn ->
@@ -105,6 +105,13 @@ defmodule Phoenix.PubSub.Local do
       end)
     end |> Enum.map(&Task.await(&1, :infinity))
     :ok
+  end
+
+  def broadcast(interceptor, fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
+    case interceptor.handle_broadcast(topic, msg, pubsub_server) do
+      {:ok, intercepted_msg} -> broadcast(nil, fastlane, pubsub_server, pool_size, from, topic, intercepted_msg)
+      :ignore -> :ok
+    end
   end
 
   defp do_broadcast(nil, pubsub_server, shard, from, topic, msg) do

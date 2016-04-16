@@ -127,6 +127,15 @@ defmodule Phoenix.PubSubTest do
     end
 
     @tag pool_size: size
+    test "pool #{size}: local_broadcast/3 and local_broadcast!/3 publishes message to local subscribers", config do
+      PubSub.subscribe(config.test, "topic9")
+      :ok = PubSub.local_broadcast(config.test, "topic9", :ping)
+      assert_receive :ping
+      :ok = PubSub.local_broadcast!(config.test, "topic9", :ping)
+      assert_receive :ping
+    end
+
+    @tag pool_size: size
     test "pool #{size}: broadcast/3 does not publish message to other topic subscribers", config do
       PubSub.subscribe(config.test, "topic9")
 

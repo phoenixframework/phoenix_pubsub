@@ -1,6 +1,6 @@
 defmodule Phoenix.PubSub.LocalTest do
   use ExUnit.Case, async: true
-
+  use Phoenix.PubSub.Interceptor
   alias Phoenix.PubSub.Local
 
   defp list(config) do
@@ -13,6 +13,16 @@ defmodule Phoenix.PubSub.LocalTest do
     Enum.reduce(0..(config.pool_size - 1), [], fn shard, acc ->
       acc ++ Local.subscribers(config.pubsub, topic, shard)
     end)
+  end
+
+  def handle_broadcast("intercept", :passthrough = msg, _server) do
+    {:ok, msg}
+  end
+  def handle_broadcast("intercept", :ignored, _server) do
+    :ignore
+  end
+  def handle_broadcast("intercept", :customized, _server) do
+    {:ok, :did_customize}
   end
 
   setup config do
@@ -33,15 +43,15 @@ defmodule Phoenix.PubSub.LocalTest do
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "bar")
 
       # broadcast
-      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "foo", :hellofoo)
+      assert :ok = Local.broadcast(nil, nil, config.pubsub, config.pool_size, :none, "foo", :hellofoo)
       assert_received :hellofoo
       assert Process.info(pid)[:messages] == [:hellofoo]
 
-      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "bar", :hellobar)
+      assert :ok = Local.broadcast(nil, nil, config.pubsub, config.pool_size, :none, "bar", :hellobar)
       assert_received :hellobar
       assert Process.info(pid)[:messages] == [:hellofoo]
 
-      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "unknown", :hellobar)
+      assert :ok = Local.broadcast(nil, nil, config.pubsub, config.pool_size, :none, "unknown", :hellobar)
       assert Process.info(self)[:messages] == []
     end
 
@@ -111,6 +121,22 @@ defmodule Phoenix.PubSub.LocalTest do
 
       :ok = Local.unsubscribe(config.pubsub, config.pool_size, self, "topic8")
       assert Local.subscription(config.pubsub, config.pool_size, self) == {nil, []}
+    end
+
+    test "pool #{size}: broadcast with interceptor", config do
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "intercept")
+      assert :ok = Local.broadcast(__MODULE__, nil, config.pubsub, config.pool_size, :none, "intercept", :passthrough)
+      assert_receive :passthrough
+
+      assert :ok = Local.broadcast(__MODULE__, nil, config.pubsub, config.pool_size, :none, "intercept", :ignored)
+      refute_receive _
+
+      assert :ok = Local.broadcast(__MODULE__, nil, config.pubsub, config.pool_size, :none, "intercept", :customized)
+      refute_receive :customized
+      assert_receive :did_customize
+
+      assert :ok = Local.broadcast(__MODULE__, nil, config.pubsub, config.pool_size, :none, "intercept", :default)
+      assert_receive :default
     end
   end
 end

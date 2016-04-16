@@ -201,6 +201,36 @@ defmodule Phoenix.PubSub do
     do: call(server, :direct_broadcast, [node_name, :none, topic, message])
 
   @doc """
+  Broadcasts message on given topic, to the local node.
+
+    * `server` - The Pid or registered server name and optional node to
+      scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
+    * `topic` - The topic to broadcast to, ie: `"users:123"`
+    * `message` - The payload of the broadcast
+
+  """
+  @spec local_broadcast(atom, binary, term) :: :ok | {:error, term}
+  def local_broadcast(server, topic, message) when is_atom(server) do
+    server
+    |> node_name()
+    |> direct_broadcast(server, topic, message)
+  end
+
+
+  @doc """
+  Broadcasts message on given topic, to the local node.
+
+  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
+  See `Phoenix.PubSub.broadcast/3` for usage details.
+  """
+  @spec local_broadcast!(atom, binary, term) :: :ok | no_return
+  def local_broadcast!(server, topic, message) do
+    server
+    |> node_name()
+    |> direct_broadcast!(server, topic, message)
+  end
+
+  @doc """
   Broadcasts message on given topic.
 
   Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.

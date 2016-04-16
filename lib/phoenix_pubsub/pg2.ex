@@ -22,6 +22,8 @@ defmodule Phoenix.PubSub.PG2 do
       clients, a pool size equal to the number of schedulers (cores) is a well
       rounded size.
 
+    * `:interceptor` - The optional callback module implementing the
+      `Phoenix.PubSub.Interceptor` behaviour.
   """
 
   def start_link(name, opts) do
@@ -33,8 +35,11 @@ defmodule Phoenix.PubSub.PG2 do
   def init([server, opts]) do
     pool_size = Keyword.fetch!(opts, :pool_size)
     node_name = opts[:node_name]
-    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
-                      {:direct_broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+    fastlane = opts[:fastlane]
+    interceptor = opts[:interceptor]
+
+    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [interceptor, fastlane, server, pool_size]},
+                      {:direct_broadcast, Phoenix.PubSub.PG2Server, [interceptor, fastlane, server, pool_size]},
                       {:node_name, __MODULE__, [node_name]}]
 
     children = [
