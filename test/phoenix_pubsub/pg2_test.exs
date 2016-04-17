@@ -58,8 +58,16 @@ defmodule Phoenix.PubSub.PG2Test do
     end
   end
 
-  test "pool size defaults to number of schedulers", config do
-    last_shard = :erlang.system_info(:schedulers) -1
-    assert Phoenix.PubSub.Local.subscribers(config.pubsub, "some:topic", last_shard) == []
+  test "pool size defaults to number of schedulers" do
+    {:ok, pg2_supervisor} = PG2.start_link(:pool_size_count_test, [])
+    local_supervisor =
+      pg2_supervisor
+      |> Supervisor.which_children()
+      |> Enum.find_value(fn
+          {Phoenix.PubSub.LocalSupervisor, pid, :supervisor, _} -> pid
+          _                                                     -> false
+        end)
+    %{supervisors: supervisor_count} = Supervisor.count_children(local_supervisor)
+    assert supervisor_count == :erlang.system_info(:schedulers)
   end
 end
