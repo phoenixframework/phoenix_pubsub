@@ -10,7 +10,7 @@
   1. Add phoenix_presence to your list of dependencies in `mix.exs`:
 
         def deps do
-          [{:phoenix_pubsub, "~> 0.0.1"}]
+          [{:phoenix_pubsub, "~> 0.1.0"}]
         end
 
   2. Ensure phoenix_presence is started before your application:
@@ -22,7 +22,7 @@
 
 ## Testing
 
-Testing by default spawns nodes internally for distributed tests. 
+Testing by default spawns nodes internally for distributed tests.
 To run tests that do not require clustering, exclude  the `clustered` tag:
 
     $ mix test --exclude clustered
