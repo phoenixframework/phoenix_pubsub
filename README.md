@@ -7,13 +7,13 @@
 ## Installation
 
 
-  1. Add phoenix_presence to your list of dependencies in `mix.exs`:
+  1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
 
         def deps do
           [{:phoenix_pubsub, "~> 0.1.0"}]
         end
 
-  2. Ensure phoenix_presence is started before your application:
+  2. Ensure phoenix_pubsub is started before your application:
 
         def application do
           [applications: [:phoenix_pubsub]]
