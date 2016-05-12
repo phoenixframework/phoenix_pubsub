@@ -117,7 +117,7 @@ defmodule Phoenix.Tracker do
   ## Examples
 
       iex> Phoenix.Tracker.track(MyTracker, self, "lobby", u.id, %{stat: "away"})
-      {:ok, "g20AAAAI1WpAofWYIAA="}
+      {:ok, "1WpAofWYIAA="}
   """
   @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
@@ -164,7 +164,7 @@ defmodule Phoenix.Tracker do
   ## Examples
 
       iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, %{stat: "zzz"})
-      {:ok, "g20AAAAI1WpAofWYIAA="}
+      {:ok, "1WpAofWYIAA="}
   """
   @spec update(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
@@ -602,7 +602,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp random_ref() do
-    :crypto.strong_rand_bytes(8) |> :erlang.term_to_binary() |> Base.encode64()
+    :crypto.strong_rand_bytes(8) |> Base.encode64()
   end
 
   defp log(%{log_level: false}, _msg_func), do: :ok
