@@ -77,9 +77,9 @@ defmodule Phoenix.Tracker do
       end
 
   Trackers must implement `start_link/1`, `init/1`, and `handle_diff/2`.
-  The `init/1` calback allows the tracker to manage its own state when
+  The `init/1` callback allows the tracker to manage its own state when
   running within the `Phoenix.Tracker` server. The `handle_diff` callback
-  is invoked with a diff of presence join and leaves events, grouped by
+  is invoked with a diff of presence join and leave events, grouped by
   topic. As replicas heartbeat and replicate data, the local tracker state is
   merged with the remote data, and the diff is sent to the callback. The
   handler can use this information to notify subscribers of events, as
