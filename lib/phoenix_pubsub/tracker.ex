@@ -258,7 +258,7 @@ defmodule Phoenix.Tracker do
     end
   end
 
-  def validate_down_period(d_period, b_period) when d_period <= (2 * b_period) do
+  def validate_down_period(d_period, b_period) when d_period < (2 * b_period) do
     {:error, "down_period must be at least twice as large as the broadcast_period"}
   end
   def validate_down_period(_d_period, _b_period), do: :ok
@@ -448,7 +448,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp request_transfer(state, {name, _vsn}) do
-    log state, fn -> "#{state.replica.name}: request_transfer from #{name}" end
+    log state, fn -> "#{state.replica.name}: transfer_req from #{name}" end
     ref = make_ref()
     msg = {:pub, :transfer_req, ref, Replica.ref(state.replica), clock(state)}
     direct_broadcast(state, name, msg)
