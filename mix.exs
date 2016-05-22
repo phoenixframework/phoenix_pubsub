@@ -1,3 +1,5 @@
+Enum.each Path.wildcard("tasks/*.exs"), &Code.require_file/1
+
 defmodule Phoenix.PubSub.Mixfile do
   use Mix.Project
 
