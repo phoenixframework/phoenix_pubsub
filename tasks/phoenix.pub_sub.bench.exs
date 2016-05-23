@@ -54,7 +54,7 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
     end
 
     time "get_by_pid/4 for #{size * 2} element set", fn ->
-      State.get_by_pid(s1, pid, topic, key) || raise(:none)
+      State.get_by_pid(s1, pid, topic, key) || raise("none")
     end
 
     s1 = State.compact(s1)
