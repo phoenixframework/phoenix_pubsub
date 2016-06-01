@@ -2,12 +2,12 @@ defmodule Phoenix.Tracker do
   @moduledoc ~S"""
   Provides distributed Presence tracking to processes.
 
-  Tracker servers use a heartbeat protocol and CRDT to replicate
-  presence information across a cluster in an eventually consistent
-  manner, conflict free manner. Under this design, there is no single
-  source of truth or global process. Instead, each node runs one or more
-  `Phoenix.Tracker` servers and node-local changes are replicated across
-  the cluster and handled locally as a diff of changes.
+  Tracker servers use a heartbeat protocol and CRDT to replicate presence
+  information across a cluster in an eventually consistent, conflict-free
+  manner. Under this design, there is no single source of truth or global
+  process. Instead, each node runs one or more `Phoenix.Tracker` servers and
+  node-local changes are replicated across the cluster and handled locally as
+  a diff of changes.
 
     * `tracker` - The name of the tracker handler module implementing the
       `Phoenix.Tracker` behaviour
