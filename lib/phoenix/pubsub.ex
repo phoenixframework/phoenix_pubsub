@@ -190,6 +190,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic, to a single node.
 
+    * `node` - The name of the node to broadcast the message on
     * `server` - The Pid or registered server name and optional node to
       scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
     * `topic` - The topic to broadcast to, ie: `"users:123"`
