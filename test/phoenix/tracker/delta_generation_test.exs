@@ -1,5 +1,5 @@
 defmodule Phoenix.Tracker.DeltaGenerationTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Phoenix.Tracker.{State, DeltaGeneration}
   import DeltaGeneration
 

@@ -1,5 +1,5 @@
-defmodule Phoenix.StateTest do
-  use ExUnit.Case
+defmodule Phoenix.Tracker.StateTest do
+  use ExUnit.Case, async: true
   alias Phoenix.Tracker.{State}
 
   defp new(node) do

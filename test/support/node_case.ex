@@ -1,5 +1,4 @@
 defmodule Phoenix.PubSub.NodeCase do
-
   @timeout 500
   @heartbeat 100
   @permdown 1500
@@ -142,7 +141,6 @@ defmodule Phoenix.PubSub.NodeCase do
       0 -> :ok
     end
   end
-
 
   defp call_node(node, func) do
     parent = self()

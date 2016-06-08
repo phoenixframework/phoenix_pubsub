@@ -1,4 +1,4 @@
-defmodule Phoenix.TrackerTest do
+defmodule Phoenix.Tracker.IntegrationTest do
   use Phoenix.PubSub.NodeCase
   alias Phoenix.Tracker
   alias Phoenix.Tracker.{Replica, State}
