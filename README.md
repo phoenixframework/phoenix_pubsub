@@ -22,20 +22,20 @@
 ## Initialisation (without Phoenix)
 
 
-        defmodule MyApp do
-          use Application
-        
-          def start(_type, _args) do
-            import Supervisor.Spec, warn: false
-        
-            children = [
-              supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, [pool_size: 1]])
-            ]
-        
-            opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-            Supervisor.start_link(children, opts)
-          end
-        end
+    defmodule MyApp do
+      use Application
+    
+      def start(_type, _args) do
+        import Supervisor.Spec, warn: false
+    
+        children = [
+          supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, []])
+        ]
+    
+        opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+        Supervisor.start_link(children, opts)
+      end
+    end
 
 ## Testing
 
