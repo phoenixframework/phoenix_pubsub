@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0-rc.0 (2014-04-28)
+## v1.0.0 (2016-06-23)
 
 * Enhancements
   * Extract `Phoenix.PubSub` into self-contained application
