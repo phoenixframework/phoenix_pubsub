@@ -10,7 +10,7 @@
   1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
 
         def deps do
-          [{:phoenix_pubsub, "~> 0.1.0"}]
+          [{:phoenix_pubsub, "~> 1.0"}]
         end
 
   2. Ensure phoenix_pubsub is started before your application:
