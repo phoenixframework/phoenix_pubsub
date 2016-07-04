@@ -97,7 +97,7 @@ defmodule Phoenix.PubSub.Local do
     :ok
   end
   def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
-    parent = self
+    parent = self()
     for shard <- 0..(pool_size - 1) do
       Task.async(fn ->
         do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)

@@ -39,9 +39,9 @@ defmodule Phoenix.Tracker.StateTest do
     {a, _, _} = State.replica_up(a, b.replica)
     {b, _, _} = State.replica_up(b, a.replica)
 
-    alice = new_pid
-    bob = new_pid
-    carol = new_pid
+    alice = new_pid()
+    bob = new_pid()
+    carol = new_pid()
 
 
     assert [] = tab2list(a.pids)
@@ -89,10 +89,10 @@ defmodule Phoenix.Tracker.StateTest do
     {a, _, _} = State.replica_up(a, b.replica)
     {b, _, _} = State.replica_up(b, a.replica)
 
-    alice = new_pid
-    bob = new_pid
-    carol = new_pid
-    david = new_pid
+    alice = new_pid()
+    bob = new_pid()
+    carol = new_pid()
+    david = new_pid()
 
     a = State.join(a, alice, "lobby", :alice)
     b = State.join(b, bob, "lobby", :bob)
@@ -182,8 +182,8 @@ defmodule Phoenix.Tracker.StateTest do
     {state1, _, _} = State.replica_up(state1, state2.replica)
     {state2, _, _} = State.replica_up(state2, state1.replica)
 
-    alice = new_pid
-    bob = new_pid
+    alice = new_pid()
+    bob = new_pid()
 
     state1 = State.join(state1, alice, "lobby", :alice)
     state2 = State.join(state2, bob, "lobby", :bob)
@@ -204,8 +204,8 @@ defmodule Phoenix.Tracker.StateTest do
     a = new(:a)
     b = new(:b)
 
-    alice = new_pid
-    bob = new_pid
+    alice = new_pid()
+    bob = new_pid()
 
     a = State.join(a, alice, "lobby", :alice)
     b = State.join(b, bob, "lobby", :bob)
