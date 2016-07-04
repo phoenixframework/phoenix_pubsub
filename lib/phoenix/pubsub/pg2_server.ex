@@ -41,7 +41,7 @@ defmodule Phoenix.PubSub.PG2Server do
   def init(server_name) do
     pg2_group = pg2_namespace(server_name)
     :ok = :pg2.create(pg2_group)
-    :ok = :pg2.join(pg2_group, self)
+    :ok = :pg2.join(pg2_group, self())
 
     {:ok, server_name}
   end

@@ -142,10 +142,10 @@ defmodule Phoenix.PubSubTest do
     test "pool #{size}: broadcast_from/4 and broadcast_from!/4 skips sender", config do
       PubSub.subscribe(config.test, "topic11")
 
-      PubSub.broadcast_from(config.test, self, "topic11", :ping)
+      PubSub.broadcast_from(config.test, self(), "topic11", :ping)
       refute_received :ping
 
-      PubSub.broadcast_from!(config.test, self, "topic11", :ping)
+      PubSub.broadcast_from!(config.test, self(), "topic11", :ping)
       refute_received :ping
     end
 

@@ -28,9 +28,9 @@ defmodule Phoenix.PubSub.LocalTest do
       # subscribe
       pid = spawn fn -> :timer.sleep(:infinity) end
       assert subscribers(config, "foo") == []
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "foo")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "foo")
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, pid, "foo")
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "bar")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "bar")
 
       # broadcast
       assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "foo", :hellofoo)
@@ -42,26 +42,26 @@ defmodule Phoenix.PubSub.LocalTest do
       assert Process.info(pid)[:messages] == [:hellofoo]
 
       assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "unknown", :hellobar)
-      assert Process.info(self)[:messages] == []
+      assert Process.info(self())[:messages] == []
     end
 
     @tag pool_size: size
     test "pool #{size}: unsubscribe/2 leaves group", config do
       pid = spawn fn -> :timer.sleep(:infinity) end
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "topic1")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "topic1")
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, pid, "topic1")
 
-      assert Enum.sort(subscribers(config, "topic1")) == Enum.sort([self, pid])
-      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self, "topic1")
+      assert Enum.sort(subscribers(config, "topic1")) == Enum.sort([self(), pid])
+      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic1")
       assert subscribers(config, "topic1") == [pid]
     end
 
     @tag pool_size: size
     test "pool #{size}: unsubscribe/2 gargabes collect topic when there are no more subscribers", config do
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "topic1")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "topic1")
 
       assert list(config) == ["topic1"]
-      assert Local.unsubscribe(config.pubsub, config.pool_size, self, "topic1")
+      assert Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic1")
 
       assert Enum.count(list(config)) == 0
       assert Enum.count(subscribers(config, "topic1")) == 0
@@ -69,14 +69,14 @@ defmodule Phoenix.PubSub.LocalTest do
 
     @tag pool_size: size
     test "pool #{size}: unsubscribe/2 when topic does not exist", config do
-      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self, "notexists")
+      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "notexists")
       assert Enum.count(subscribers(config, "notexists")) == 0
     end
 
     @tag pool_size: size
     test "pool #{size}: pid is removed when DOWN", config do
       {pid, ref} = spawn_monitor fn -> :timer.sleep(:infinity) end
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "topic5")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "topic5")
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, pid, "topic5")
       assert :ok = Local.subscribe(config.pubsub, config.pool_size, pid, "topic6")
 
@@ -88,7 +88,7 @@ defmodule Phoenix.PubSub.LocalTest do
       Local.unsubscribe(config.pubsub, config.pool_size, pid, "unknown")
 
       assert Local.subscription(config.pubsub, config.pool_size, pid) == {nil, []}
-      assert subscribers(config, "topic5") == [self]
+      assert subscribers(config, "topic5") == [self()]
       assert subscribers(config, "topic6") == []
 
       # Assert topic was also garbage collected
@@ -97,20 +97,20 @@ defmodule Phoenix.PubSub.LocalTest do
 
     @tag pool_size: size
     test "pool #{size}: subscriber is demonitored when it leaves the last topic", config do
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "topic7")
-      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self, "topic8")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "topic7")
+      assert :ok = Local.subscribe(config.pubsub, config.pool_size, self(), "topic8")
 
-      {ref, topics} = Local.subscription(config.pubsub, config.pool_size, self)
+      {ref, topics} = Local.subscription(config.pubsub, config.pool_size, self())
       assert is_reference(ref)
       assert Enum.sort(topics) == ["topic7", "topic8"]
 
-      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self, "topic7")
-      {ref, topics} = Local.subscription(config.pubsub, config.pool_size, self)
+      assert :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic7")
+      {ref, topics} = Local.subscription(config.pubsub, config.pool_size, self())
       assert is_reference(ref)
       assert Enum.sort(topics) == ["topic8"]
 
-      :ok = Local.unsubscribe(config.pubsub, config.pool_size, self, "topic8")
-      assert Local.subscription(config.pubsub, config.pool_size, self) == {nil, []}
+      :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic8")
+      assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
   end
 end

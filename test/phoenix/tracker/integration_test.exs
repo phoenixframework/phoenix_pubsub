@@ -260,7 +260,7 @@ defmodule Phoenix.Tracker.IntegrationTest do
 
   test "updating with no prior presence",
     %{tracker: tracker, topic: topic} do
-    assert {:error, :nopresence} = Tracker.update(tracker, self, topic, "u1", %{})
+    assert {:error, :nopresence} = Tracker.update(tracker, self(), topic, "u1", %{})
   end
 
   test "graceful exits with permdown", %{tracker: tracker, topic: topic} do

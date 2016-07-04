@@ -10,8 +10,8 @@ defmodule Phoenix.PubSub.Mixfile do
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      elixirc_paths: elixirc_paths(Mix.env),
-     package: package,
-     deps: deps,
+     package: package(),
+     deps: deps(),
      description: """
      Distributed PubSub and Presence platform
      """]
