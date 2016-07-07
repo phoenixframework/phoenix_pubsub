@@ -154,5 +154,27 @@ defmodule Phoenix.PubSubTest do
       assert :ok = PubSub.unsubscribe(config.test, config.topic)
       assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
+
+    @tag pool_size: size
+    test "pool #{size}: direct_broadcast is defined by adapter", config do
+      PubSub.subscribe(config.test, config.topic)
+
+      PubSub.direct_broadcast(node(), config.test, config.topic, :ping)
+      assert_receive :ping
+
+      PubSub.direct_broadcast!(node(), config.test, config.topic, :ping)
+      assert_receive :ping
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: direct_broadcast_from is defined by adapter", config do
+      PubSub.subscribe(config.test, config.topic)
+
+      PubSub.direct_broadcast_from(node(), config.test, spawn_pid(), config.topic, :ping)
+      assert_receive :ping
+
+      PubSub.direct_broadcast_from!(node(), config.test, spawn_pid(), config.topic, :ping)
+      assert_receive :ping
+    end
   end
 end
