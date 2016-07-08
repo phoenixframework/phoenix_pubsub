@@ -144,7 +144,7 @@ defmodule Phoenix.Tracker.IntegrationTest do
     assert_map %{@node2 => %Replica{status: :up}}, replicas(tracker), 1
   end
 
-  test "nodetes and locally broadcasts presence_join/leave",
+  test "node detects and locally broadcasts presence_join/leave",
     %{tracker: tracker, topic: topic} do
 
     local_presence = spawn_pid()
@@ -258,9 +258,21 @@ defmodule Phoenix.Tracker.IntegrationTest do
     assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
   end
 
-  test "updating with no prior presence",
-    %{tracker: tracker, topic: topic} do
+  test "updating with no prior presence", %{tracker: tracker, topic: topic} do
     assert {:error, :nopresence} = Tracker.update(tracker, self(), topic, "u1", %{})
+  end
+
+  test "duplicate tracking", %{tracker: tracker, topic: topic} do
+    pid = self()
+    assert {:ok, _ref} = Tracker.track(tracker, pid, topic, "u1", %{})
+    assert {:error, {:already_tracked, ^pid, ^topic, "u1"}} =
+           Tracker.track(tracker, pid, topic, "u1", %{})
+    assert {:ok, _ref} = Tracker.track(tracker, pid, "another:topic", "u1", %{})
+    assert {:ok, _ref} = Tracker.track(tracker, pid, topic, "anotherkey", %{})
+
+    assert :ok = Tracker.untrack(tracker, pid, topic, "u1")
+    assert :ok = Tracker.untrack(tracker, pid, "another:topic", "u1")
+    assert :ok = Tracker.untrack(tracker, pid, topic, "anotherkey")
   end
 
   test "graceful exits with permdown", %{tracker: tracker, topic: topic} do

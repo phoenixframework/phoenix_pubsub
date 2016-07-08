@@ -330,8 +330,13 @@ defmodule Phoenix.Tracker do
   end
 
   def handle_call({:track, pid, topic, key, meta}, _from, state) do
-    {state, ref} = put_presence(state, pid, topic, key, meta)
-    {:reply, {:ok, ref}, state}
+    case State.get_by_pid(state.presences, pid, topic, key) do
+      nil ->
+        {state, ref} = put_presence(state, pid, topic, key, meta)
+        {:reply, {:ok, ref}, state}
+      _ ->
+        {:reply, {:error, {:already_tracked, pid, topic, key}}, state}
+    end
   end
 
   def handle_call({:untrack, pid, topic, key}, _from, state) do
