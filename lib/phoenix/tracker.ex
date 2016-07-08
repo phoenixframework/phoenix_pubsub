@@ -116,10 +116,16 @@ defmodule Phoenix.Tracker do
     * `key` - The key identifying this presence
     * `meta` - The map of metadata to attach to this presence
 
+  A process may be tracked multipled times, provided the topic and key pair
+  are unique for any prior calls for the given process.
+
   ## Examples
 
-      iex> Phoenix.Tracker.track(MyTracker, self, "lobby", u.id, %{stat: "away"})
+      iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
       {:ok, "1WpAofWYIAA="}
+
+      iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
+      {:error, {:already_tracked, #PID<0.56.0>, "lobby", "123"}}
   """
   @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
