@@ -9,15 +9,19 @@
 
   1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
 
-        def deps do
-          [{:phoenix_pubsub, "~> 1.0"}]
-        end
+  ```elixir
+  def deps do
+    [{:phoenix_pubsub, "~> 1.0"}]
+  end
+  ```
 
   2. Ensure phoenix_pubsub is started before your application:
 
-        def application do
-          [applications: [:phoenix_pubsub]]
-        end
+  ```elixir
+  def application do
+    [applications: [:phoenix_pubsub]]
+  end
+  ```
 
 
 ## Testing
