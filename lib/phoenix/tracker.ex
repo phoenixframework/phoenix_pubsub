@@ -141,7 +141,7 @@ defmodule Phoenix.Tracker do
     * `key` - The key identifying this presence
 
   All presences for a given Pid can be untracked by calling the
-  `Phoenix.Tracker.track/2` signature of this function.
+  `Phoenix.Tracker.untrack/2` signature of this function.
 
   ## Examples
 
@@ -165,9 +165,6 @@ defmodule Phoenix.Tracker do
     * `pid` - The Pid being tracked
     * `topic` - The `Phoenix.PubSub` topic to update for this presence
     * `key` - The key identifying this presence
-
-  All presences for a given Pid can be untracked by calling the
-  `Phoenix.Tracker.track/2` signature of this function.
 
   ## Examples
 
