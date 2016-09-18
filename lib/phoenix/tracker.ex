@@ -177,7 +177,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(server_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
