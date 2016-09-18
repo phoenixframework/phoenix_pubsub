@@ -361,24 +361,12 @@ defmodule Phoenix.Tracker do
     {:reply, :ok, drop_presence(state, pid)}
   end
 
-  def handle_call({:update, pid, topic, key, meta_updater}, _from, state) when is_function(meta_updater) do
-    case State.get_by_pid(state.presences, pid, topic, key) do
-      nil ->
-        {:reply, {:error, :nopresence}, state}
-      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
-        {state, ref} = put_update(state, pid, topic, key, meta_updater.(prev_meta), prev_meta)
-        {:reply, {:ok, ref}, state}
-    end
+  def handle_call({:update, pid, topic, key, meta_updater}, from, state) when is_function(meta_updater) do
+    handle_update({pid, topic, key, meta_updater}, from, state)
   end
 
-  def handle_call({:update, pid, topic, key, new_meta}, _from, state) do
-    case State.get_by_pid(state.presences, pid, topic, key) do
-      nil ->
-        {:reply, {:error, :nopresence}, state}
-      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
-        {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
-        {:reply, {:ok, ref}, state}
-    end
+  def handle_call({:update, pid, topic, key, new_meta}, from, state) do
+    handle_update({pid, topic, key, fn _ -> new_meta end}, from, state)
   end
 
   def handle_call(:graceful_permdown, _from, state) do
@@ -617,6 +605,16 @@ defmodule Phoenix.Tracker do
 
         #{inspect other}
     """
+  end
+
+  defp handle_update({pid, topic, key, meta_updater}, _from, state) do
+    case State.get_by_pid(state.presences, pid, topic, key) do
+      nil ->
+        {:reply, {:error, :nopresence}, state}
+      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
+        {state, ref} = put_update(state, pid, topic, key, meta_updater.(prev_meta), prev_meta)
+        {:reply, {:ok, ref}, state}
+    end
   end
 
   defp push_delta_generation(state, {%State{mode: :normal}, _}) do
