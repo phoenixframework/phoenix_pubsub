@@ -170,9 +170,12 @@ defmodule Phoenix.Tracker do
 
       iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, %{stat: "zzz"})
       {:ok, "1WpAofWYIAA="}
+
+      iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
+      {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def update(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
+  @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
+  def update(server_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
 
@@ -355,14 +358,12 @@ defmodule Phoenix.Tracker do
     {:reply, :ok, drop_presence(state, pid)}
   end
 
+  def handle_call({:update, pid, topic, key, meta_updater}, _from, state) when is_function(meta_updater) do
+    handle_update({pid, topic, key, meta_updater}, state)
+  end
+
   def handle_call({:update, pid, topic, key, new_meta}, _from, state) do
-    case State.get_by_pid(state.presences, pid, topic, key) do
-      nil ->
-        {:reply, {:error, :nopresence}, state}
-      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
-        {state, ref} = put_update(state, pid, topic, key, new_meta, prev_meta)
-        {:reply, {:ok, ref}, state}
-    end
+    handle_update({pid, topic, key, fn _ -> new_meta end}, state)
   end
 
   def handle_call(:graceful_permdown, _from, state) do
@@ -601,6 +602,16 @@ defmodule Phoenix.Tracker do
 
         #{inspect other}
     """
+  end
+
+  defp handle_update({pid, topic, key, meta_updater}, state) do
+    case State.get_by_pid(state.presences, pid, topic, key) do
+      nil ->
+        {:reply, {:error, :nopresence}, state}
+      {{_topic, _pid, ^key}, prev_meta, {_replica, _}} ->
+        {state, ref} = put_update(state, pid, topic, key, meta_updater.(prev_meta), prev_meta)
+        {:reply, {:ok, ref}, state}
+    end
   end
 
   defp push_delta_generation(state, {%State{mode: :normal}, _}) do

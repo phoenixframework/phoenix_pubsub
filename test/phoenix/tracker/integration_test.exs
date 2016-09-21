@@ -258,6 +258,17 @@ defmodule Phoenix.Tracker.IntegrationTest do
     assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
   end
 
+  test "updating presence sends join/leave and phx_ref_prev with profer diffs if function for update used",
+    %{tracker: tracker, topic: topic} do
+
+    subscribe(topic)
+    {:ok, _ref} = Tracker.track(tracker, self(), topic, "u1", %{browser: "Chrome", status: "online"})
+    assert [{"u1", %{browser: "Chrome", status: "online", phx_ref: ref}}] = list(tracker, topic)
+    {:ok, _ref} = Tracker.update(tracker, self(), topic, "u1", fn meta -> Map.put(meta, :status, "away") end)
+    assert_leave ^topic, "u1", %{browser: "Chrome", status: "online", phx_ref: ^ref}
+    assert_join ^topic, "u1", %{browser: "Chrome", status: "away", phx_ref_prev: ^ref}
+  end
+
   test "updating with no prior presence", %{tracker: tracker, topic: topic} do
     assert {:error, :nopresence} = Tracker.update(tracker, self(), topic, "u1", %{})
   end
