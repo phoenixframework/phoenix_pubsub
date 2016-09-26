@@ -39,19 +39,19 @@ defmodule Phoenix.PubSub do
   The first step is to start the adapter of choice in your
   supervision tree:
 
-      supervisor(Phoenix.PubSub.Redis, [:my_redis_pubsub, host: "192.168.100.1"])
+      supervisor(Phoenix.PubSub.Redis, [:my_pubsub, host: "192.168.100.1"])
 
   The configuration above will start a Redis pubsub and
-  register it with name `:my_redis_pubsub`.
+  register it with name `:my_pubsub`.
 
   You can now use the functions in this module to subscribe
   and broadcast messages:
 
-      iex> PubSub.subscribe MyApp.PubSub, self, "user:123"
+      iex> PubSub.subscribe :my_pubsub, self, "user:123"
       :ok
       iex> Process.info(self)[:messages]
       []
-      iex> PubSub.broadcast MyApp.PubSub, "user:123", {:user_update, %{id: 123, name: "Shane"}}
+      iex> PubSub.broadcast :my_pubsub, "user:123", {:user_update, %{id: 123, name: "Shane"}}
       :ok
       iex> Process.info(self)[:messages]
       {:user_update, %{id: 123, name: "Shane"}}
