@@ -284,23 +284,35 @@ defmodule Phoenix.Tracker.State do
   Removes all elements for replicas that are permanently gone.
   """
   @spec remove_down_replicas(t, name) :: t
-  def remove_down_replicas(%State{context: ctx, values: values, pids: pids} = state, replica) do
+  def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids} = state, replica) do
     new_ctx = for {rep, clock} <- ctx, rep != replica, into: %{}, do: {rep, clock}
     match_spec = {:_, :_, {replica, :_}}
-    {new_cloud, new_delta} =
+    new_cloud =
       values
       |> :ets.match_object(match_spec)
-      |> Enum.reduce({state.cloud, state.delta}, fn {{topic, pid, key}, _meta, tag}, {cloud, delta} ->
+      |> Enum.reduce(state.cloud, fn {{topic, pid, key}, _meta, tag}, cloud ->
         1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
-        pruned_cloud = MapSet.delete(cloud, tag)
-        pruned_delta = %State{delta | cloud: MapSet.delete(delta.cloud, tag),
-                                      values: Map.delete(delta.values, tag)}
-        {pruned_cloud, pruned_delta}
+        MapSet.delete(cloud, tag)
       end)
 
+    new_delta = remove_down_replicas(state.delta, replica)
     true = :ets.match_delete(values, match_spec)
 
     %State{state | context: new_ctx, cloud: new_cloud, delta: new_delta}
+  end
+  def remove_down_replicas(%State{mode: :delta, range: range} = delta, replica) do
+    {start_ctx, end_ctx} = range
+    new_start = for {rep, clock} <- start_ctx, rep != replica, into: %{}, do: {rep, clock}
+    new_end = for {rep, clock} <- end_ctx, rep != replica, into: %{}, do: {rep, clock}
+
+    {new_cloud, new_vals} = Enum.reduce(delta.values, {delta.cloud, delta.values}, fn
+      {{^replica, _clock} = tag, {_pid, _topic, _key, _meta}}, {cloud, vals} ->
+        {MapSet.delete(cloud, tag), Map.delete(vals, tag)}
+      {{_replica, _clock} = _tag, {_pid, _topic, _key, _meta}}, {cloud, vals} ->
+        {cloud, vals}
+    end)
+
+    %State{delta | range: {new_start, new_end}, cloud: new_cloud, values: new_vals}
   end
 
   @doc """

@@ -1,7 +1,7 @@
 defmodule Phoenix.Tracker.DeltaGeneration do
   @moduledoc false
   require Logger
-  alias Phoenix.Tracker.{State, Clock}
+  alias Phoenix.Tracker.{State, Clock, Replica}
 
   @doc """
   Extracts minimal delta from generations to satisfy remote clock.
@@ -42,6 +42,16 @@ defmodule Phoenix.Tracker.DeltaGeneration do
       {:error, :not_contiguous} ->
         do_push(generations, delta, opts, {gen, [gen | acc]})
     end
+  end
+
+  @doc """
+  Prunes permanently downed replicaes from the delta generation list
+  """
+  @spec remove_down_replicas([State.delta], Replica.replica_ref) :: [State.delta]
+  def remove_down_replicas(generations, replica_ref) do
+    Enum.map(generations, fn %State{mode: :delta} = gen ->
+      State.remove_down_replicas(gen, replica_ref)
+    end)
   end
 
   defp delta_fullfilling_clock(generations, remote_clock) do
