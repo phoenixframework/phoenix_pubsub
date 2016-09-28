@@ -6,6 +6,8 @@
   * Support passing a function to `Tracker.update` for partial metadata updates
   * Prevent duplicate track registrations when calling `Tracker.track`
 
+* Bug fixes
+  * [PG2] - Fix multinode broadcasts requiring the same pool_size to properly broker messages
 
 ## v1.0.0 (2016-06-23)
 

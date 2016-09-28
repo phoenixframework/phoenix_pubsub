@@ -40,7 +40,7 @@ defmodule Phoenix.PubSub.PG2 do
 
     children = [
       supervisor(Phoenix.PubSub.LocalSupervisor, [server, pool_size, dispatch_rules]),
-      worker(Phoenix.PubSub.PG2Server, [server]),
+      worker(Phoenix.PubSub.PG2Server, [server, pool_size]),
     ]
 
     supervise children, strategy: :rest_for_one

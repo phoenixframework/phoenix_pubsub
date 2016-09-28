@@ -18,42 +18,42 @@ defmodule Phoenix.PubSub.PG2Test do
     else
       {:ok, _} = PG2.start_link(config.test, [])
     end
-    {_, {:ok, _}} = start_pubsub(@node1, PG2, config.test, [pool_size: size])
+    {_, {:ok, _}} = start_pubsub(@node1, PG2, config.test, [pool_size: size * 2])
     {:ok, %{pubsub: config.test, pool_size: size}}
   end
 
-  for size <- [1, 8] do
-    @tag pool_size: size
+  for size <- [1, 8], topic = "#{__MODULE__}:#{size}" do
+    @tag pool_size: size, topic: topic
     test "pool #{size}: direct_broadcast targets a specific node", config do
-      spy_on_pubsub(@node1, config.pubsub, self(), "some:topic")
+      spy_on_pubsub(@node1, config.pubsub, self(), config.topic)
 
-      PubSub.subscribe(config.pubsub, "some:topic")
-      :ok = PubSub.direct_broadcast(@node1, config.pubsub, "some:topic", :ping)
+      PubSub.subscribe(config.pubsub, config.topic)
+      :ok = PubSub.direct_broadcast(@node1, config.pubsub, config.topic, :ping)
       assert_receive {@node1, :ping}
-      :ok = PubSub.direct_broadcast!(@node1, config.pubsub, "some:topic", :ping)
+      :ok = PubSub.direct_broadcast!(@node1, config.pubsub, config.topic, :ping)
       assert_receive {@node1, :ping}
 
-      :ok = PubSub.direct_broadcast(@node2, config.pubsub, "some:topic", :ping)
+      :ok = PubSub.direct_broadcast(@node2, config.pubsub, config.topic, :ping)
       refute_receive {@node1, :ping}
 
-      :ok = PubSub.direct_broadcast!(@node2, config.pubsub, "some:topic", :ping)
+      :ok = PubSub.direct_broadcast!(@node2, config.pubsub, config.topic, :ping)
       refute_receive {@node1, :ping}
     end
 
-    @tag pool_size: size
+    @tag pool_size: size, topic: topic
     test "pool #{size}: direct_broadcast_from targets a specific node", config do
-      spy_on_pubsub(@node1, config.pubsub, self(), "some:topic")
+      spy_on_pubsub(@node1, config.pubsub, self(), config.topic)
 
-      PubSub.subscribe(config.pubsub, "some:topic")
-      :ok = PubSub.direct_broadcast_from(@node1, config.pubsub, self(), "some:topic", :ping)
+      PubSub.subscribe(config.pubsub, config.topic)
+      :ok = PubSub.direct_broadcast_from(@node1, config.pubsub, self(), config.topic, :ping)
       assert_receive {@node1, :ping}
-      :ok = PubSub.direct_broadcast_from!(@node1, config.pubsub, self(), "some:topic", :ping)
+      :ok = PubSub.direct_broadcast_from!(@node1, config.pubsub, self(), config.topic, :ping)
       assert_receive {@node1, :ping}
 
-      :ok = PubSub.direct_broadcast_from(@node2, config.pubsub, self(), "some:topic", :ping)
+      :ok = PubSub.direct_broadcast_from(@node2, config.pubsub, self(), config.topic, :ping)
       refute_receive {@node1, :ping}
 
-      :ok = PubSub.direct_broadcast_from!(@node2, config.pubsub, self(), "some:topic", :ping)
+      :ok = PubSub.direct_broadcast_from!(@node2, config.pubsub, self(), config.topic, :ping)
       refute_receive {@node1, :ping}
     end
   end

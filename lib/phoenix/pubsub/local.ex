@@ -225,7 +225,7 @@ defmodule Phoenix.PubSub.Local do
   end
 
   defp pools_for_shard(shard, pubsub_server) do
-    [{^shard, {_, _} = servers}] = :ets.lookup(pubsub_server, shard)
+    {_, _} = servers = :ets.lookup_element(pubsub_server, shard, 2)
     servers
   end
 
