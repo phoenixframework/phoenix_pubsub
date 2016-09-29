@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.1-dev
+## v1.0.1 (2016-09-29)
 
 * Enhancements
   * Support passing a function to `Tracker.update` for partial metadata updates
