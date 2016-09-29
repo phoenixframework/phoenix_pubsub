@@ -524,13 +524,16 @@ defmodule Phoenix.Tracker do
 
   defp permdown(state, %Replica{name: name} = remote_replica) do
     log state, fn -> "#{state.replica.name}: permanent replica down detected #{name}" end
-    presences = State.remove_down_replicas(state.presences, Replica.ref(remote_replica))
+    replica_ref = Replica.ref(remote_replica)
+    presences = State.remove_down_replicas(state.presences, replica_ref)
+    deltas = DeltaGeneration.remove_down_replicas(state.deltas, replica_ref)
 
-    case Replica.fetch_by_ref(state.replicas, Replica.ref(remote_replica)) do
+    case Replica.fetch_by_ref(state.replicas, replica_ref) do
       {:ok, _replica} ->
-        %{state | presences: presences, replicas: Map.delete(state.replicas, name)}
+        replicas = Map.delete(state.replicas, name)
+        %{state | presences: presences, replicas: replicas, deltas: deltas}
       _ ->
-        %{state | presences: presences}
+        %{state | presences: presences, deltas: deltas}
     end
   end
 

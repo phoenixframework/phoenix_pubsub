@@ -92,4 +92,15 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert [gen1, gen1, gen1] = gens = push(s1, [], old_s3.delta, [5, 10, 15])
     assert [^gen1, ^gen1, ^gen1] = push(s1, gens, s3.delta, [5, 10, 15])
   end
+
+  test "remove_down_replicas" do
+    s1 = new(:s1)
+    s2 = new(:s2)
+    s3 = new(:s3)
+    s2 = State.join(s2, new_pid(), "lobby", "user2", %{})
+    assert [gen1, gen1, gen1] = gens = push(s1, [], s2.delta, [5, 10, 15])
+    assert [pruned_gen1, pruned_gen1, pruned_gen1] = DeltaGeneration.remove_down_replicas(gens, :s2)
+    assert {s3, [], []} = State.merge(s3, pruned_gen1)
+    assert State.get_by_topic(s3, "lobby") == []
+  end
 end
