@@ -40,10 +40,14 @@ end
 Testing by default spawns nodes internally for distributed tests.
 To run tests that do not require clustering, exclude  the `clustered` tag:
 
-  $ mix test --exclude clustered
+```shell
+$ mix test --exclude clustered
+```
 
 If you have issues running the clustered tests try running:
 
-  $ epmd -daemon
+```shell
+$ epmd -daemon
+```
 
 before running the tests.
