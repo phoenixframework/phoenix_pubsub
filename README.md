@@ -19,20 +19,20 @@ end
         
 ## Initialisation (without Phoenix)
 ```elixir
-    defmodule MyApp do
-      use Application
-    
-      def start(_type, _args) do
-        import Supervisor.Spec, warn: false
-    
-        children = [
-          supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, []])
-        ]
-    
-        opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-        Supervisor.start_link(children, opts)
-      end
-    end
+defmodule MyApp do
+  use Application
+
+  def start(_type, _args) do
+    import Supervisor.Spec, warn: false
+
+    children = [
+      supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, []])
+    ]
+
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+end
 ```
 
 ## Testing
@@ -40,10 +40,10 @@ end
 Testing by default spawns nodes internally for distributed tests.
 To run tests that do not require clustering, exclude  the `clustered` tag:
 
-    $ mix test --exclude clustered
+  $ mix test --exclude clustered
 
 If you have issues running the clustered tests try running:
 
-    $ epmd -daemon
+  $ epmd -daemon
 
 before running the tests.
