@@ -4,24 +4,21 @@
 [![Build Status](https://api.travis-ci.org/phoenixframework/phoenix_pubsub.svg)](https://travis-ci.org/phoenixframework/phoenix_pubsub)
 
 ## Installation
-
-
-  1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
-
-        def deps do
-          [{:phoenix_pubsub, "~> 0.1.0"}]
-        end
-
-  2. Ensure phoenix_pubsub is started before your application:
-
-        def application do
-          [applications: [:phoenix_pubsub]]
-        end
-        
+1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
+```elixir
+def deps do
+  [{:phoenix_pubsub, "~> 0.1.0"}]
+end
+```
+2. Ensure phoenix_pubsub is started before your application:
+```elixir
+def application do
+  [applications: [:phoenix_pubsub]]
+end
+```
         
 ## Initialisation (without Phoenix)
-
-
+```elixir
     defmodule MyApp do
       use Application
     
@@ -36,6 +33,7 @@
         Supervisor.start_link(children, opts)
       end
     end
+```
 
 ## Testing
 
