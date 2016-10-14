@@ -17,7 +17,7 @@ def application do
 end
 ```
         
-## Initialisation (without Phoenix)
+## Initialization (without Phoenix)
 ```elixir
 defmodule MyApp do
   use Application
