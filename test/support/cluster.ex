@@ -37,7 +37,7 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp add_code_paths(node) do
-    :rpc.block_call(node, :code, :add_paths, [:code.get_path()])
+    rpc(node, :code, :add_paths, [:code.get_path()])
   end
 
   defp transfer_configuration(node) do
