@@ -326,7 +326,7 @@ defmodule Phoenix.Tracker.IntegrationTest do
     if to = opts[:to] do
       assert_receive {^to, {:pub, :transfer_ack, ^ref, {^from, _vsn}, _state}}, @timeout
     else
-      assert_receive {:pub, :transfer_ack, ^ref, {^from, vsn}, _state}, @timeout
+      assert_receive {:pub, :transfer_ack, ^ref, {^from, _vsn}, _state}, @timeout
     end
   end
 
