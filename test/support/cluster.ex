@@ -23,8 +23,8 @@ defmodule Phoenix.PubSub.Cluster do
     {:ok, node}
   end
 
-  defp rpc(node, module, method, args) do
-    :rpc.block_call(node, module, method, args)
+  defp rpc(node, module, function, args) do
+    :rpc.block_call(node, module, function, args)
   end
 
   defp inet_loader_args do
