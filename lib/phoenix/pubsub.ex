@@ -113,7 +113,7 @@ defmodule Phoenix.PubSub do
   Subscribes the caller to the PubSub adapter's topic.
 
     * `server` - The Pid registered name of the server
-    * `topic` - The topic to subscribe to, ie: `"users:123"`
+    * `topic` - The topic to subscribe to, for example: `"users:123"`
     * `opts` - The optional list of options. See below.
 
   ## Duplicate Subscriptions
