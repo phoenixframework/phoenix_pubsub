@@ -22,6 +22,15 @@ defmodule Phoenix.Tracker.IntegrationTest do
     assert_heartbeat from: @primary
   end
 
+  test "getting by key",
+    %{tracker: tracker, topic: topic} do
+
+    {:ok, _ref} = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
+
+    assert  %{name: "me", phx_ref: _} =
+      Tracker.get_by_key(tracker, "me")
+  end
+
   test "gossip from unseen node triggers nodeup and transfer request",
     %{tracker: tracker, topic: topic} do
 
