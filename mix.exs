@@ -12,6 +12,8 @@ defmodule Phoenix.PubSub.Mixfile do
      elixirc_paths: elixirc_paths(Mix.env),
      package: package(),
      deps: deps(),
+     source_url: "https://github.com/phoenixframework/phoenix_pubsub",
+     homepage_url: "http://www.phoenixframework.org",
      description: """
      Distributed PubSub and Presence platform
      """]
