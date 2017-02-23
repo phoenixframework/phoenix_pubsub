@@ -145,9 +145,9 @@ defmodule Phoenix.Tracker do
 
   ## Examples
 
-      iex> Phoenix.Tracker.untrack(MyTracker, self, "lobby", u.id)
+      iex> Phoenix.Tracker.untrack(MyTracker, self(), "lobby", u.id)
       :ok
-      iex> Phoenix.Tracker.untrack(MyTracker, self)
+      iex> Phoenix.Tracker.untrack(MyTracker, self())
       :ok
   """
   @spec untrack(atom, pid, topic, term) :: :ok
@@ -168,10 +168,10 @@ defmodule Phoenix.Tracker do
 
   ## Examples
 
-      iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, %{stat: "zzz"})
+      iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, %{stat: "zzz"})
       {:ok, "1WpAofWYIAA="}
 
-      iex> Phoenix.Tracker.update(MyTracker, self, "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
+      iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
   @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}

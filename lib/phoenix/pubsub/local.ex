@@ -31,7 +31,7 @@ defmodule Phoenix.PubSub.Local do
 
   ## Examples
 
-      iex> subscribe(MyApp.PubSub, 1, self, "foo")
+      iex> subscribe(MyApp.PubSub, 1, self(), "foo")
       :ok
 
   """
@@ -58,7 +58,7 @@ defmodule Phoenix.PubSub.Local do
 
   ## Examples
 
-      iex> unsubscribe(MyApp.PubSub, 1, self, "foo")
+      iex> unsubscribe(MyApp.PubSub, 1, self(), "foo")
       :ok
 
   """
@@ -86,7 +86,7 @@ defmodule Phoenix.PubSub.Local do
 
   ## Examples
 
-      iex> broadcast(MyApp.PubSub, 1, self, "foo")
+      iex> broadcast(MyApp.PubSub, 1, self(), "foo")
       :ok
       iex> broadcast(MyApp.PubSub, 1, :none, "bar")
       :ok

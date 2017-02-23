@@ -25,7 +25,7 @@ defmodule Phoenix.PubSub.GC do
 
   ## Examples
 
-      iex> down(:gc_server, self)
+      iex> down(:gc_server, self())
       :ok
 
   """
