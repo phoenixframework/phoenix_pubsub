@@ -11,6 +11,8 @@ defmodule Phoenix.PubSub.PG2Test do
   @node1 :"node1@127.0.0.1"
   @node2 :"node2@127.0.0.1"
 
+  @receive_timeout 500
+
   setup config do
     size = config[:pool_size] || 1
     if config[:pool_size] do
@@ -29,15 +31,15 @@ defmodule Phoenix.PubSub.PG2Test do
 
       PubSub.subscribe(config.pubsub, config.topic)
       :ok = PubSub.direct_broadcast(@node1, config.pubsub, config.topic, :ping)
-      assert_receive {@node1, :ping}
+      assert_receive {@node1, :ping}, @receive_timeout
       :ok = PubSub.direct_broadcast!(@node1, config.pubsub, config.topic, :ping)
-      assert_receive {@node1, :ping}
+      assert_receive {@node1, :ping}, @receive_timeout
 
       :ok = PubSub.direct_broadcast(@node2, config.pubsub, config.topic, :ping)
-      refute_receive {@node1, :ping}
+      refute_receive {@node1, :ping}, @receive_timeout
 
       :ok = PubSub.direct_broadcast!(@node2, config.pubsub, config.topic, :ping)
-      refute_receive {@node1, :ping}
+      refute_receive {@node1, :ping}, @receive_timeout
     end
 
     @tag pool_size: size, topic: topic
@@ -46,15 +48,15 @@ defmodule Phoenix.PubSub.PG2Test do
 
       PubSub.subscribe(config.pubsub, config.topic)
       :ok = PubSub.direct_broadcast_from(@node1, config.pubsub, self(), config.topic, :ping)
-      assert_receive {@node1, :ping}
+      assert_receive {@node1, :ping}, @receive_timeout
       :ok = PubSub.direct_broadcast_from!(@node1, config.pubsub, self(), config.topic, :ping)
-      assert_receive {@node1, :ping}
+      assert_receive {@node1, :ping}, @receive_timeout
 
       :ok = PubSub.direct_broadcast_from(@node2, config.pubsub, self(), config.topic, :ping)
-      refute_receive {@node1, :ping}
+      refute_receive {@node1, :ping}, @receive_timeout
 
       :ok = PubSub.direct_broadcast_from!(@node2, config.pubsub, self(), config.topic, :ping)
-      refute_receive {@node1, :ping}
+      refute_receive {@node1, :ping}, @receive_timeout
     end
   end
 

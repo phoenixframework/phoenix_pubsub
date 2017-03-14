@@ -16,6 +16,7 @@ defmodule Phoenix.Tracker.State do
   @type context    :: %{name => clock}
   @type values     :: ets_id | :extracted | %{tag => {pid, topic, key, meta}}
   @type value      :: {{topic, pid, key}, meta, tag}
+  @type key_meta   :: {key, meta}
   @type delta      :: %State{mode: :delta}
   @type pid_lookup :: {pid, topic, key}
 
@@ -50,13 +51,13 @@ defmodule Phoenix.Tracker.State do
       %Phoenix.Tracker.State{...}
 
   """
-  @spec new(name) :: t
-  def new(replica) do
+  @spec new(name, atom) :: t
+  def new(replica, shard_name) do
     reset_delta(%State{
       replica: replica,
       context: %{replica => 0},
       mode: :normal,
-      values: :ets.new(:values, [:ordered_set]),
+      values: :ets.new(shard_name, [:named_table, :protected, :ordered_set]),
       pids: :ets.new(:pids, [:duplicate_bag]),
       replicas: %{replica => :up}})
   end
@@ -113,12 +114,22 @@ defmodule Phoenix.Tracker.State do
   @doc """
   Returns a list of elements for the topic who belong to an online replica.
   """
-  @spec get_by_topic(t, topic) :: [value]
+  @spec get_by_topic(t, topic) :: [key_meta]
   def get_by_topic(%State{values: values} = state, topic) do
-    replicas = down_replicas(state)
-    :ets.select(values, [{ {{topic, :_, :_}, :_, {:"$1", :_}},
-      not_in(:"$1", replicas), [:"$_"]}])
+    tracked_values(values, topic, down_replicas(state))
   end
+
+  @doc """
+  Performs table lookup for tracked elements in the topic, filtering out
+  those present on downed replicas.
+  """
+  def tracked_values(table, topic, down_replicas) do
+    :ets.select(table,
+      [{{{topic, :_, :"$1"}, :"$2", {:"$3", :_}},
+        not_in(:"$3", down_replicas),
+        [{{:"$1", :"$2"}}]}])
+  end
+
   defp not_in(_pos, []), do: []
   defp not_in(pos, replicas), do: [not: ors(pos, replicas)]
   defp ors(pos, [rep]), do: {:"==", pos, {rep}}

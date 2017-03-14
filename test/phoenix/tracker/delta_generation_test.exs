@@ -9,8 +9,8 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     |> Enum.sort()
   end
 
-  defp new(node) do
-    State.new(node)
+  defp new(node, config) do
+    State.new(node, :"#{node} #{config.test}")
   end
 
   defp new_pid() do
@@ -23,9 +23,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     |> Enum.sort()
   end
 
-  test "generations" do
-    s1 = new(:s1)
-    s2 = new(:s2)
+  test "generations", config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
     s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
     assert [gen1, gen1, gen1] = gens = push(s1, [], s1.delta, [2, 5, 6])
     assert keys(gen1) == ["user1"]
@@ -86,9 +86,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert sorted_clouds(gen3.clouds) == [{:s1, 3}, {:s1, 4}, {:s2, 1}, {:s2, 2}]
   end
 
-  test "does not include non-contiguous deltas" do
-    s1 = new(:s1)
-    s3 = new(:s3)
+  test "does not include non-contiguous deltas", config do
+    s1 = new(:s1, config)
+    s3 = new(:s3, config)
     s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
     old_s3 = s3 = State.join(s3, new_pid(), "lobby", "user3", %{})
     s3 = State.reset_delta(s3)
@@ -99,10 +99,10 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert [^gen1, ^gen1, ^gen1] = push(s1, gens, s3.delta, [5, 10, 15])
   end
 
-  test "remove_down_replicas" do
-    s1 = new(:s1)
-    s2 = new(:s2)
-    s3 = new(:s3)
+  test "remove_down_replicas", config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
+    s3 = new(:s3, config)
     s2 = State.join(s2, new_pid(), "lobby", "user2", %{})
     assert [gen1, gen1, gen1] = gens = push(s1, [], s2.delta, [5, 10, 15])
     assert [pruned_gen1, pruned_gen1, pruned_gen1] = DeltaGeneration.remove_down_replicas(gens, :s2)

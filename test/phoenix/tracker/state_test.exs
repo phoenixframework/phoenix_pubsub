@@ -8,8 +8,8 @@ defmodule Phoenix.Tracker.StateTest do
     |> Enum.sort()
   end
 
-  defp new(node) do
-    State.new({node, 1})
+  defp new(node, config) do
+    State.new({node, 1}, :"#{node} #{config.test}")
   end
 
   defp new_pid() do
@@ -24,24 +24,24 @@ defmodule Phoenix.Tracker.StateTest do
 
   defp tab2list(tab), do: tab |> :ets.tab2list() |> Enum.sort()
 
-  test "that this is set up correctly" do
-    a = new(:a)
+  test "that this is set up correctly", config do
+    a = new(:a, config)
     assert {_a, map} = State.extract(a, :a, a.context)
     assert map == %{}
   end
 
-  test "user added online is online" do
-    a = new(:a)
+  test "user added online is online", config do
+    a = new(:a, config)
     john = new_pid()
     a = State.join(a, john, "lobby", :john)
-    assert [{{_, _, :john}, _, _}] = State.get_by_topic(a, "lobby")
+    assert [{:john, _meta}] = State.get_by_topic(a, "lobby")
     a = State.leave(a, john, "lobby", :john)
     assert [] = State.get_by_topic(a, "lobby")
   end
 
-  test "users from other servers merge" do
-    a = new(:a)
-    b = new(:b)
+  test "users from other servers merge", config do
+    a = new(:a, config)
+    b = new(:b, config)
     {a, _, _} = State.replica_up(a, b.replica)
     {b, _, _} = State.replica_up(b, a.replica)
 
@@ -89,9 +89,9 @@ defmodule Phoenix.Tracker.StateTest do
     assert (State.online_list(b) |> Enum.sort) == (State.online_list(a) |> Enum.sort)
   end
 
-  test "basic netsplit" do
-    a = new(:a)
-    b = new(:b)
+  test "basic netsplit", config do
+    a = new(:a, config)
+    b = new(:b, config)
     {a, _, _} = State.replica_up(a, b.replica)
     {b, _, _} = State.replica_up(b, a.replica)
 
@@ -123,9 +123,9 @@ defmodule Phoenix.Tracker.StateTest do
     assert [:bob, :carol, :david] = keys(State.online_list(a))
   end
 
-  test "get_by_pid" do
+  test "get_by_pid", config do
     pid = self()
-    state = new(:node1)
+    state = new(:node1, config)
 
     assert State.get_by_pid(state, pid) == []
     state = State.join(state, pid, "topic", "key1", %{})
@@ -139,11 +139,11 @@ defmodule Phoenix.Tracker.StateTest do
     assert State.get_by_pid(state, pid, "notopic", "nokey") == nil
   end
 
-  test "get_by_topic" do
+  test "get_by_topic", config do
     pid = self()
-    state = new(:node1)
-    state2 = new(:node2)
-    state3 = new(:node3)
+    state = new(:node1, config)
+    state2 = new(:node2, config)
+    state3 = new(:node3, config)
     {state, _, _} = State.replica_up(state, {:node2, 1})
     {state, _, _} = State.replica_up(state, {:node3, 1})
 
@@ -170,37 +170,29 @@ defmodule Phoenix.Tracker.StateTest do
     state3 = State.join(state3, user3, "topic", "user3", %{})
 
     # all replicas online
-    assert [{{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}},
-            {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}}] =
+    assert [{"key1", %{}}, {"key2", %{}}] =
            State.get_by_topic(state, "topic")
 
     {state, _, _} = State.merge(state, State.extract(state2, :node1, state.context))
     {state, _, _} = State.merge(state, State.extract(state3, :node1, state.context))
-    assert [{{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}},
-            {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}},
-            {{"topic", ^user2, "user2"}, %{}, {{:node2, 1}, 1}},
-            {{"topic", ^user3, "user3"}, %{}, {{:node3, 1}, 1}}] =
-           State.get_by_topic(state, "topic")
+    assert [{"key1", %{}}, {"key2", %{}}, {"user2", %{}}, {"user3", %{}}] =
+      State.get_by_topic(state, "topic")
 
     # one replica offline
     {state, _, _} = State.replica_down(state, state2.replica)
-    assert [{{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}},
-            {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}},
-            {{"topic", ^user3, "user3"}, %{}, {{:node3, 1}, 1}}] =
-           State.get_by_topic(state, "topic")
+    assert [{"key1", %{}}, {"key2", %{}}, {"user3", %{}}] =
+      State.get_by_topic(state, "topic")
 
     # two replicas offline
     {state, _, _} = State.replica_down(state, state3.replica)
-    assert [{{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}},
-            {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}}] =
-           State.get_by_topic(state, "topic")
+    assert [{"key1", %{}}, {"key2", %{}}] = State.get_by_topic(state, "topic")
 
     assert [] = State.get_by_topic(state, "another:topic")
   end
 
-  test "remove_down_replicas" do
-    state1 = new(:node1)
-    state2 = new(:node2)
+  test "remove_down_replicas", config do
+    state1 = new(:node1, config)
+    state2 = new(:node2, config)
     {state1, _, _} = State.replica_up(state1, state2.replica)
     {state2, _, _} = State.replica_up(state2, state1.replica)
 
@@ -222,9 +214,10 @@ defmodule Phoenix.Tracker.StateTest do
     assert keys(State.online_list(state2)) == [:bob]
   end
 
-  test "basic deltas" do
-    a = new(:a)
-    b = new(:b)
+  test "basic deltas", config do
+    a = new(:a, config)
+    b = new(:b, config)
+
     {a, _, _} = State.replica_up(a, b.replica)
     {b, _, _} = State.replica_up(b, a.replica)
 
@@ -249,9 +242,9 @@ defmodule Phoenix.Tracker.StateTest do
     assert Enum.all?(Enum.map(b.clouds, fn {_, cloud} -> Enum.empty?(cloud) end))
   end
 
-  test "merging deltas" do
-    s1 = new(:s1)
-    s2 = new(:s2)
+  test "merging deltas", config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
     user1 = new_pid()
     user2 = new_pid()
 
@@ -271,12 +264,12 @@ defmodule Phoenix.Tracker.StateTest do
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}]
   end
 
-  test "merging deltas with removes" do
-    s1 = new(:s1)
-    s2 = new(:s2)
+  test "merging deltas with removes", config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
+    user1 = new_pid()
     {s1, _, _} = State.replica_up(s1, s2.replica)
     {s2, _, _} = State.replica_up(s2, s1.replica)
-    user1 = new_pid()
 
     # concurrent add wins
     s1 = State.join(s1, user1, "lobby", "user1", %{})
