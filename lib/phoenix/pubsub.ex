@@ -137,7 +137,7 @@ defmodule Phoenix.PubSub do
           PubSub.subscribe(MyApp.PubSub, "topic1",
             fastlane: {fast_pid, Phoenix.Transports.WebSocketSerializer, ["event1"]})
   """
-  @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
+  @spec subscribe(atom, pid, binary) :: :ok | {:error, term}
   def subscribe(server, pid, topic)
     when is_atom(server) and is_pid(pid) and is_binary(topic) do
     subscribe(server, pid, topic, [])
