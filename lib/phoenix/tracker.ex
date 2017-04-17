@@ -102,7 +102,7 @@ defmodule Phoenix.Tracker do
   @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
 
-  @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
+  @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
 
   ## Client
