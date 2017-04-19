@@ -112,6 +112,7 @@ defmodule Phoenix.PubSub.Local do
     |> subscribers_with_fastlanes(topic, shard)
     |> Enum.each(fn
       {pid, _} when pid == from -> :noop
+      {_, {fastlane_pid, module, data}} -> module.fastlane(fastlane_pid, msg, data)
       {pid, _} -> send(pid, msg)
     end)
   end
