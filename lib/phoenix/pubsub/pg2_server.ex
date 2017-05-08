@@ -8,32 +8,35 @@ defmodule Phoenix.PubSub.PG2Server do
     GenServer.start_link __MODULE__, {server_name, pool_size}, name: server_name
   end
 
-  def direct_broadcast(fastlane, server_name, pool_size, node_name, from_pid, topic, msg) do
+  def direct_broadcast(fastlane, server_name, pool_size, broadcast_strategy,
+    node_name, from_pid, topic, msg) do
     server_name
     |> get_members(node_name)
-    |> do_broadcast(fastlane, server_name, pool_size, from_pid, topic, msg)
+    |> do_broadcast(fastlane, server_name, pool_size, from_pid, topic, msg, broadcast_strategy)
   end
 
-  def broadcast(fastlane, server_name, pool_size, from_pid, topic, msg) do
+  def broadcast(fastlane, server_name, pool_size, broadcast_strategy,
+    from_pid, topic, msg) do
     server_name
     |> get_members()
-    |> do_broadcast(fastlane, server_name, pool_size, from_pid, topic, msg)
+    |> do_broadcast(fastlane, server_name, pool_size, from_pid, topic, msg, broadcast_strategy)
   end
 
-  defp do_broadcast({:error, {:no_such_group, _}}, _fastlane, _server, _pool, _from, _topic, _msg) do
+  defp do_broadcast({:error, {:no_such_group, _}}, _fastlane, _server,
+    _pool, _from, _topic, _msg, _strategy) do
     {:error, :no_such_group}
   end
-  defp do_broadcast(pids, fastlane, server_name, pool_size, from_pid, topic, msg)
+  defp do_broadcast(pids, fastlane, server_name, pool_size, from_pid, topic, msg, broadcast_strategy)
     when is_list(pids) do
     local_node = Phoenix.PubSub.node_name(server_name)
 
     Enum.each(pids, fn
       pid when is_pid(pid) and node(pid) == node() ->
-        Local.broadcast(fastlane, server_name, pool_size, from_pid, topic, msg)
+        Local.broadcast(fastlane, server_name, pool_size, from_pid, topic, msg, broadcast_strategy)
       {^server_name, node_name} when node_name == local_node ->
-        Local.broadcast(fastlane, server_name, pool_size, from_pid, topic, msg)
+        Local.broadcast(fastlane, server_name, pool_size, from_pid, topic, msg, broadcast_strategy)
       pid_or_tuple ->
-        send(pid_or_tuple, {:forward_to_local, fastlane, from_pid, topic, msg})
+        send(pid_or_tuple, {:forward_to_local, fastlane, from_pid, topic, msg, broadcast_strategy})
     end)
     :ok
   end
@@ -46,10 +49,10 @@ defmodule Phoenix.PubSub.PG2Server do
     {:ok, %{name: server_name, pool_size: pool_size}}
   end
 
-  def handle_info({:forward_to_local, fastlane, from_pid, topic, msg}, state) do
+  def handle_info({:forward_to_local, fastlane, from_pid, topic, msg, broadcast_strategy}, state) do
     # The whole broadcast will happen inside the current process
     # but only for messages coming from the distributed system.
-    Local.broadcast(fastlane, state.name, state.pool_size, from_pid, topic, msg)
+    Local.broadcast(fastlane, state.name, state.pool_size, from_pid, topic, msg, broadcast_strategy)
     {:noreply, state}
   end
 

@@ -33,9 +33,13 @@ defmodule Phoenix.PubSub.PG2 do
   def init([server, opts]) do
     scheduler_count = :erlang.system_info(:schedulers)
     pool_size = Keyword.get(opts, :pool_size, scheduler_count)
+    broadcast_strategy = Keyword.get(opts, :broadcast_strategy,
+      Phoenix.PubSub.Strategy.Parallel)
     node_name = opts[:node_name]
-    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
-                      {:direct_broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server,
+                       [opts[:fastlane], server, pool_size, broadcast_strategy]},
+                      {:direct_broadcast, Phoenix.PubSub.PG2Server,
+                       [opts[:fastlane], server, pool_size, broadcast_strategy]},
                       {:node_name, __MODULE__, [node_name]}]
 
     children = [

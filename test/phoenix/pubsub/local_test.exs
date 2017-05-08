@@ -2,6 +2,7 @@ defmodule Phoenix.PubSub.LocalTest do
   use ExUnit.Case, async: true
 
   alias Phoenix.PubSub.Local
+  alias Phoenix.PubSub.Strategy
 
   defp list(config) do
     Enum.reduce(0..(config.pool_size - 1), [], fn shard, acc ->
@@ -20,6 +21,25 @@ defmodule Phoenix.PubSub.LocalTest do
     {:ok, _} = Phoenix.PubSub.LocalSupervisor.start_link(config.test, size, [])
     {:ok, %{pubsub: config.test,
             pool_size: size}}
+  end
+
+  for size <- [2, 8] do
+    ## Strategies are not used when pool size == 1
+    @tag pool_size: size
+    test "pool #{size}: Broadcast strategy can be provided to the broadcast function", config do
+      defmodule NullStrategy do
+        def broadcast(pool_size, fun), do: send(:calling_test, {pool_size, fun})
+      end
+
+      pool_size = config.pool_size
+      pid = spawn_link fn -> :timer.sleep(:infinity) end
+      Process.register(pid, :calling_test)
+
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size,
+        :none, "foo", :strategy_test, NullStrategy)
+
+      assert [{^pool_size, _}] = Process.info(Process.whereis(:calling_test))[:messages]
+    end
   end
 
   for size <- [1, 8] do
