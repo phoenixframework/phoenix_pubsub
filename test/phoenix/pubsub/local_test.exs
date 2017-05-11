@@ -2,7 +2,6 @@ defmodule Phoenix.PubSub.LocalTest do
   use ExUnit.Case, async: true
 
   alias Phoenix.PubSub.Local
-  alias Phoenix.PubSub.Strategy
 
   defp list(config) do
     Enum.reduce(0..(config.pool_size - 1), [], fn shard, acc ->
@@ -16,30 +15,15 @@ defmodule Phoenix.PubSub.LocalTest do
     end)
   end
 
+  defmodule TestStrategy do
+    def broadcast(pool_size, fun), do: send(:calling_test, {pool_size, fun})
+  end
+
   setup config do
     size = config[:pool_size] || 1
     {:ok, _} = Phoenix.PubSub.LocalSupervisor.start_link(config.test, size, [])
     {:ok, %{pubsub: config.test,
             pool_size: size}}
-  end
-
-  for size <- [2, 8] do
-    ## Strategies are not used when pool size == 1
-    @tag pool_size: size
-    test "pool #{size}: Broadcast strategy can be provided to the broadcast function", config do
-      defmodule NullStrategy do
-        def broadcast(pool_size, fun), do: send(:calling_test, {pool_size, fun})
-      end
-
-      pool_size = config.pool_size
-      pid = spawn_link fn -> :timer.sleep(:infinity) end
-      Process.register(pid, :calling_test)
-
-      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size,
-        :none, "foo", :strategy_test, NullStrategy)
-
-      assert [{^pool_size, _}] = Process.info(Process.whereis(:calling_test))[:messages]
-    end
   end
 
   for size <- [1, 8] do
@@ -132,5 +116,23 @@ defmodule Phoenix.PubSub.LocalTest do
       :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic8")
       assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
+
+    @tag pool_size: size
+    test "pool #{size}: Broadcast strategy can be provided to the broadcast function", config do
+
+      pool_size = config.pool_size
+      pid = spawn_link fn -> :timer.sleep(:infinity) end
+      Process.register(pid, :calling_test) ## TestStrategy will report back to us
+
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size,
+        :none, "foo", :strategy_test, TestStrategy)
+
+      case pool_size do
+        1 -> "broadcast strategy isn't used when pool size == 1"
+        _n -> assert [{^pool_size, _}] =
+            Process.info(Process.whereis(:calling_test))[:messages]
+      end
+    end
+
   end
 end
