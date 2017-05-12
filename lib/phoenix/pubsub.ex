@@ -59,7 +59,7 @@ defmodule Phoenix.PubSub do
   ## Implementing your own adapter
 
   PubSub adapters run inside their own supervision tree.
-  If you are interested in providing your own adapter,  let's
+  If you are interested in providing your own adapter, let's
   call it `Phoenix.PubSub.MyQueue`, the first step is to provide
   a supervisor module that receives the server name and a bunch
   of options on `start_link/2`:
@@ -112,7 +112,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Subscribes the caller to the PubSub adapter's topic.
 
-    * `server` - The Pid registered name of the server
+    * `server` - The registered name of the server
     * `topic` - The topic to subscribe to, for example: `"users:123"`
     * `opts` - The optional list of options. See below.
 
