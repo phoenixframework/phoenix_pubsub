@@ -119,7 +119,7 @@ defmodule Phoenix.PubSub do
   ## Duplicate Subscriptions
 
   Callers should only subscribe to a given topic a single time.
-  Duplicate subscriptions for a Pid/topic pair are allowed and
+  Duplicate subscriptions for a pid/topic pair are allowed and
   will cause duplicate events to be sent; however, when using
   `Phoenix.PubSub.unsubscribe/3`, all duplicate subscriptions
   will be dropped.
@@ -153,7 +153,7 @@ defmodule Phoenix.PubSub do
   end
   @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
   def subscribe(server, pid, topic, opts) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.subscribe is deprecated. " <>
+    IO.write :stderr, "[warning] Passing a pid to Phoenix.PubSub.subscribe is deprecated. " <>
                       "Only the calling process may subscribe to topics"
     call(server, :subscribe, [pid, topic, opts])
   end
@@ -163,7 +163,7 @@ defmodule Phoenix.PubSub do
   """
   @spec unsubscribe(atom, pid, binary) :: :ok | {:error, term}
   def unsubscribe(server, pid, topic) when is_atom(server) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
+    IO.write :stderr, "[warning] Passing a pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
                       "Only the calling process may unsubscribe from topics"
     call(server, :unsubscribe, [pid, topic])
   end
@@ -176,7 +176,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic.
 
-    * `server` - The Pid or registered server name and optional node to
+    * `server` - The pid or registered server name and optional node to
       scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
@@ -191,7 +191,7 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic, to a single node.
 
     * `node` - The name of the node to broadcast the message on
-    * `server` - The Pid or registered server name and optional node to
+    * `server` - The pid or registered server name and optional node to
       scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
