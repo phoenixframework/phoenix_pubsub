@@ -12,6 +12,7 @@ defmodule Phoenix.Tracker do
     * `tracker` - The name of the tracker handler module implementing the
       `Phoenix.Tracker` behaviour
     * `tracker_opts` - The list of options to pass to the tracker handler
+      module's `init/1` function
     * `server_opts` - The list of options to pass to the tracker server
 
   ## Required `server_opts`:
