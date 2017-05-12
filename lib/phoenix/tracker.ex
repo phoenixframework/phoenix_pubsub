@@ -46,6 +46,11 @@ defmodule Phoenix.Tracker do
 
       worker(MyTracker, [[name: MyTracker, pubsub_server: MyPubSub]])
 
+  Note that a tracker and a pubsub server can generally be restarted
+  independently, so if they exist under the same supervisor, you can
+  safely use a `:one_for_one` restart strategy (unless your custom
+  tracker logic or additional supervised processes dictate otherwise).
+
   Next, implement `MyTracker` with support for the `Phoenix.Tracker`
   behaviour callbacks. An example of a minimal tracker could include:
 
