@@ -101,6 +101,7 @@ defmodule Phoenix.Tracker do
 
   @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
+  @type server :: GenServer.server
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
@@ -110,8 +111,8 @@ defmodule Phoenix.Tracker do
   @doc """
   Tracks a presence.
 
-    * `server_name` - The registered name of the tracker server
-    * `pid` - The Pid to track
+    * `server` - The pid or registered name of the tracker server
+    * `pid` - The pid to track
     * `topic` - The `Phoenix.PubSub` topic for this presence
     * `key` - The key identifying this presence
     * `meta` - The map of metadata to attach to this presence
@@ -127,20 +128,20 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
       {:error, {:already_tracked, #PID<0.56.0>, "lobby", "123"}}
   """
-  @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
-    GenServer.call(server_name, {:track, pid, topic, key, meta})
+  @spec track(server, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
+  def track(server, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
+    GenServer.call(server, {:track, pid, topic, key, meta})
   end
 
   @doc """
   Untracks a presence.
 
-    * `server_name` - The registered name of the tracker server
-    * `pid` - The Pid to untrack
+    * `server` - The pid or registered name of the tracker server
+    * `pid` - The pid to untrack
     * `topic` - The `Phoenix.PubSub` topic to untrack for this presence
     * `key` - The key identifying this presence
 
-  All presences for a given Pid can be untracked by calling the
+  All presences for a given pid can be untracked by calling the
   `Phoenix.Tracker.untrack/2` signature of this function.
 
   ## Examples
@@ -150,19 +151,19 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.untrack(MyTracker, self())
       :ok
   """
-  @spec untrack(atom, pid, topic, term) :: :ok
-  def untrack(server_name, pid, topic, key) when is_pid(pid) do
-    GenServer.call(server_name, {:untrack, pid, topic, key})
+  @spec untrack(server, pid, topic, term) :: :ok
+  def untrack(server, pid, topic, key) when is_pid(pid) do
+    GenServer.call(server, {:untrack, pid, topic, key})
   end
-  def untrack(server_name, pid) when is_pid(pid) do
-    GenServer.call(server_name, {:untrack, pid})
+  def untrack(server, pid) when is_pid(pid) do
+    GenServer.call(server, {:untrack, pid})
   end
 
   @doc """
   Updates a presence's metadata.
 
-    * `server_name` - The registered name of the tracker server
-    * `pid` - The Pid being tracked
+    * `server` - The pid or registered name of the tracker server
+    * `pid` - The pid being tracked
     * `topic` - The `Phoenix.PubSub` topic to update for this presence
     * `key` - The key identifying this presence
 
@@ -174,15 +175,15 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def update(server_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
-    GenServer.call(server_name, {:update, pid, topic, key, meta})
+  @spec update(server, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
+  def update(server, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
+    GenServer.call(server, {:update, pid, topic, key, meta})
   end
 
   @doc """
   Lists all presences tracked under a given topic.
 
-    * `server_name` - The registered name of the tracker server
+    * `server` - The pid or registered name of the tracker server
     * `topic` - The `Phoenix.PubSub` topic to update for this presence
 
   Returns a lists of presences in key/metadata tuple pairs.
@@ -192,10 +193,10 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.list(MyTracker, "lobby")
       [{123, %{name: "user 123"}}, {456, %{name: "user 456"}}]
   """
-  @spec list(atom, topic) :: [presence]
-  def list(server_name, topic) do
+  @spec list(server, topic) :: [presence]
+  def list(server, topic) do
     # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
-    server_name
+    server
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
     |> Enum.map(fn {{_topic, _pid, key},  meta, _tag} -> {key, meta} end)
@@ -209,9 +210,9 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.graceful_permdown(MyTracker)
       :ok
   """
-  @spec graceful_permdown(atom) :: :ok
-  def graceful_permdown(server_name) do
-    GenServer.call(server_name, :graceful_permdown)
+  @spec graceful_permdown(server) :: :ok
+  def graceful_permdown(server) do
+    GenServer.call(server, :graceful_permdown)
   end
 
 
