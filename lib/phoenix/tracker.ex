@@ -21,22 +21,22 @@ defmodule Phoenix.Tracker do
 
   ## Optional `server_opts`:
 
-    * `broadcast_period` - The interval in milliseconds to send delta broadcats
+    * `:broadcast_period` - The interval in milliseconds to send delta broadcats
       across the cluster. Default `1500`
-    * `max_silent_periods` - The max integer of broadcast periods for which no
+    * `:max_silent_periods` - The max integer of broadcast periods for which no
       delta broadcasts have been sent. Defaults `10` (15s heartbeat)
-    * `down_period` - The interval in milliseconds to flag a replica
+    * `:down_period` - The interval in milliseconds to flag a replica
       as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
       (30s down detection). Note: This must be at least 2x the `broadcast_period`.
-    * `permdown_period` - The interval in milliseconds to flag a replica
+    * `:permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
       Note: This must be at least greater than the `down_period`.
       Default `1_200_000` (20 minutes)
-    * `clock_sample_periods` - The numbers of heartbeat windows to sample
+    * `:clock_sample_periods` - The numbers of heartbeat windows to sample
       remote clocks before collapsing and requesting transfer. Default `2`
-    * `max_delta_sizes` - The list of delta generation sizes to keep before
+    * `:max_delta_sizes` - The list of delta generation sizes to keep before
       falling back to sending entire state. Defaults `[100, 1000, 10_000]`.
-    * log_level - The log level to log events, defaults `:debug` and can be
+    * `:log_level` - The log level to log events, defaults `:debug` and can be
       disabled with `false`
 
   ## Implementing a Tracker
