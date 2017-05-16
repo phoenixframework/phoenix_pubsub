@@ -118,8 +118,8 @@ defmodule Phoenix.Tracker do
   Tracks a presence.
 
     * `server` - The pid or registered name of the tracker server
-    * `pid` - The pid to track. The tracker will monitor the process and
-      and automatically untrack it when it exits.
+    * `pid` - The pid to track. The tracker will automatically cleanup
+      the pid when it exits.
     * `topic` - The `Phoenix.PubSub` topic for this presence
     * `key` - The key identifying this presence
     * `meta` - The map of metadata to attach to this presence

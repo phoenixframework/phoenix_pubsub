@@ -41,11 +41,6 @@ defmodule Phoenix.PubSub do
 
       supervisor(Phoenix.PubSub.Redis, [:my_pubsub, host: "192.168.100.1"])
 
-  Note that a tracker and a pubsub server can generally be restarted
-  independently, so if they exist under the same supervisor, you can
-  safely use a `:one_for_one` restart strategy (unless your custom
-  tracker logic or additional supervised processes dictate otherwise).
-
   The configuration above will start a Redis pubsub and
   register it with name `:my_pubsub`.
 
