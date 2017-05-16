@@ -17,7 +17,7 @@ defmodule Phoenix.PubSub.PG2 do
       When only a server name is provided, the node name defaults to `node()`.
 
     * `:pool_size` - Both the size of the local pubsub server pool and subscriber
-      shard size. Defaults the number of schedulers (cores). A single pool is
+      shard size. Defaults to the number of schedulers (cores). A single pool is
       often enough for most use-cases, but for high subscriber counts on a single
       topic or greater than 1M clients, a pool size equal to the number of
       schedulers (cores) is a well rounded size.
