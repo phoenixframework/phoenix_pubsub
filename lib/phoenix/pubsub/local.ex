@@ -102,7 +102,7 @@ defmodule Phoenix.PubSub.Local do
   end
   def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg,
     strategy) when is_atom(pubsub_server) do
-    strategy.broadcast(pool_size, fn(shard) ->
+    strategy.run(pool_size, fn(shard) ->
       do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)
     end)
     :ok

@@ -22,6 +22,11 @@ defmodule Phoenix.PubSub.PG2 do
       topic or greater than 1M clients, a pool size equal to the number of
       schedulers (cores) is a well rounded size.
 
+    * `:broadcast_strategy` - What strategy to use for broadcasting messages.
+      Currently, `Phoenix.PubSub.Strategy.Parallel` is the default implementation.
+      For systems with very high broadcast throughput,
+      `Phoenix.PubSub.Strategy.Serial` may yield better performance.
+
   """
 
   def start_link(name, opts) do

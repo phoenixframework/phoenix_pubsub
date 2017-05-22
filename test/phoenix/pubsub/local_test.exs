@@ -16,7 +16,8 @@ defmodule Phoenix.PubSub.LocalTest do
   end
 
   defmodule TestStrategy do
-    def broadcast(pool_size, fun), do: send(:calling_test, {pool_size, fun})
+    @behaviour Phoenix.PubSub.Strategy
+    def run(pool_size, fun), do: send(:calling_test, {pool_size, fun})
   end
 
   setup config do

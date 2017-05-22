@@ -4,7 +4,7 @@ defmodule Phoenix.PubSub.StrategyTest do
   test "Serial strategy executes fun in the same process" do
     test_pid = self()
     fun = fn(shard) -> send(test_pid, {self(), shard}) end
-    Phoenix.PubSub.Strategy.Serial.broadcast(50, fun)
+    Phoenix.PubSub.Strategy.Serial.run(50, fun)
     received_messages = for i <- 0..49 do
       assert_received {_pid, ^i}
     end
@@ -14,7 +14,7 @@ defmodule Phoenix.PubSub.StrategyTest do
   test "Parallel strategy executes fun in separate processes" do
     test_pid = self()
     fun = fn(shard) -> send(test_pid, {self(), shard}) end
-    Phoenix.PubSub.Strategy.Parallel.broadcast(50, fun)
+    Phoenix.PubSub.Strategy.Parallel.run(50, fun)
     received_messages = for i <- 0..49 do
       assert_received {_pid, ^i}
     end
