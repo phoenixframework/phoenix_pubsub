@@ -295,7 +295,7 @@ defmodule Phoenix.Tracker do
                |> handle_heartbeat({name, vsn})}
   end
   def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
-    {presences, joined, left} = State.merge(state.presences, delta)
+    {state, presences, joined, left} = merge(state, delta)
 
     {:noreply, state
                |> report_diff(joined, left)
@@ -316,7 +316,7 @@ defmodule Phoenix.Tracker do
 
   def handle_info({:pub, :transfer_ack, _ref, {name, _vsn}, remote_presences}, state) do
     log(state, fn -> "#{state.replica.name}: transfer_ack from #{inspect name}" end)
-    {presences, joined, left} = State.merge(state.presences, remote_presences)
+    {state, presences, joined, left} = merge(state, remote_presences)
 
     {:noreply, state
                |> report_diff(joined, left)
@@ -631,4 +631,15 @@ defmodule Phoenix.Tracker do
 
   defp log(%{log_level: false}, _msg_func), do: :ok
   defp log(%{log_level: level}, msg), do: Logger.log(level, msg)
+
+  defp merge(state, remote_presences) do
+    {presences, joined, left} = State.merge(state.presences, remote_presences)
+    new_state = detect_ups_from_merge(state, state.presences, presences)
+    {new_state, presences, joined, left}
+  end
+
+  defp detect_ups_from_merge(state, presences_before, presences_after) do
+    ups = Map.keys(presences_after.context) -- Map.keys(presences_before.context)
+    Enum.reduce(ups, state, fn rep, acc -> handle_heartbeat(acc, rep) end)
+  end
 end
