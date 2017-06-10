@@ -2,6 +2,12 @@ defmodule Phoenix.Tracker.StateTest do
   use ExUnit.Case, async: true
   alias Phoenix.Tracker.{State}
 
+  def sorted_clouds(clouds) do
+    clouds
+    |> Enum.flat_map(fn {_name, cloud} -> Enum.to_list(cloud) end)
+    |> Enum.sort()
+  end
+
   defp new(node) do
     State.new({node, 1})
   end
@@ -222,7 +228,7 @@ defmodule Phoenix.Tracker.StateTest do
     a = State.join(a, alice, "lobby", :alice)
     assert {b, [{{_, _, :alice}, _, _}], []} = State.merge(b, a.delta)
     assert {{:b, 1}, %{{:a, 1} => 3, {:b, 1} => 1}} = State.clocks(b)
-    assert Enum.empty?(b.cloud)
+    assert Enum.all?(Enum.map(b.clouds, fn {_, cloud} -> Enum.empty?(cloud) end))
   end
 
   test "merging deltas" do
@@ -243,7 +249,7 @@ defmodule Phoenix.Tracker.StateTest do
       {{:s2, 1}, 1} => {user2, "lobby", "user2", %{}},
       {{:s2, 1}, 2} => {user2, "private", "user2", %{}}
     }
-    assert Enum.sort(delta1.cloud) ==
+    assert sorted_clouds(delta1.clouds) ==
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}]
   end
 
@@ -264,7 +270,7 @@ defmodule Phoenix.Tracker.StateTest do
       {{:s1, 1}, 1} => {user1, "lobby", "user1", %{}},
       {{:s1, 1}, 2} => {user1, "private", "user1", %{}},
     }
-    assert Enum.sort(delta1.cloud) ==
+    assert sorted_clouds(delta1.clouds) ==
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}]
 
     # merging duplicates maintains delta
@@ -279,7 +285,7 @@ defmodule Phoenix.Tracker.StateTest do
       {{:s1, 1}, 1} => {user1, "lobby", "user1", %{}},
     }
     # maintains tombstone
-    assert Enum.sort(delta1.cloud) ==
+    assert sorted_clouds(delta1.clouds) ==
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}, {{:s2, 1}, 3}]
   end
 end
