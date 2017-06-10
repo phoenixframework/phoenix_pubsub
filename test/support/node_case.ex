@@ -142,6 +142,16 @@ defmodule Phoenix.PubSub.NodeCase do
     end
   end
 
+  def get_values(node, tracker) do
+    table = :sys.get_state(tracker).presences.values
+    {_, vals} = call_node(node, fn -> get_values(table) end)
+    Enum.map(vals, fn [{{_, pid, node}, _, _}] -> {node, pid} end)
+  end
+
+  def get_values(table) do
+    :ets.match(table, :"$1")
+  end
+
   defp call_node(node, func) do
     parent = self()
     ref = make_ref()

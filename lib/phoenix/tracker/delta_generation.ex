@@ -9,14 +9,14 @@ defmodule Phoenix.Tracker.DeltaGeneration do
   Falls back to extracting entire crdt if unable to match delta.
   """
   @spec extract(State.delta, [State.delta], State.context) :: State.delta | State.t
-  def extract(%State{mode: :normal} = state, generations, remote_clock) do
-    case delta_fullfilling_clock(generations, remote_clock) do
+  def extract(%State{mode: :normal} = state, generations, remote_context) do
+    case delta_fullfilling_clock(generations, remote_context) do
       {delta, index} ->
         if index, do: Logger.debug "#{inspect state.replica}: sending delta generation #{index + 1}"
         delta
       nil ->
         Logger.debug "#{inspect state.replica}: falling back to sending entire crdt"
-        State.extract(state)
+        State.extract(state, remote_context)
     end
   end
 
@@ -54,11 +54,11 @@ defmodule Phoenix.Tracker.DeltaGeneration do
     end)
   end
 
-  defp delta_fullfilling_clock(generations, remote_clock) do
+  defp delta_fullfilling_clock(generations, remote_context) do
     generations
     |> Enum.with_index()
     |> Enum.find(fn {%State{range: {local_start, _local_end}}, _} ->
-      Clock.dominates?(remote_clock, local_start)
+      Clock.dominates?(remote_context, local_start)
     end)
   end
 end

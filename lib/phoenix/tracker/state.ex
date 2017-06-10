@@ -174,12 +174,17 @@ defmodule Phoenix.Tracker.State do
 
   Used when merging two sets.
   """
-  @spec extract(t) :: {t, values}
-  def extract(%State{values: values} = state) do
-    map = foldl(values, [], fn {{topic, pid, key}, meta, tag}, acc ->
-      [{tag, {pid, topic, key, meta}} | acc]
+  @spec extract(t, context) :: {t, values}
+  def extract(%State{values: values, clouds: clouds} = state, remote_context) do
+    map = foldl(values, [], fn {{topic, pid, key}, meta, {replica, _clock} = tag}, acc ->
+      if Map.has_key?(remote_context, replica) do
+        [{tag, {pid, topic, key, meta}} | acc]
+      else
+        acc
+      end
     end) |> :maps.from_list()
-    {%State{state | pids: nil, values: nil, delta: :unset}, map}
+    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
+    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, map}
   end
 
   @doc """
@@ -289,8 +294,10 @@ defmodule Phoenix.Tracker.State do
   Marks a replica as up in the set and returns rejoined users.
   """
   @spec replica_up(t, name) :: {t, joins :: [values], leaves :: []}
-  def replica_up(%State{replicas: replicas} = state, replica) do
-    {%State{state | replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
+  def replica_up(%State{replicas: replicas, context: ctx} = state, replica) do
+    {%State{state |
+            context: Map.put_new(ctx, replica, 0),
+            replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
   end
 
   @doc """
