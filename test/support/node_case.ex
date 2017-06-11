@@ -4,9 +4,9 @@ defmodule Phoenix.PubSub.NodeCase do
   @permdown 1500
   @pubsub Phoenix.PubSub.Test.PubSub
 
-  defmacro __using__(_opts) do
+  defmacro __using__(opts \\ []) do
     quote do
-      use ExUnit.Case, async: true
+      use ExUnit.Case, async: unquote(Keyword.get(opts, :async, true))
       import unquote(__MODULE__)
       @moduletag :clustered
 
@@ -53,6 +53,7 @@ defmodule Phoenix.PubSub.NodeCase do
   defp namespaced_topic(tracker), do: "phx_presence:#{tracker}"
 
   def start_tracker(node_name, opts) do
+    opts = Keyword.put_new(opts, :report_events_to, self())
     call_node(node_name, fn -> start_tracker(opts) end)
   end
 
@@ -69,6 +70,7 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def start_tracker(opts) do
+    opts = Keyword.put_new(opts, :report_events_to, self())
     opts = Keyword.merge([
       pubsub_server: @pubsub,
       broadcast_period: @heartbeat,
@@ -107,7 +109,7 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
-  defmacro assert_join(topic, key, meta, timeout \\ 500) do
+  defmacro assert_join(topic, key, meta, timeout \\ @timeout) do
     quote do
       assert_receive %{
         event: "presence_join",
@@ -117,7 +119,7 @@ defmodule Phoenix.PubSub.NodeCase do
     end
   end
 
-  defmacro assert_leave(topic, key, meta, timeout \\ 500) do
+  defmacro assert_leave(topic, key, meta, timeout \\ @timeout) do
     quote do
       assert_receive %{
         event: "presence_leave",
@@ -143,13 +145,12 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def get_values(node, tracker) do
-    table = :sys.get_state(tracker).presences.values
-    {_, vals} = call_node(node, fn -> get_values(table) end)
+    {_, vals} = call_node(node, fn -> get_values(tracker) end)
     Enum.map(vals, fn [{{_, pid, node}, _, _}] -> {node, pid} end)
   end
 
-  def get_values(table) do
-    :ets.match(table, :"$1")
+  def get_values(tracker) do
+    GenServer.call(tracker, :values)
   end
 
   defp call_node(node, func) do

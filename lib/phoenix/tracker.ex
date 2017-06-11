@@ -249,6 +249,7 @@ defmodule Phoenix.Tracker do
               tracker: tracker,
               tracker_state: tracker_state,
               replica: replica,
+              report_events_to: opts[:report_events_to],
               namespaced_topic: namespaced_topic,
               log_level: log_level,
               replicas: %{},
@@ -333,6 +334,10 @@ defmodule Phoenix.Tracker do
 
   def handle_info({:EXIT, pid, _reason}, state) do
     {:noreply, drop_presence(state, pid)}
+  end
+
+  def handle_call(:values, _from, state) do
+    {:reply, :ets.match(state.presences.values, :"$1"), state}
   end
 
   def handle_call({:track, pid, topic, key, meta}, _from, state) do
@@ -505,6 +510,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp up(state, remote_replica) do
+    report_event(state, {:replica_up, remote_replica.name})
     log state, fn -> "#{state.replica.name}: replica up from #{inspect remote_replica.name}" end
     {presences, joined, []} = State.replica_up(state.presences, Replica.ref(remote_replica))
 
@@ -514,6 +520,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp down(state, remote_replica) do
+    report_event(state, {:replica_down, remote_replica.name})
     log state, fn -> "#{state.replica.name}: replica down from #{inspect remote_replica.name}" end
     {presences, [], left} = State.replica_down(state.presences, Replica.ref(remote_replica))
 
@@ -523,6 +530,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp permdown(state, %Replica{name: name} = remote_replica) do
+    report_event(state, {:replica_permdown, name})
     log state, fn -> "#{state.replica.name}: permanent replica down detected #{name}" end
     replica_ref = Replica.ref(remote_replica)
     presences = State.remove_down_replicas(state.presences, replica_ref)
@@ -535,6 +543,11 @@ defmodule Phoenix.Tracker do
       _ ->
         %{state | presences: presences, deltas: deltas}
     end
+  end
+
+  defp report_event(%{report_events_to: nil}, _event), do: :ok
+  defp report_event(%{report_events_to: pid} = state, event) do
+    send(pid, {event, state.replica.name})
   end
 
   defp namespaced_topic(server_name) do

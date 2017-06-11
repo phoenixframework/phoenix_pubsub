@@ -219,8 +219,8 @@ defmodule Phoenix.Tracker.State do
 
   @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
   defp accumulate_joins(local, remote_map) do
-    Enum.reduce(remote_map, {[], []}, fn {tag, {pid, topic, key, meta}}, {pids, adds} ->
-      if in?(local, tag) do
+    Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds} ->
+      if !Map.has_key?(local.context, replica) or in?(local, tag) do
         {pids, adds}
       else
         {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
@@ -313,7 +313,7 @@ defmodule Phoenix.Tracker.State do
   """
   @spec remove_down_replicas(t, name) :: t
   def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids} = state, replica) do
-    new_ctx = for {rep, clock} <- ctx, rep != replica, into: %{}, do: {rep, clock}
+    new_ctx = Map.delete(ctx, replica)
     match_spec = {:_, :_, {replica, :_}}
     new_clouds =
       values
@@ -330,14 +330,14 @@ defmodule Phoenix.Tracker.State do
   end
   def remove_down_replicas(%State{mode: :delta, range: range} = delta, replica) do
     {start_ctx, end_ctx} = range
-    new_start = for {rep, clock} <- start_ctx, rep != replica, into: %{}, do: {rep, clock}
-    new_end = for {rep, clock} <- end_ctx, rep != replica, into: %{}, do: {rep, clock}
-
-    {new_clouds, new_vals} = Enum.reduce(delta.values, {delta.clouds, delta.values}, fn
-      {{^replica, _clock} = tag, {_pid, _topic, _key, _meta}}, {clouds, vals} ->
-        {Map.delete(clouds, replica), Map.delete(vals, tag)}
-      {{_replica, _clock} = _tag, {_pid, _topic, _key, _meta}}, {clouds, vals} ->
-        {clouds, vals}
+    new_start = Map.delete(start_ctx, replica)
+    new_end = Map.delete(end_ctx, replica)
+    new_clouds = Map.delete(delta.clouds, replica)
+    new_vals = Enum.reduce(delta.values, delta.values, fn
+      {{^replica, _clock} = tag, {_pid, _topic, _key, _meta}}, vals ->
+        Map.delete(vals, tag)
+      {{_replica, _clock} = _tag, {_pid, _topic, _key, _meta}}, vals ->
+        vals
     end)
 
     %State{delta | range: {new_start, new_end}, clouds: new_clouds, values: new_vals}

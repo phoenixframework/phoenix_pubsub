@@ -51,9 +51,11 @@ defmodule Phoenix.Tracker.IntegrationTest do
     for node <- [@node1, @node2] do
       spy_on_tracker(node, self(), tracker)
       start_tracker(node, name: tracker)
-      assert_heartbeat to: node, from: @primary
-      assert_heartbeat from: node
+      assert_receive {{:replica_up, ^node}, @primary}, @timeout
+      assert_receive {{:replica_up, @primary}, ^node}, @timeout
     end
+    assert_receive {{:replica_up, @node2}, @node1}, @timeout
+    assert_receive {{:replica_up, @node1}, @node2}, @timeout
 
     flush()
     drop_gossips(tracker)
@@ -100,6 +102,7 @@ defmodule Phoenix.Tracker.IntegrationTest do
 
     Process.unlink(node1_node)
     Process.exit(node1_tracker, :kill)
+    assert_receive {{:replica_permdown, @node1}, @primary}, @permdown * 2
 
     spy_on_tracker(@node2, self(), tracker)
 
@@ -125,6 +128,8 @@ defmodule Phoenix.Tracker.IntegrationTest do
 
     {node1_node, {:ok, node1_tracker}} = start_tracker(@node1, name: tracker)
     {_node2_node, {:ok, _node2_tracker}} = start_tracker(@node2, name: tracker)
+    assert_receive {{:replica_up, @node1}, @node2}, @timeout
+    assert_receive {{:replica_up, @node2}, @node1}, @timeout
     for node <- [@node1, @node2] do
       track_presence(node, tracker, spawn_pid(), topic, node, %{})
       assert_join ^topic, ^node, %{}
@@ -153,7 +158,10 @@ defmodule Phoenix.Tracker.IntegrationTest do
                  @node2 => %Replica{status: :up}}, replicas(tracker), 2
 
     # tempdown => nodeup with new vsn
+    flush()
     {node1_node, {:ok, node1_tracker}} = start_tracker(@node1, name: tracker)
+    assert_receive {{:replica_up, @node1}, @primary}, @timeout
+    assert_receive {{:replica_up, @node1}, @node2}, @timeout
     track_presence(@node1, tracker, spawn_pid(), topic, "node1-back", %{})
     assert_join ^topic, "node1-back", %{}
     assert [{@node2, _}, {"node1-back", _}] = list(tracker, topic)
@@ -164,6 +172,7 @@ defmodule Phoenix.Tracker.IntegrationTest do
     # tempdown again
     Process.unlink(node1_node)
     Process.exit(node1_tracker, :kill)
+    assert_receive {{:replica_down, @node1}, @primary}, @permdown
     assert_leave ^topic, "node1-back", %{}
     assert_map %{@node1 => %Replica{status: :down},
                  @node2 => %Replica{status: :up}}, replicas(tracker), 2
@@ -196,6 +205,8 @@ defmodule Phoenix.Tracker.IntegrationTest do
     # remote joins
     assert replicas(tracker) == %{}
     start_tracker(@node1, name: tracker)
+    assert_receive {{:replica_up, @node1}, @primary}, @timeout
+    assert_receive {{:replica_up, @primary}, @node1}, @timeout
     track_presence(@node1, tracker, remote_pres, topic, "node1", %{name: "s1"})
     assert_join ^topic, "node1", %{name: "s1"}
     assert_map %{@node1 => %Replica{status: :up}}, replicas(tracker), 1
@@ -223,6 +234,8 @@ defmodule Phoenix.Tracker.IntegrationTest do
     local_presence = spawn_pid()
     subscribe(topic)
     {node_pid, {:ok, node1_tracker}} = start_tracker(@node1, name: tracker)
+    assert_receive {{:replica_up, @node1}, @primary}, @timeout
+    assert_receive {{:replica_up, @primary}, @node1}, @timeout
     assert list(tracker, topic) == []
 
     {:ok, _ref} = Tracker.track(tracker, local_presence , topic, "local1", %{name: "l1"})
@@ -236,11 +249,11 @@ defmodule Phoenix.Tracker.IntegrationTest do
     # nodedown
     Process.unlink(node_pid)
     Process.exit(node1_tracker, :kill)
+    assert_receive {{:replica_down, @node1}, @primary}, @permdown
     assert_leave ^topic, "node1", %{name: "s1"}
     assert %{@node1 => %Replica{status: :down}} = replicas(tracker)
     assert [{"local1", _}] = list(tracker, topic)
   end
-
 
   test "untrack with no tracked topic is a noop",
     %{tracker: tracker, topic: topic} do
@@ -319,6 +332,8 @@ defmodule Phoenix.Tracker.IntegrationTest do
   test "graceful exits with permdown", %{tracker: tracker, topic: topic} do
     subscribe(topic)
     {_node_pid, {:ok, _node1_tracker}} = start_tracker(@node1, name: tracker)
+    assert_receive {{:replica_up, @node1}, @primary}, @timeout
+    assert_receive {{:replica_up, @primary}, @node1}, @timeout
     track_presence(@node1, tracker, spawn_pid(), topic, "node1", %{name: "s1"})
     assert_join ^topic, "node1", %{name: "s1"}
     assert %{@node1 => %Replica{status: :up}} = replicas(tracker)

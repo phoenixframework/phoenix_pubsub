@@ -225,6 +225,8 @@ defmodule Phoenix.Tracker.StateTest do
   test "basic deltas" do
     a = new(:a)
     b = new(:b)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
 
     alice = new_pid()
     bob = new_pid()
@@ -272,6 +274,8 @@ defmodule Phoenix.Tracker.StateTest do
   test "merging deltas with removes" do
     s1 = new(:s1)
     s2 = new(:s2)
+    {s1, _, _} = State.replica_up(s1, s2.replica)
+    {s2, _, _} = State.replica_up(s2, s1.replica)
     user1 = new_pid()
 
     # concurrent add wins
