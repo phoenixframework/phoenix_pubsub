@@ -12,7 +12,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
   def extract(%State{mode: :normal} = state, generations, remote_ref, remote_context) do
     case delta_fullfilling_clock(generations, remote_context) do
       {delta, index} ->
-        if index, do: Logger.debug "#{inspect state.replica}: sending delta generation #{index + 1} #{Enum.count(delta.values)}"
+        if index, do: Logger.debug "#{inspect state.replica}: sending delta generation #{index + 1}"
         State.extract(delta, remote_ref, remote_context)
       nil ->
         Logger.debug "#{inspect state.replica}: falling back to sending entire crdt"
@@ -58,12 +58,8 @@ defmodule Phoenix.Tracker.DeltaGeneration do
     generations
     |> Enum.with_index()
     |> Enum.find(fn {%State{range: {local_start, local_end}}, _} ->
-      if Clock.dominates_or_equal?(remote_context, local_start) and
-         not Clock.dominates?(remote_context, local_end) do
-        true
-      else
-        false
-      end
+      Clock.dominates_or_equal?(remote_context, local_start) and
+        not Clock.dominates?(remote_context, local_end)
     end)
   end
 end

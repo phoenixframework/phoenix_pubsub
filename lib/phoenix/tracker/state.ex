@@ -177,6 +177,11 @@ defmodule Phoenix.Tracker.State do
   """
   @spec extract(t, remote_ref :: name, context) :: {t, values}
   def extract(%State{mode: :delta, values: values, clouds: clouds} = state, remote_ref, remote_context) do
+    {start_ctx, end_ctx} = state.range
+    known_keys = Map.keys(remote_context)
+    pruned_clouds = Map.take(clouds, known_keys)
+    pruned_start = Map.take(start_ctx, known_keys)
+    pruned_end = Map.take(end_ctx, known_keys)
     map = Enum.reduce(values, [], fn
       {{^remote_ref, _clock}, {_pid, _topic, _key, _meta}}, acc -> acc
       {{replica, _clock} = tag, {pid, topic, key, meta}}, acc ->
@@ -186,13 +191,11 @@ defmodule Phoenix.Tracker.State do
           acc
         end
     end) |> :maps.from_list()
-    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
-    {start_ctx, end_ctx} = state.range
-    pruned_start = Map.take(start_ctx, Map.keys(remote_context))
-    pruned_end = Map.take(end_ctx, Map.keys(remote_context))
+
     %State{state | values: map, clouds: pruned_clouds, range: {pruned_start, pruned_end}}
   end
   def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
+    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
     map = foldl(values, [], fn
       {{_topic, _pid, _key}, _meta, {^remote_ref, _clock}}, acc -> acc
       {{topic, pid, key}, meta, {replica, _clock} = tag}, acc ->
@@ -202,7 +205,7 @@ defmodule Phoenix.Tracker.State do
           acc
         end
     end) |> :maps.from_list()
-    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
+
     {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, map}
   end
 
