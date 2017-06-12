@@ -154,11 +154,11 @@ defmodule Phoenix.Tracker.StateTest do
     {state3, _, _} = State.replica_up(state3, {:node2, 1})
 
     assert state.context ==
-      %{{:node2, 1} => 0, {:node3, 1} => 0}
+      %{{:node2, 1} => 0, {:node3, 1} => 0, {:node1, 1} => 0}
     assert state2.context ==
-      %{{:node1, 1} => 0, {:node3, 1} => 0}
+      %{{:node1, 1} => 0, {:node3, 1} => 0, {:node2, 1} => 0}
     assert state3.context ==
-      %{{:node1, 1} => 0, {:node2, 1} => 0}
+      %{{:node1, 1} => 0, {:node2, 1} => 0, {:node3, 1} => 0}
 
     user2 = new_pid()
     user3 = new_pid()

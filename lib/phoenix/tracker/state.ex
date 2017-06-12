@@ -54,6 +54,7 @@ defmodule Phoenix.Tracker.State do
   def new(replica) do
     reset_delta(%State{
       replica: replica,
+      context: %{replica => 0},
       mode: :normal,
       values: :ets.new(:values, [:ordered_set]),
       pids: :ets.new(:pids, [:duplicate_bag]),
@@ -277,7 +278,7 @@ defmodule Phoenix.Tracker.State do
     end
   end
 
-  defp union_clouds(%State{mode: :delta, context: local_ctx} = local, %State{} = remote) do
+  defp union_clouds(%State{mode: :delta} = local, %State{} = remote) do
     Enum.reduce(remote.clouds, local.clouds, fn {name, remote_cloud}, acc ->
       Map.update(acc, name, remote_cloud, &MapSet.union(&1, remote_cloud))
     end)
