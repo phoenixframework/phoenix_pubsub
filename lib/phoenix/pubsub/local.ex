@@ -92,18 +92,19 @@ defmodule Phoenix.PubSub.Local do
       :ok
 
   """
-  def broadcast(fastlane, pubsub_server, 1 = _pool_size, from, topic, msg) when is_atom(pubsub_server) do
+
+  def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg,
+    strategy \\ Phoenix.PubSub.Strategy.Parallel)
+  def broadcast(fastlane, pubsub_server, 1 = _pool_size, from, topic, msg, _)
+    when is_atom(pubsub_server) do
     do_broadcast(fastlane, pubsub_server, _shard = 0, from, topic, msg)
     :ok
   end
-  def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
-    parent = self()
-    for shard <- 0..(pool_size - 1) do
-      Task.async(fn ->
-        do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)
-        Process.unlink(parent)
-      end)
-    end |> Enum.map(&Task.await(&1, :infinity))
+  def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg,
+    strategy) when is_atom(pubsub_server) do
+    strategy.run(pool_size, fn(shard) ->
+      do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)
+    end)
     :ok
   end
 

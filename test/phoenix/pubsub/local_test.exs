@@ -15,6 +15,11 @@ defmodule Phoenix.PubSub.LocalTest do
     end)
   end
 
+  defmodule TestStrategy do
+    @behaviour Phoenix.PubSub.Strategy
+    def run(pool_size, fun), do: send(:calling_test, {pool_size, fun})
+  end
+
   setup config do
     size = config[:pool_size] || 1
     {:ok, _} = Phoenix.PubSub.LocalSupervisor.start_link(config.test, size, [])
@@ -112,5 +117,23 @@ defmodule Phoenix.PubSub.LocalTest do
       :ok = Local.unsubscribe(config.pubsub, config.pool_size, self(), "topic8")
       assert Local.subscription(config.pubsub, config.pool_size, self()) == {nil, []}
     end
+
+    @tag pool_size: size
+    test "pool #{size}: Broadcast strategy can be provided to the broadcast function", config do
+
+      pool_size = config.pool_size
+      pid = spawn_link fn -> :timer.sleep(:infinity) end
+      Process.register(pid, :calling_test) ## TestStrategy will report back to us
+
+      assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size,
+        :none, "foo", :strategy_test, TestStrategy)
+
+      case pool_size do
+        1 -> "broadcast strategy isn't used when pool size == 1"
+        _n -> assert [{^pool_size, _}] =
+            Process.info(Process.whereis(:calling_test))[:messages]
+      end
+    end
+
   end
 end
