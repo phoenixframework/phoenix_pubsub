@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.2 (2016-06-14)
+## v1.0.2 (2017-06-14)
 
 * Bug fixes
   * Fix presence "zombies" / "ghosts" caused by replicas receiving downed pids for remote replicas they never observe
