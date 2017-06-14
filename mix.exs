@@ -36,7 +36,7 @@ defmodule Phoenix.PubSub.Mixfile do
     [maintainers: ["Chris McCord", "José Valim", "Alexander Songe", "Gary Rennie"],
      licenses: ["MIT"],
      links: %{github: "https://github.com/phoenixframework/phoenix_pubsub"},
-     files: ~w(lib priv test/shared) ++
+     files: ~w(lib test/shared) ++
             ~w(CHANGELOG.md LICENSE.md mix.exs README.md)]
   end
 end
