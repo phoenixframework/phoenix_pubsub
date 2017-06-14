@@ -12,6 +12,7 @@ defmodule Phoenix.Tracker.State do
   @type clock      :: pos_integer
   @type tag        :: {name, clock}
   @type cloud      :: MapSet.t
+  @type clouds     :: %{name => cloud}
   @type context    :: %{name => clock}
   @type values     :: ets_id | :extracted | %{tag => {pid, topic, key, meta}}
   @type value      :: {{topic, pid, key}, meta, tag}
@@ -21,7 +22,7 @@ defmodule Phoenix.Tracker.State do
   @type t :: %State{
     replica:  name,
     context:  context,
-    cloud:    cloud,
+    clouds:   clouds,
     values:   values,
     pids:     ets_id,
     mode:     :unset | :delta | :normal,
@@ -32,7 +33,7 @@ defmodule Phoenix.Tracker.State do
 
   defstruct replica: nil,
             context: %{},
-            cloud: MapSet.new(),
+            clouds: %{},
             values: nil,
             pids: nil,
             mode: :unset,
@@ -53,6 +54,7 @@ defmodule Phoenix.Tracker.State do
   def new(replica) do
     reset_delta(%State{
       replica: replica,
+      context: %{replica => 0},
       mode: :normal,
       values: :ets.new(:values, [:ordered_set]),
       pids: :ets.new(:pids, [:duplicate_bag]),
@@ -151,8 +153,8 @@ defmodule Phoenix.Tracker.State do
   Checks if set has a non-empty delta.
   """
   @spec has_delta?(t) :: boolean
-  def has_delta?(%State{delta: %State{cloud: cloud}}) do
-    MapSet.size(cloud) != 0
+  def has_delta?(%State{delta: %State{clouds: clouds}}) do
+    Enum.find(clouds, fn {_name, cloud} -> MapSet.size(cloud) != 0 end)
   end
 
   @doc """
@@ -173,12 +175,38 @@ defmodule Phoenix.Tracker.State do
 
   Used when merging two sets.
   """
-  @spec extract(t) :: {t, values}
-  def extract(%State{values: values} = state) do
-    map = foldl(values, [], fn {{topic, pid, key}, meta, tag}, acc ->
-      [{tag, {pid, topic, key, meta}} | acc]
+  @spec extract(t, remote_ref :: name, context) :: {t, values}
+  def extract(%State{mode: :delta, values: values, clouds: clouds} = state, remote_ref, remote_context) do
+    {start_ctx, end_ctx} = state.range
+    known_keys = Map.keys(remote_context)
+    pruned_clouds = Map.take(clouds, known_keys)
+    pruned_start = Map.take(start_ctx, known_keys)
+    pruned_end = Map.take(end_ctx, known_keys)
+    map = Enum.reduce(values, [], fn
+      {{^remote_ref, _clock}, {_pid, _topic, _key, _meta}}, acc -> acc
+      {{replica, _clock} = tag, {pid, topic, key, meta}}, acc ->
+        if Map.has_key?(remote_context, replica) do
+          [{tag, {pid, topic, key, meta}} | acc]
+        else
+          acc
+        end
     end) |> :maps.from_list()
-    {%State{state | pids: nil, values: nil, delta: :unset}, map}
+
+    %State{state | values: map, clouds: pruned_clouds, range: {pruned_start, pruned_end}}
+  end
+  def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
+    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
+    map = foldl(values, [], fn
+      {{_topic, _pid, _key}, _meta, {^remote_ref, _clock}}, acc -> acc
+      {{topic, pid, key}, meta, {replica, _clock} = tag}, acc ->
+        if Map.has_key?(remote_context, replica) do
+          [{tag, {pid, topic, key, meta}} | acc]
+        else
+          acc
+        end
+    end) |> :maps.from_list()
+
+    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, map}
   end
 
   @doc """
@@ -199,12 +227,13 @@ defmodule Phoenix.Tracker.State do
   end
   def merge(%State{} = local, {%State{} = remote, remote_map}) do
     {pids, joins} = accumulate_joins(local, remote_map)
-    {cloud, delta, leaves} = observe_removes(local, remote, remote_map)
+    {clouds, delta, leaves} = observe_removes(local, remote, remote_map)
     true = :ets.insert(local.values, joins)
     true = :ets.insert(local.pids, pids)
-    ctx = Clock.upperbound(local.context, remote.context)
+    known_remote_context = Map.take(remote.context, Map.keys(local.context))
+    ctx = Clock.upperbound(local.context, known_remote_context)
     new_state =
-      %State{local | cloud: cloud, delta: delta}
+      %State{local | clouds: clouds, delta: delta}
       |> put_context(ctx)
       |> compact()
 
@@ -213,8 +242,8 @@ defmodule Phoenix.Tracker.State do
 
   @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
   defp accumulate_joins(local, remote_map) do
-    Enum.reduce(remote_map, {[], []}, fn {tag, {pid, topic, key, meta}}, {pids, adds} ->
-      if in?(local, tag) do
+    Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds} ->
+      if !Map.has_key?(local.context, replica) or in?(local, tag) do
         {pids, adds}
       else
         {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
@@ -222,18 +251,47 @@ defmodule Phoenix.Tracker.State do
     end)
   end
 
-  @spec observe_removes(t, t, [value]) :: {cloud, delta, leaves :: [value]}
+  @spec observe_removes(t, t, [value]) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values} = local, remote, remote_map) do
-    unioned_cloud = MapSet.union(local.cloud, remote.cloud)
-    init = {unioned_cloud, local.delta, []}
+    unioned_clouds = union_clouds(local, remote)
+    init = {unioned_clouds, local.delta, []}
 
-    foldl(local.values, init, fn {{topic, pid, key}, _, tag} = el, {cloud, delta, leaves} ->
+    foldl(local.values, init, fn {{topic, pid, key}, _, tag} = el, {clouds, delta, leaves} ->
       if in?(remote, tag) and not Map.has_key?(remote_map, tag) do
         1 = :ets.select_delete(values, [{el, [], [true]}])
         1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
-        {MapSet.delete(cloud, tag), remove_delta_tag(delta, tag), [el | leaves]}
+        {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves]}
       else
-        {cloud, delta, leaves}
+        {clouds, delta, leaves}
+      end
+    end)
+  end
+
+  defp put_tag(clouds, {name, _clock} = tag) do
+    update_in(clouds, [name], fn
+      nil -> MapSet.new([tag])
+      cloud -> MapSet.put(cloud, tag)
+    end)
+  end
+
+  defp delete_tag(clouds, {name, _clock} = tag) do
+    case Map.fetch(clouds, name) do
+      {:ok, cloud} -> Map.put(clouds, name, MapSet.delete(cloud, tag))
+      :error -> clouds
+    end
+  end
+
+  defp union_clouds(%State{mode: :delta} = local, %State{} = remote) do
+    Enum.reduce(remote.clouds, local.clouds, fn {name, remote_cloud}, acc ->
+      Map.update(acc, name, remote_cloud, &MapSet.union(&1, remote_cloud))
+    end)
+  end
+  defp union_clouds(%State{mode: :normal, context: local_ctx} = local, %State{} = remote) do
+    Enum.reduce(remote.clouds, local.clouds, fn {name, remote_cloud}, acc ->
+      if Map.has_key?(local_ctx, name) do
+        Map.update(acc, name, remote_cloud, &MapSet.union(&1, remote_cloud))
+      else
+        acc
       end
     end)
   end
@@ -246,7 +304,7 @@ defmodule Phoenix.Tracker.State do
     if Clock.dominates_or_equal?(local_end, remote_start) do
       new_start = Clock.lowerbound(local_start, remote_start)
       new_end = Clock.upperbound(local_end, remote_end)
-      cloud  = MapSet.union(local.cloud, remote.cloud)
+      clouds = union_clouds(local, remote)
 
       filtered_locals = for {tag, value} <- local_values,
                         Map.has_key?(remote_values, tag) or not in?(remote, tag),
@@ -258,7 +316,7 @@ defmodule Phoenix.Tracker.State do
                     into: filtered_locals,
                     do: {tag, value}
 
-      {:ok, %State{local | cloud: cloud, values: merged_vals, range: {new_start, new_end}}}
+      {:ok, %State{local | clouds: clouds, values: merged_vals, range: {new_start, new_end}}}
     else
       {:error, :not_contiguous}
     end
@@ -268,8 +326,10 @@ defmodule Phoenix.Tracker.State do
   Marks a replica as up in the set and returns rejoined users.
   """
   @spec replica_up(t, name) :: {t, joins :: [values], leaves :: []}
-  def replica_up(%State{replicas: replicas} = state, replica) do
-    {%State{state | replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
+  def replica_up(%State{replicas: replicas, context: ctx} = state, replica) do
+    {%State{state |
+            context: Map.put_new(ctx, replica, 0),
+            replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
   end
 
   @doc """
@@ -285,42 +345,46 @@ defmodule Phoenix.Tracker.State do
   """
   @spec remove_down_replicas(t, name) :: t
   def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids} = state, replica) do
-    new_ctx = for {rep, clock} <- ctx, rep != replica, into: %{}, do: {rep, clock}
+    new_ctx = Map.delete(ctx, replica)
     match_spec = {:_, :_, {replica, :_}}
-    new_cloud =
+
+    new_clouds =
       values
       |> :ets.match_object(match_spec)
-      |> Enum.reduce(state.cloud, fn {{topic, pid, key}, _meta, tag}, cloud ->
+      |> Enum.reduce(state.clouds, fn {{topic, pid, key}, _meta, tag}, acc ->
         1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
-        MapSet.delete(cloud, tag)
+        delete_tag(acc, tag)
       end)
+      |> Map.delete(replica)
 
     new_delta = remove_down_replicas(state.delta, replica)
     true = :ets.match_delete(values, match_spec)
 
-    %State{state | context: new_ctx, cloud: new_cloud, delta: new_delta}
+    %State{state | context: new_ctx, clouds: new_clouds, delta: new_delta}
   end
   def remove_down_replicas(%State{mode: :delta, range: range} = delta, replica) do
     {start_ctx, end_ctx} = range
-    new_start = for {rep, clock} <- start_ctx, rep != replica, into: %{}, do: {rep, clock}
-    new_end = for {rep, clock} <- end_ctx, rep != replica, into: %{}, do: {rep, clock}
-
-    {new_cloud, new_vals} = Enum.reduce(delta.values, {delta.cloud, delta.values}, fn
-      {{^replica, _clock} = tag, {_pid, _topic, _key, _meta}}, {cloud, vals} ->
-        {MapSet.delete(cloud, tag), Map.delete(vals, tag)}
-      {{_replica, _clock} = _tag, {_pid, _topic, _key, _meta}}, {cloud, vals} ->
-        {cloud, vals}
+    new_start = Map.delete(start_ctx, replica)
+    new_end = Map.delete(end_ctx, replica)
+    new_clouds = Map.delete(delta.clouds, replica)
+    new_vals = Enum.reduce(delta.values, delta.values, fn
+      {{^replica, _clock} = tag, {_pid, _topic, _key, _meta}}, vals ->
+        Map.delete(vals, tag)
+      {{_replica, _clock} = _tag, {_pid, _topic, _key, _meta}}, vals ->
+        vals
     end)
 
-    %State{delta | range: {new_start, new_end}, cloud: new_cloud, values: new_vals}
+    %State{delta | range: {new_start, new_end}, clouds: new_clouds, values: new_vals}
   end
 
   @doc """
   Returns the dize of the delta.
   """
   @spec delta_size(delta) :: pos_integer
-  def delta_size(%State{mode: :delta, cloud: cloud, values: values}) do
-    MapSet.size(cloud) + map_size(values)
+  def delta_size(%State{mode: :delta, clouds: clouds, values: values}) do
+    Enum.reduce(clouds, map_size(values), fn {_name, cloud}, sum ->
+      sum + MapSet.size(cloud)
+    end)
   end
 
   @spec add(t, pid, topic, key, meta) :: t
@@ -341,15 +405,15 @@ defmodule Phoenix.Tracker.State do
     [{{^topic, ^pid, ^key}, _meta, tag}] = :ets.lookup(values, {topic, pid, key})
     1 = :ets.select_delete(values, [{{{topic, pid, key}, :_, :_}, [], [true]}])
     1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
-    pruned_cloud = MapSet.delete(state.cloud, tag)
+    pruned_clouds = delete_tag(state.clouds, tag)
     new_delta = remove_delta_tag(state.delta, tag)
 
-    bump_clock(%State{state | cloud: pruned_cloud, delta: new_delta})
+    bump_clock(%State{state | clouds: pruned_clouds, delta: new_delta})
   end
 
   @spec remove_delta_tag(delta, tag) :: delta
-  defp remove_delta_tag(%State{mode: :delta, values: values, cloud: cloud} = delta, tag) do
-    %State{delta | cloud: MapSet.put(cloud, tag), values: Map.delete(values, tag)}
+  defp remove_delta_tag(%State{mode: :delta, values: values, clouds: clouds} = delta, tag) do
+    %State{delta | clouds: put_tag(clouds, tag), values: Map.delete(values, tag)}
   end
 
   @doc """
@@ -358,9 +422,14 @@ defmodule Phoenix.Tracker.State do
   Called as needed and after merges.
   """
   @spec compact(t) :: t
-  def compact(%State{context: ctx, cloud: cloud} = state) do
-    {new_ctx, new_cloud} = do_compact(ctx, Enum.sort(cloud))
-    put_context(%State{state | cloud: new_cloud}, new_ctx)
+  def compact(%State{context: ctx, clouds: clouds} = state) do
+    {new_ctx, new_clouds} =
+      Enum.reduce(clouds, {ctx, clouds}, fn {name, cloud}, {ctx_acc, clouds_acc} ->
+        {new_ctx, new_cloud} = do_compact(ctx_acc, Enum.sort(cloud))
+        {new_ctx, Map.put(clouds_acc, name, new_cloud)}
+      end)
+
+    put_context(%State{state | clouds: new_clouds}, new_ctx)
   end
   @spec do_compact(context, sorted_cloud_list :: list) :: {context, cloud}
   defp do_compact(ctx, cloud) do
@@ -381,8 +450,15 @@ defmodule Phoenix.Tracker.State do
   end
 
   @spec in?(t, tag) :: boolean
-  defp in?(%State{context: ctx, cloud: cloud}, {replica, clock} = tag) do
-    Map.get(ctx, replica, 0) >= clock or MapSet.member?(cloud, tag)
+  defp in?(%State{context: ctx, clouds: clouds}, tag) do
+    in_ctx?(ctx, tag) or in_clouds?(clouds, tag)
+  end
+  defp in_ctx?(ctx, {replica, clock}), do: Map.get(ctx, replica, 0) >= clock
+  defp in_clouds?(clouds, {replica, _clock} = tag) do
+    case Map.fetch(clouds, replica) do
+      {:ok, cloud} -> MapSet.member?(cloud, tag)
+      :error -> false
+    end
   end
 
   @spec tag(t) :: tag
@@ -392,13 +468,13 @@ defmodule Phoenix.Tracker.State do
   defp clock(%State{replica: rep, context: ctx}), do: Map.get(ctx, rep, 0)
 
   @spec bump_clock(t) :: t
-  defp bump_clock(%State{mode: :normal, replica: rep, cloud: cloud, context: ctx, delta: delta} = state) do
+  defp bump_clock(%State{mode: :normal, replica: rep, clouds: clouds, context: ctx, delta: delta} = state) do
     new_clock = clock(state) + 1
     new_ctx = Map.put(ctx, rep, new_clock)
 
     %State{state |
-           cloud: MapSet.put(cloud, {rep, new_clock}),
-           delta: %State{delta | cloud: MapSet.put(delta.cloud, {rep, new_clock})}}
+           clouds: put_tag(clouds, {rep, new_clock}),
+           delta: %State{delta | clouds: put_tag(delta.clouds, {rep, new_clock})}}
     |> put_context(new_ctx)
   end
   defp put_context(%State{delta: delta, replica: rep} = state, new_ctx) do

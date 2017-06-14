@@ -3,6 +3,12 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
   alias Phoenix.Tracker.{State, DeltaGeneration}
   import DeltaGeneration
 
+  def sorted_clouds(clouds) do
+    clouds
+    |> Enum.flat_map(fn {_name, cloud} -> Enum.to_list(cloud) end)
+    |> Enum.sort()
+  end
+
   defp new(node) do
     State.new(node)
   end
@@ -23,7 +29,7 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
     assert [gen1, gen1, gen1] = gens = push(s1, [], s1.delta, [2, 5, 6])
     assert keys(gen1) == ["user1"]
-    assert Enum.to_list(gen1.cloud) == [{:s1, 1}]
+    assert sorted_clouds(gen1.clouds) == [{:s1, 1}]
     # dups merges have no effect
     assert [^gen1, ^gen1, ^gen1] = push(s1, gens, s1.delta, [2, 5, 6])
 
@@ -33,9 +39,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert keys(gen1) == ["user2"]
     assert keys(gen2) == ["user1", "user2"]
     assert keys(gen3) == ["user1", "user2"]
-    assert Enum.sort(gen1.cloud) == [{:s1, 2}]
-    assert Enum.sort(gen2.cloud) == [{:s1, 1}, {:s1, 2}]
-    assert Enum.sort(gen3.cloud) == [{:s1, 1}, {:s1, 2}]
+    assert sorted_clouds(gen1.clouds) == [{:s1, 2}]
+    assert sorted_clouds(gen2.clouds) == [{:s1, 1}, {:s1, 2}]
+    assert sorted_clouds(gen3.clouds) == [{:s1, 1}, {:s1, 2}]
 
     s1 = State.reset_delta(s1)
     s1 = State.join(s1, new_pid(), "lobby", "user3", %{})
@@ -44,9 +50,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert keys(gen1) == ["user3"]
     assert keys(gen2) == ["user2", "user3"]
     assert keys(gen3) == ["user1", "user2", "user3"]
-    assert Enum.sort(gen1.cloud) == [{:s1, 3}]
-    assert Enum.sort(gen2.cloud) == [{:s1, 2}, {:s1, 3}]
-    assert Enum.sort(gen3.cloud) == [{:s1, 1}, {:s1, 2}, {:s1, 3}]
+    assert sorted_clouds(gen1.clouds) == [{:s1, 3}]
+    assert sorted_clouds(gen2.clouds) == [{:s1, 2}, {:s1, 3}]
+    assert sorted_clouds(gen3.clouds) == [{:s1, 1}, {:s1, 2}, {:s1, 3}]
 
     s1 = State.reset_delta(s1)
     s1 = State.join(s1, new_pid(), "lobby", "user4", %{})
@@ -54,9 +60,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert keys(gen1) == ["user4"]
     assert keys(gen2) == ["user3", "user4"]
     assert keys(gen3) == ["user2", "user3", "user4"]
-    assert Enum.sort(gen1.cloud) == [{:s1, 4}]
-    assert Enum.sort(gen2.cloud) == [{:s1, 3}, {:s1, 4}]
-    assert Enum.sort(gen3.cloud) == [{:s1, 2}, {:s1, 3}, {:s1, 4}]
+    assert sorted_clouds(gen1.clouds) == [{:s1, 4}]
+    assert sorted_clouds(gen2.clouds) == [{:s1, 3}, {:s1, 4}]
+    assert sorted_clouds(gen3.clouds) == [{:s1, 2}, {:s1, 3}, {:s1, 4}]
 
     # remote deltas
     user5 = new_pid()
@@ -65,9 +71,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert keys(gen1) == ["user5"]
     assert keys(gen2) == ["user4", "user5"]
     assert keys(gen3) == ["user3", "user4", "user5"]
-    assert Enum.sort(gen1.cloud) == [{:s2, 1}]
-    assert Enum.sort(gen2.cloud) == [{:s1, 4}, {:s2, 1}]
-    assert Enum.sort(gen3.cloud) == [{:s1, 3}, {:s1, 4}, {:s2, 1}]
+    assert sorted_clouds(gen1.clouds) == [{:s2, 1}]
+    assert sorted_clouds(gen2.clouds) == [{:s1, 4}, {:s2, 1}]
+    assert sorted_clouds(gen3.clouds) == [{:s1, 3}, {:s1, 4}, {:s2, 1}]
 
     # tombstones
     s2 = State.leave(s2, user5)
@@ -75,9 +81,9 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert keys(gen1) == []
     assert keys(gen2) == ["user4"]
     assert keys(gen3) == ["user3", "user4"]
-    assert Enum.sort(gen1.cloud) == [{:s2, 1}, {:s2, 2}]
-    assert Enum.sort(gen2.cloud) == [{:s1, 4}, {:s2, 1}, {:s2, 2}]
-    assert Enum.sort(gen3.cloud) == [{:s1, 3}, {:s1, 4}, {:s2, 1}, {:s2, 2}]
+    assert sorted_clouds(gen1.clouds) == [{:s2, 1}, {:s2, 2}]
+    assert sorted_clouds(gen2.clouds) == [{:s1, 4}, {:s2, 1}, {:s2, 2}]
+    assert sorted_clouds(gen3.clouds) == [{:s1, 3}, {:s1, 4}, {:s2, 1}, {:s2, 2}]
   end
 
   test "does not include non-contiguous deltas" do

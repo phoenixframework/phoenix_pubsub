@@ -232,6 +232,7 @@ defmodule Phoenix.Tracker do
     permdown_period      = opts[:permdown_period] || 1_200_000
     clock_sample_periods = opts[:clock_sample_periods] || 2
     log_level            = Keyword.get(opts, :log_level, false)
+    max_delta_sizes      = opts[:max_delta_sizes] || [100, 1000, 10_000]
 
     with :ok <- validate_down_period(down_period, broadcast_period),
          :ok <- validate_permdown_period(permdown_period, down_period),
@@ -249,6 +250,7 @@ defmodule Phoenix.Tracker do
               tracker: tracker,
               tracker_state: tracker_state,
               replica: replica,
+              report_events_to: opts[:report_events_to],
               namespaced_topic: namespaced_topic,
               log_level: log_level,
               replicas: %{},
@@ -261,7 +263,7 @@ defmodule Phoenix.Tracker do
               permdown_period: permdown_period,
               clock_sample_periods: clock_sample_periods,
               deltas: [],
-              max_delta_sizes: [100, 1000, 10_000],
+              max_delta_sizes: max_delta_sizes,
               current_sample_count: clock_sample_periods}}
     end
   end
@@ -295,19 +297,19 @@ defmodule Phoenix.Tracker do
                |> handle_heartbeat({name, vsn})}
   end
   def handle_info({:pub, :heartbeat, {name, vsn}, delta, clocks}, state) do
+    state = handle_heartbeat(state, {name, vsn})
     {presences, joined, left} = State.merge(state.presences, delta)
 
     {:noreply, state
                |> report_diff(joined, left)
                |> put_presences(presences)
                |> put_pending_clock(clocks)
-               |> push_delta_generation(delta)
-               |> handle_heartbeat({name, vsn})}
+               |> push_delta_generation(delta)}
   end
 
   def handle_info({:pub, :transfer_req, ref, {name, _vsn}, {_, clocks}}, state) do
     log state, fn -> "#{state.replica.name}: transfer_req from #{inspect name}" end
-    delta = DeltaGeneration.extract(state.presences, state.deltas, clocks)
+    delta = DeltaGeneration.extract(state.presences, state.deltas, name, clocks)
     msg = {:pub, :transfer_ack, ref, Replica.ref(state.replica), delta}
     direct_broadcast(state, name, msg)
 
@@ -333,6 +335,10 @@ defmodule Phoenix.Tracker do
 
   def handle_info({:EXIT, pid, _reason}, state) do
     {:noreply, drop_presence(state, pid)}
+  end
+
+  def handle_call(:values, _from, state) do
+    {:reply, :ets.match(state.presences.values, :"$1"), state}
   end
 
   def handle_call({:track, pid, topic, key, meta}, _from, state) do
@@ -505,6 +511,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp up(state, remote_replica) do
+    report_event(state, {:replica_up, remote_replica.name})
     log state, fn -> "#{state.replica.name}: replica up from #{inspect remote_replica.name}" end
     {presences, joined, []} = State.replica_up(state.presences, Replica.ref(remote_replica))
 
@@ -514,6 +521,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp down(state, remote_replica) do
+    report_event(state, {:replica_down, remote_replica.name})
     log state, fn -> "#{state.replica.name}: replica down from #{inspect remote_replica.name}" end
     {presences, [], left} = State.replica_down(state.presences, Replica.ref(remote_replica))
 
@@ -523,6 +531,7 @@ defmodule Phoenix.Tracker do
   end
 
   defp permdown(state, %Replica{name: name} = remote_replica) do
+    report_event(state, {:replica_permdown, name})
     log state, fn -> "#{state.replica.name}: permanent replica down detected #{name}" end
     replica_ref = Replica.ref(remote_replica)
     presences = State.remove_down_replicas(state.presences, replica_ref)
@@ -535,6 +544,11 @@ defmodule Phoenix.Tracker do
       _ ->
         %{state | presences: presences, deltas: deltas}
     end
+  end
+
+  defp report_event(%{report_events_to: nil}, _event), do: :ok
+  defp report_event(%{report_events_to: pid} = state, event) do
+    send(pid, {event, state.replica.name})
   end
 
   defp namespaced_topic(server_name) do
