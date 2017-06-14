@@ -1,11 +1,11 @@
 # Changelog
 
-## v1.0.2 (2016-06-14)
+## v1.0.2 (2017-06-14)
 
 * Bug fixes
   * Fix presence "zombies" / "ghosts" caused by replicas receiving downed pids for remote replicas they never observe
 
-## v1.0.1 (2016-09-29)
+## v1.0.1 (2017-09-29)
 
 * Enhancements
   * Support passing a function to `Tracker.update` for partial metadata updates
@@ -14,7 +14,7 @@
 * Bug fixes
   * [PG2] - Fix multinode broadcasts requiring the same pool_size to properly broker messages
 
-## v1.0.0 (2016-06-23)
+## v1.0.0 (2017-06-23)
 
 * Enhancements
   * Extract `Phoenix.PubSub` into self-contained application
