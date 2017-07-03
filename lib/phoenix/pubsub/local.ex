@@ -97,13 +97,9 @@ defmodule Phoenix.PubSub.Local do
     :ok
   end
   def broadcast(fastlane, pubsub_server, pool_size, from, topic, msg) when is_atom(pubsub_server) do
-    parent = self()
     for shard <- 0..(pool_size - 1) do
-      Task.async(fn ->
-        do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)
-        Process.unlink(parent)
-      end)
-    end |> Enum.map(&Task.await(&1, :infinity))
+      do_broadcast(fastlane, pubsub_server, shard, from, topic, msg)
+    end
     :ok
   end
 
