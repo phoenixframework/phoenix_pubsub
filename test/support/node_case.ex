@@ -1,5 +1,5 @@
 defmodule Phoenix.PubSub.NodeCase do
-  @timeout 500
+  @timeout 1000
   @heartbeat 100
   @permdown 1500
   @pubsub Phoenix.PubSub.Test.PubSub
