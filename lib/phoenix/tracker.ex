@@ -99,8 +99,29 @@ defmodule Phoenix.Tracker do
   alias Phoenix.Tracker.{Clock, State, Replica, DeltaGeneration}
   require Logger
 
-  @type presence :: {key :: String.t, meta :: Map.t}
+  @type presence :: {key :: String.t, meta :: map}
   @type topic :: String.t
+
+  @typep state :: %{server_name: term,
+                    pubsub_server: term,
+                    tracker: module,
+                    tracker_state: term,
+                    replica: Replica.t,
+                    report_events_to: GenServer.server | nil,
+                    namespaced_topic: String.t,
+                    log_level: Logger.level | false,
+                    replicas: %{Replica.name => Replica.t},
+                    pending_clockset: [Clock.clock],
+                    presences: State.t,
+                    broadcast_period: integer,
+                    max_silent_periods: integer,
+                    silent_periods: integer,
+                    down_period: integer,
+                    permdown_period: integer,
+                    clock_sample_periods: integer,
+                    deltas: [State.delta],
+                    max_delta_sizes: integer,
+                    current_sample_count: integer}
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
@@ -127,7 +148,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
       {:error, {:already_tracked, #PID<0.56.0>, "lobby", "123"}}
   """
-  @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec track(atom, pid, topic, term, map) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(server_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_name, {:track, pid, topic, key, meta})
   end
@@ -174,7 +195,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec update(atom, pid, topic, term, map | (map -> map)) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(server_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     GenServer.call(server_name, {:update, pid, topic, key, meta})
   end
@@ -496,7 +517,7 @@ defmodule Phoenix.Tracker do
 
   defp clock(state), do: State.clocks(state.presences)
 
-  @spec clockset_to_sync(%{pending_clockset: [State.replica_context]}) :: [State.replica_name]
+  @spec clockset_to_sync(state) :: [State.name]
   defp clockset_to_sync(state) do
     my_ref = Replica.ref(state.replica)
 
