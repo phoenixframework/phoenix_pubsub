@@ -198,6 +198,33 @@ defmodule Phoenix.Tracker.StateTest do
     assert [] = State.get_by_topic(state, "another:topic")
   end
 
+  test "get_by_key" do
+    pid = self()
+    other_pid = new_pid()
+    state = new(:node1)
+    state2 = new(:node2)
+
+    {state, _, _} = State.replica_up(state, {:node2, 1})
+    {state2, _, _} = State.replica_up(state2, {:node1, 1})
+
+    state = State.join(state, pid, "topic", "me", %{name: "me"})
+    state = State.join(state, pid, "topic", "me2", %{name: "me2"})
+    state2 = State.join(state2, other_pid, "topic", "other", %{name: "other"})
+
+    # all replicas online
+    {state, _, _} = State.merge(state, State.extract(state2, :node1, state.context))
+    assert %{name: "me"} == State.get_by_key(state, "me")
+    assert %{name: "me2"} == State.get_by_key(state, "me2")
+    assert %{name: "other"} == State.get_by_key(state, "other")
+
+    # one replica offline
+    {state, _, _} = State.replica_down(state, state2.replica)
+    assert %{name: "me"} == State.get_by_key(state, "me")
+    assert %{name: "me2"} == State.get_by_key(state, "me2")
+    refute State.get_by_key(state, "other")
+    refute State.get_by_key(state, "doesn't exist")
+  end
+
   test "remove_down_replicas" do
     state1 = new(:node1)
     state2 = new(:node2)
