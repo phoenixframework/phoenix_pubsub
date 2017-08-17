@@ -157,8 +157,11 @@ defmodule Phoenix.Tracker.State do
     replicas = down_replicas(state)
     case :ets.select(values, [{ {{:_, :_, key}, :_, {:"$1", :_}},
       not_in(:"$1", replicas), [:"$_"]}]) do
-      [{{_topic, _pid, ^key}, meta, _tag}] -> meta
       [] -> nil
+      matches ->
+        Enum.map(matches, fn({{_topic, _pid, key},  meta, _tag}) ->
+          meta
+        end)
     end
   end
 
