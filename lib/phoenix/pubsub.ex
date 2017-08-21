@@ -47,7 +47,7 @@ defmodule Phoenix.PubSub do
   You can now use the functions in this module to subscribe
   and broadcast messages:
 
-      iex> PubSub.subscribe :my_pubsub, self(), "user:123"
+      iex> PubSub.subscribe :my_pubsub, "user:123"
       :ok
       iex> Process.info(self())[:messages]
       []
