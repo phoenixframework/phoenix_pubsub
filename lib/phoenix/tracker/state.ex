@@ -152,16 +152,13 @@ defmodule Phoenix.Tracker.State do
   @doc """
   Returns element meta by key.
   """
-  @spec get_by_key(t, key) :: meta | nil
-  def get_by_key(%State{values: values} = state, key) do
+  @spec get_by_key(t, pid, topic, key) :: meta | nil
+  def get_by_key(%State{values: values} = state, pid, topic, key) do
     replicas = down_replicas(state)
-    case :ets.select(values, [{ {{:_, :_, key}, :_, {:"$1", :_}},
+    case :ets.select(values, [{ {{topic, pid, key}, :_, {:"$1", :_}},
       not_in(:"$1", replicas), [:"$_"]}]) do
+      [{{^topic, ^pid, ^key}, meta, _tag}] -> meta
       [] -> nil
-      matches ->
-        Enum.map(matches, fn({{_topic, _pid, key},  meta, _tag}) ->
-          meta
-        end)
     end
   end
 

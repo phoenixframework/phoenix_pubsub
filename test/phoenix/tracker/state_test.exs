@@ -209,20 +209,19 @@ defmodule Phoenix.Tracker.StateTest do
 
     state = State.join(state, pid, "topic", "me", %{name: "me"})
     state = State.join(state, pid, "topic", "me2", %{name: "me2"})
-    state2 = State.join(state2, other_pid, "topic", "other", %{name: "other"})
+    state2 = State.join(state2, other_pid, "topic", "me2", %{name: "me2"})
 
     # all replicas online
     {state, _, _} = State.merge(state, State.extract(state2, :node1, state.context))
-    assert [%{name: "me"}] == State.get_by_key(state, "me")
-    assert [%{name: "me2"}] == State.get_by_key(state, "me2")
-    assert [%{name: "other"}] == State.get_by_key(state, "other")
+    assert %{name: "me"} == State.get_by_key(state, pid, "topic", "me")
+    assert %{name: "me2"} == State.get_by_key(state, pid, "topic", "me2")
+    assert %{name: "me2"} == State.get_by_key(state, other_pid, "topic", "me2")
 
     # one replica offline
     {state, _, _} = State.replica_down(state, state2.replica)
-    assert [%{name: "me"}] == State.get_by_key(state, "me")
-    assert [%{name: "me2"}] == State.get_by_key(state, "me2")
-    refute State.get_by_key(state, "other")
-    refute State.get_by_key(state, "doesn't exist")
+    assert %{name: "me"} == State.get_by_key(state, pid, "topic", "me")
+    assert %{name: "me2"} == State.get_by_key(state, pid, "topic", "me2")
+    refute State.get_by_key(state, other_pid, "topic", "me2")
   end
 
   test "remove_down_replicas" do
