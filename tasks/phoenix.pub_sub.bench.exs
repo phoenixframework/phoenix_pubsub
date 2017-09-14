@@ -34,7 +34,7 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
     s1 = State.join(s1, user, "topic100", "user100", %{name: 100})
 
     {_, s2_vals} = extracted_s2 = time "extracting #{size} element set", fn ->
-      State.extract(s2)
+      State.extract(s2, :s2, s2.context)
     end
 
     {s1, _, _} = time "merging 2 #{size} element sets", fn ->
@@ -62,14 +62,18 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
     s2 = State.reset_delta(s2)
 
     {s2, _} = time "Creating delta with #{delta_size} joins and leaves", fn ->
-      Enum.reduce(1..trunc(delta_size / 2), {s2, Enum.to_list(s2_vals)}, fn i, {acc, [prev_val | rest]} ->
-        {_tag, {pid, topic, key, _meta}} = prev_val
+      Enum.reduce(1..trunc(delta_size / 2), {s2, Enum.to_list(s2_vals)}, fn
+        i, {acc, [prev_val | rest]} ->
+          {_tag, {pid, topic, key, _meta}} = prev_val
 
-        new_acc =
-          acc
-          |> State.join(make_ref(), "delta#{i}", "user#{i}", %{name: i})
-          |> State.leave(pid, topic, key)
-        {new_acc, rest}
+          new_acc =
+            acc
+            |> State.join(make_ref(), "delta#{i}", "user#{i}", %{name: i})
+            |> State.leave(pid, topic, key)
+          {new_acc, rest}
+        
+        _, result ->
+          result
       end)
     end
 
