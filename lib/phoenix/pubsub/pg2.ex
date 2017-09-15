@@ -12,7 +12,7 @@ defmodule Phoenix.PubSub.PG2 do
 
   ## Options
 
-    * `:name` - The registered name and optional node name to for the PubSub
+    * `:name` - The registered name and optional node name for the PubSub
       processes, for example: `MyApp.PubSub`, `{MyApp.PubSub, :node@host}`.
       When only a server name is provided, the node name defaults to `node()`.
 
