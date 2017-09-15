@@ -131,7 +131,7 @@ defmodule Phoenix.PubSub do
       `%Phoenix.Socket.Broadcast{}` events. The fastlane process is
       notified of a cached message instead of the normal subscriber.
       Fastlane handlers must implement `fastlane/1` callbacks which accepts
-      a `Phoenix.Socket.Broadcast` structs and returns a fastlaned format
+      a `Phoenix.Socket.Broadcast` struct and returns a fastlaned format
       for the handler. For example:
 
           PubSub.subscribe(MyApp.PubSub, "topic1",
