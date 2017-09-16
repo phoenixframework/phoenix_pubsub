@@ -59,7 +59,7 @@ defmodule Phoenix.PubSub do
   ## Implementing your own adapter
 
   PubSub adapters run inside their own supervision tree.
-  If you are interested in providing your own adapter,  let's
+  If you are interested in providing your own adapter, let's
   call it `Phoenix.PubSub.MyQueue`, the first step is to provide
   a supervisor module that receives the server name and a bunch
   of options on `start_link/2`:
@@ -112,14 +112,14 @@ defmodule Phoenix.PubSub do
   @doc """
   Subscribes the caller to the PubSub adapter's topic.
 
-    * `server` - The Pid registered name of the server
+    * `server` - The registered name of the server
     * `topic` - The topic to subscribe to, for example: `"users:123"`
     * `opts` - The optional list of options. See below.
 
   ## Duplicate Subscriptions
 
   Callers should only subscribe to a given topic a single time.
-  Duplicate subscriptions for a Pid/topic pair are allowed and
+  Duplicate subscriptions for a pid/topic pair are allowed and
   will cause duplicate events to be sent; however, when using
   `Phoenix.PubSub.unsubscribe/3`, all duplicate subscriptions
   will be dropped.
@@ -137,15 +137,15 @@ defmodule Phoenix.PubSub do
           PubSub.subscribe(MyApp.PubSub, "topic1",
             fastlane: {fast_pid, Phoenix.Transports.WebSocketSerializer, ["event1"]})
   """
-  @spec subscribe(atom, pid, binary) :: :ok | {:error, term}
-  def subscribe(server, pid, topic)
-    when is_atom(server) and is_pid(pid) and is_binary(topic) do
-    subscribe(server, pid, topic, [])
-  end
   @spec subscribe(atom, binary, Keyword.t) :: :ok | {:error, term}
   def subscribe(server, topic, opts)
     when is_atom(server) and is_binary(topic) and is_list(opts) do
     call(server, :subscribe, [self(), topic, opts])
+  end
+  @spec subscribe(atom, pid, binary) :: :ok | {:error, term}
+  def subscribe(server, pid, topic)
+    when is_atom(server) and is_pid(pid) and is_binary(topic) do
+    subscribe(server, pid, topic, [])
   end
   @spec subscribe(atom, binary) :: :ok | {:error, term}
   def subscribe(server, topic) when is_atom(server) and is_binary(topic) do
@@ -153,7 +153,7 @@ defmodule Phoenix.PubSub do
   end
   @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
   def subscribe(server, pid, topic, opts) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.subscribe is deprecated. " <>
+    IO.write :stderr, "[warning] Passing a pid to Phoenix.PubSub.subscribe is deprecated. " <>
                       "Only the calling process may subscribe to topics"
     call(server, :subscribe, [pid, topic, opts])
   end
@@ -163,7 +163,7 @@ defmodule Phoenix.PubSub do
   """
   @spec unsubscribe(atom, pid, binary) :: :ok | {:error, term}
   def unsubscribe(server, pid, topic) when is_atom(server) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
+    IO.write :stderr, "[warning] Passing a pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
                       "Only the calling process may unsubscribe from topics"
     call(server, :unsubscribe, [pid, topic])
   end
@@ -176,7 +176,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic.
 
-    * `server` - The Pid or registered server name and optional node to
+    * `server` - The pid or registered server name and optional node to
       scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
@@ -191,7 +191,7 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic, to a single node.
 
     * `node` - The name of the node to broadcast the message on
-    * `server` - The Pid or registered server name and optional node to
+    * `server` - The pid or registered server name and optional node to
       scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
