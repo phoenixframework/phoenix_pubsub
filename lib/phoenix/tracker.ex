@@ -21,12 +21,12 @@ defmodule Phoenix.Tracker do
 
   ## Optional `server_opts`:
 
-    * `broadcast_period` - The interval in milliseconds to send delta broadcats
+    * `broadcast_period` - The interval in milliseconds to send delta broadcast
       across the cluster. Default `1500`
     * `max_silent_periods` - The max integer of broadcast periods for which no
-      delta broadcasts have been sent. Defaults `10` (15s heartbeat)
+      delta broadcasts have been sent. Default `10` (15s heartbeat)
     * `down_period` - The interval in milliseconds to flag a replica
-      as down temporarily down. Default `broadcast_period * max_silent_periods * 2`
+      as temporarily down. Default `broadcast_period * max_silent_periods * 2`
       (30s down detection). Note: This must be at least 2x the `broadcast_period`.
     * `permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
@@ -165,6 +165,9 @@ defmodule Phoenix.Tracker do
     * `pid` - The Pid being tracked
     * `topic` - The `Phoenix.PubSub` topic to update for this presence
     * `key` - The key identifying this presence
+    * `meta` - Either a new map of metadata to attach to this presence,
+      or a function. The function will receive the current metadata as
+      input and the return value will be used as the new metadata
 
   ## Examples
 
