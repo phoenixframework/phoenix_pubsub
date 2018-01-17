@@ -10,6 +10,26 @@ defmodule Phoenix.PubSub.PG2 do
         pubsub: [name: MyApp.PubSub,
                  adapter: Phoenix.PubSub.PG2]
 
+  To use this adapter outside of Phoenix, you must start an instance of 
+  this module as part of your supervision:
+
+      children = [
+        { Phoenix.PubSub.PG2, { name, options...} },
+
+        # or
+
+        { Phoenix.PubSub.PG2, name },
+
+        ...
+      ]
+
+  For example
+
+      children = [
+        { Phoenix.PubSub.PG2, { :connector, pool_size: 4 }},
+      ]
+
+
   ## Options
 
     * `:name` - The registered name and optional node name for the PubSub
@@ -23,6 +43,19 @@ defmodule Phoenix.PubSub.PG2 do
       schedulers (cores) is a well rounded size.
 
   """
+
+  def child_spec({name, options}) when is_list(options) do
+    %{
+      id:     __MODULE__,
+      start: { __MODULE__, :start_link, [ name, options] },
+      type:  :supervisor
+    }
+  end
+
+  def child_spec(name) do
+    child_spec({name, []})
+  end
+  
 
   def start_link(name, opts) do
     supervisor_name = Module.concat(name, Supervisor)
