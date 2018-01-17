@@ -10,23 +10,22 @@ defmodule Phoenix.PubSub.PG2 do
         pubsub: [name: MyApp.PubSub,
                  adapter: Phoenix.PubSub.PG2]
 
-  To use this adapter outside of Phoenix, you must start an instance of 
-  this module as part of your supervision:
+  To use this adapter outside of Phoenix, you must start an instance of
+  this module as part of your supervision tree:
 
       children = [
-        { Phoenix.PubSub.PG2, { name, options...} },
+        {Phoenix.PubSub.PG2, { name, options...}},
 
         # or
 
-        { Phoenix.PubSub.PG2, name },
-
+        {Phoenix.PubSub.PG2, name},
         ...
       ]
 
   For example
 
       children = [
-        { Phoenix.PubSub.PG2, { :connector, pool_size: 4 }},
+        {Phoenix.PubSub.PG2, {:connector, pool_size: 4}},
       ]
 
 
@@ -46,16 +45,16 @@ defmodule Phoenix.PubSub.PG2 do
 
   def child_spec({name, options}) when is_list(options) do
     %{
-      id:     __MODULE__,
-      start: { __MODULE__, :start_link, [ name, options] },
-      type:  :supervisor
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [name, options]},
+      type: :supervisor
     }
   end
 
   def child_spec(name) do
     child_spec({name, []})
   end
-  
+
 
   def start_link(name, opts) do
     supervisor_name = Module.concat(name, Supervisor)

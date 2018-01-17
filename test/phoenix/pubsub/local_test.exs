@@ -1,7 +1,7 @@
 defmodule Phoenix.PubSub.LocalTest do
   use ExUnit.Case, async: true
 
-  alias Phoenix.PubSub.Local
+  alias Phoenix.PubSub.{Local, PG2}
 
   defp list(config) do
     Enum.reduce(0..(config.pool_size - 1), [], fn shard, acc ->
@@ -23,28 +23,26 @@ defmodule Phoenix.PubSub.LocalTest do
   end
 
   describe "PG2 child_spec" do
-    alias Phoenix.PubSub.PG2
-  
     test "with just a name returns the name" do
       spec = PG2.child_spec(:fred)
-      assert %{ id: PG2, type: :supervisor, start: start } = spec
-      assert { PG2, :start_link, [ :fred, [] ] } == start
+      assert %{id: PG2, type: :supervisor, start: start} = spec
+      assert {PG2, :start_link, [:fred, []]} == start
     end
 
     test "with a compound name returns the name" do
       spec = PG2.child_spec({:fred, :node99})
-      assert %{ id: PG2, type: :supervisor, start: start } = spec
-      assert { PG2, :start_link, [ {:fred, :node99}, [] ] } == start
+      assert %{id: PG2, type: :supervisor, start: start} = spec
+      assert {PG2, :start_link, [{:fred, :node99}, []]} == start
     end
 
     test "with a name and options returns both" do
       spec = PG2.child_spec({:fred, pool_size: 3})
-      assert %{ id: PG2, type: :supervisor, start: start } = spec
-      assert { PG2, :start_link, [ :fred, [ pool_size: 3 ] ] } == start
+      assert %{id: PG2, type: :supervisor, start: start} = spec
+      assert {PG2, :start_link, [:fred, [pool_size: 3]]} == start
     end
   end
 
-  
+
   for size <- [1, 8] do
     @tag pool_size: size
     test "pool #{size}: subscribe/2 joins a pid to a topic and broadcast/2 sends messages", config do
