@@ -72,8 +72,8 @@ defmodule Phoenix.PubSub.PG2 do
   end
 
   def start_link(opts) when is_list(opts) do
-    name = Keyword.fetch![opts, :name]
-    opts = Keyword.delete(opts, :name]
+    name = Keyword.fetch!(opts, :name)
+    opts = Keyword.delete(opts, :name)
     supervisor_name = Module.concat(name, Supervisor)
     Supervisor.start_link(__MODULE__, [name, opts], name: supervisor_name)
   end
