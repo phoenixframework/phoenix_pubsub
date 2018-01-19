@@ -1,6 +1,11 @@
 # Changelog
 
+## v1.0.3-dev
+
 ## v1.0.2 (2017-06-14)
+
+* Enhancements
+  * Support `child_spec` in `PG2` adapter
 
 * Bug fixes
   * Fix presence "zombies" / "ghosts" caused by replicas receiving downed pids for remote replicas they never observe

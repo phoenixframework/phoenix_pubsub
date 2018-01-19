@@ -10,52 +10,40 @@ defmodule Phoenix.PubSub.PG2 do
         pubsub: [name: MyApp.PubSub,
                  adapter: Phoenix.PubSub.PG2]
 
-  To use this adapter outside of Phoenix, you must start an instance of 
-  this module as part of your supervision:
+  To use this adapter outside of Phoenix, you must start an instance of
+  this module as part of your supervision tree:
 
       children = [
-        { Phoenix.PubSub.PG2, { name, options...} },
-
-        # or
-
-        { Phoenix.PubSub.PG2, name },
-
+        {Phoenix.PubSub.PG2, name: MyApp.PubSub},
         ...
       ]
 
-  For example
-
-      children = [
-        { Phoenix.PubSub.PG2, { :connector, pool_size: 4 }},
-      ]
-
-
   ## Options
 
-    * `:name` - The registered name and optional node name for the PubSub
+    * `:name` - The required registered name and optional node name for pubsub
       processes, for example: `MyApp.PubSub`, `{MyApp.PubSub, :node@host}`.
       When only a server name is provided, the node name defaults to `node()`.
 
-    * `:pool_size` - Both the size of the local pubsub server pool and subscriber
+    * `:pool_size` - Both the size of the local pubsub pool and subscriber
       shard size. Defaults to the number of schedulers (cores). A single pool is
-      often enough for most use-cases, but for high subscriber counts on a single
-      topic or greater than 1M clients, a pool size equal to the number of
+      often enough for most use-cases, but for high subscriber counts on single
+      topics or greater than 1M clients, a pool size equal to the number of
       schedulers (cores) is a well rounded size.
 
   """
 
-  def child_spec({options}) when is_list(options) do
+  def child_spec(opts) when is_list(opts) do
     %{
-      id:     __MODULE__,
-      start: { __MODULE__, :start_link, [ name, options] },
-      type:  :supervisor
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, opts},
+      type: :supervisor
     }
   end
+
 
   def child_spec(name) do
     child_spec({name: name})
   end
-  
 
   @doc """
   Start the adapter. For backwards compatibility, you can pass:
@@ -72,7 +60,7 @@ defmodule Phoenix.PubSub.PG2 do
   end
 
   def start_link(opts) when is_list(opts) do
-    name = Keyword.fetch!(opts, :name)
+    name = name!(opts)
     opts = Keyword.delete(opts, :name)
     supervisor_name = Module.concat(name, Supervisor)
     Supervisor.start_link(__MODULE__, [name, opts], name: supervisor_name)
@@ -82,6 +70,30 @@ defmodule Phoenix.PubSub.PG2 do
     start_link(name: name)
   end
   
+  defp name!(opts) do
+    case Keyword.fetch(opts, :name) do
+      {:ok, name} -> name
+
+      :error ->
+        raise ArgumentError, """
+          a registered name is required for PubSub supervisors,
+
+          for example as a child spec:
+
+              children = [
+                {Phoenix.PubSub.PG2, name: MyApp.PubSub},
+                ...
+              ]
+
+          or starting directly:
+
+              Phoenix.PubSub.PG2.start_link(name: MyApp.PubSub)
+
+
+          got: #{inspect(opts)}
+        """
+    end
+  end
 
   @doc false
   def init([server, opts]) do
