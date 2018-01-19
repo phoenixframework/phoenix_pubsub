@@ -33,16 +33,17 @@ defmodule Phoenix.PubSub.PG2 do
   """
 
   def child_spec(opts) when is_list(opts) do
+    name!(opts)
     %{
-      id: __MODULE__,
+      id:    __MODULE__,
       start: {__MODULE__, :start_link, opts},
-      type: :supervisor
+      type:  :supervisor
     }
   end
 
 
   def child_spec(name) do
-    child_spec({name: name})
+    child_spec(name: name)
   end
 
   @doc """
