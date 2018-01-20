@@ -36,7 +36,7 @@ defmodule Phoenix.PubSub.PG2 do
     name!(opts)
     %{
       id:    __MODULE__,
-      start: {__MODULE__, :start_link, opts},
+      start: {__MODULE__, :start_link, [opts]},
       type:  :supervisor
     }
   end
