@@ -2,7 +2,7 @@ defmodule Phoenix.PubSub.PG2 do
   use Supervisor
 
   @moduledoc """
-  Phoenix PubSub adapter based on PG2.
+  Phoenix PubSub adapter based on [PG2](http://erlang.org/doc/man/pg2.html).
 
   To use it as your PubSub adapter, simply add it to your Endpoint's config:
 
