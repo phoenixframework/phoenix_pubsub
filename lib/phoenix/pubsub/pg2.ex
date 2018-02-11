@@ -33,24 +33,44 @@ defmodule Phoenix.PubSub.PG2 do
   """
 
   def child_spec(opts) when is_list(opts) do
-    _name = name!(opts)
-
+    name!(opts)
     %{
-      id: __MODULE__,
-      start: {__MODULE__, :start_link, opts},
-      type: :supervisor
+      id:    __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type:  :supervisor
     }
   end
 
-  def start_link(opts) when is_list(opts) do
-    start_link(name!(opts), opts)
+
+  def child_spec(name) do
+    child_spec(name: name)
   end
 
+  @doc """
+  Start the adapter. For backwards compatibility, you can pass:
+
+  * a single parameter name
+  * a single parameter keyword list of options
+  * a name and a keyword list 
+
+  If only a list of options is given, it must contain a `:name` key.
+  """
+
   def start_link(name, opts) do
+    start_link([ { :name, name } | opts ])
+  end
+
+  def start_link(opts) when is_list(opts) do
+    name = name!(opts)
+    opts = Keyword.delete(opts, :name)
     supervisor_name = Module.concat(name, Supervisor)
     Supervisor.start_link(__MODULE__, [name, opts], name: supervisor_name)
   end
 
+  def start_link(name) do
+    start_link(name: name)
+  end
+  
   defp name!(opts) do
     case Keyword.fetch(opts, :name) do
       {:ok, name} -> name
