@@ -1,6 +1,6 @@
 # Run shared PubSub adapter tests
 Application.put_env(:phoenix, :pubsub_test_adapter, Phoenix.PubSub.PG2)
-Code.require_file "../../shared/pubsub_test.exs", __DIR__
+Code.require_file("../../shared/pubsub_test.exs", __DIR__)
 
 # Run distributed elixir specific PubSub tests
 defmodule Phoenix.PubSub.PG2Test do
@@ -31,7 +31,7 @@ defmodule Phoenix.PubSub.PG2Test do
     test "with just a name returns the name" do
       spec = PG2.child_spec(name: :fred)
       assert %{id: PG2, type: :supervisor, start: start} = spec
-      assert {PG2, :start_link, [name: :fred]} == start
+      assert {PG2, :start_link, [[name: :fred]]} == start
     end
 
     test "requires name" do
@@ -43,25 +43,27 @@ defmodule Phoenix.PubSub.PG2Test do
     test "with a compound name returns the name" do
       spec = PG2.child_spec(name: {:fred, :node99})
       assert %{id: PG2, type: :supervisor, start: start} = spec
-      assert {PG2, :start_link, [name: {:fred, :node99}]} == start
+      assert {PG2, :start_link, [[name: {:fred, :node99}]]} == start
     end
 
     test "with a name and options returns both" do
       spec = PG2.child_spec(name: :fred, pool_size: 3)
       assert %{id: PG2, type: :supervisor, start: start} = spec
-      assert {PG2, :start_link, [name: :fred, pool_size: 3]} == start
+      assert {PG2, :start_link, [[name: :fred, pool_size: 3]]} == start
     end
   end
 
   describe "with running server" do
     setup config do
       size = config[:pool_size] || 1
+
       if config[:pool_size] do
         {:ok, _} = PG2.start_link(config.test, pool_size: size)
       else
         {:ok, _} = PG2.start_link(config.test, [])
       end
-      {_, {:ok, _}} = start_pubsub(@node1, PG2, config.test, [pool_size: size * 2])
+
+      {_, {:ok, _}} = start_pubsub(@node1, PG2, config.test, pool_size: size * 2)
       {:ok, %{pubsub: config.test, pool_size: size}}
     end
 
@@ -103,13 +105,15 @@ defmodule Phoenix.PubSub.PG2Test do
 
     test "pool size defaults to number of schedulers" do
       {:ok, pg2_supervisor} = PG2.start_link(:pool_size_count_test, [])
+
       local_supervisor =
         pg2_supervisor
         |> Supervisor.which_children()
         |> Enum.find_value(fn
-            {Phoenix.PubSub.LocalSupervisor, pid, :supervisor, _} -> pid
-            _                                                     -> false
-          end)
+          {Phoenix.PubSub.LocalSupervisor, pid, :supervisor, _} -> pid
+          _ -> false
+        end)
+
       %{supervisors: supervisor_count} = Supervisor.count_children(local_supervisor)
       assert supervisor_count == :erlang.system_info(:schedulers)
     end
