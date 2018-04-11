@@ -37,7 +37,7 @@ defmodule Phoenix.PubSub.PG2 do
 
     %{
       id: __MODULE__,
-      start: {__MODULE__, :start_link, opts},
+      start: {__MODULE__, :start_link, [opts]},
       type: :supervisor
     }
   end
@@ -53,7 +53,8 @@ defmodule Phoenix.PubSub.PG2 do
 
   defp name!(opts) do
     case Keyword.fetch(opts, :name) do
-      {:ok, name} -> name
+      {:ok, name} ->
+        name
 
       :error ->
         raise ArgumentError, """
@@ -81,16 +82,19 @@ defmodule Phoenix.PubSub.PG2 do
     scheduler_count = :erlang.system_info(:schedulers)
     pool_size = Keyword.get(opts, :pool_size, scheduler_count)
     node_name = opts[:node_name]
-    dispatch_rules = [{:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
-                      {:direct_broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
-                      {:node_name, __MODULE__, [node_name]}]
+
+    dispatch_rules = [
+      {:broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+      {:direct_broadcast, Phoenix.PubSub.PG2Server, [opts[:fastlane], server, pool_size]},
+      {:node_name, __MODULE__, [node_name]}
+    ]
 
     children = [
       supervisor(Phoenix.PubSub.LocalSupervisor, [server, pool_size, dispatch_rules]),
-      worker(Phoenix.PubSub.PG2Server, [server, pool_size]),
+      worker(Phoenix.PubSub.PG2Server, [server, pool_size])
     ]
 
-    supervise children, strategy: :rest_for_one
+    supervise(children, strategy: :rest_for_one)
   end
 
   @doc false
