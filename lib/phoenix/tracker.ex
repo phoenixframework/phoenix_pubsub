@@ -101,6 +101,7 @@ defmodule Phoenix.Tracker do
 
   @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
+  @type key :: term
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
@@ -202,6 +203,25 @@ defmodule Phoenix.Tracker do
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
     |> Enum.map(fn {{_topic, _pid, key},  meta, _tag} -> {key, meta} end)
+  end
+
+  @doc """
+  Retrieve a presence metadata by key under a given topic.
+    * `server_name` - The registered name of the tracker server
+    * `pid` - The Pid being tracked
+    * `topic` - The `Phoenix.PubSub` topic to update for this presence
+    * `key` - The key identifying this presence
+
+  ## Examples
+
+      iex> Phoenix.Tracker.get_by_key(MyTracker, self(), "lobby", u.id)
+      %{name: "user 123"}
+  """
+  @spec get_by_key(atom, pid, topic, key) :: [presence]
+  def get_by_key(server_name, pid, topic, key) do
+    server_name
+    |> GenServer.call({:list, topic})
+    |> State.get_by_key(pid, topic, key)
   end
 
   @doc """

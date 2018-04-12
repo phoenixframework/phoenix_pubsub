@@ -150,6 +150,19 @@ defmodule Phoenix.Tracker.State do
   end
 
   @doc """
+  Returns element meta by key.
+  """
+  @spec get_by_key(t, pid, topic, key) :: meta | nil
+  def get_by_key(%State{values: values} = state, pid, topic, key) do
+    replicas = down_replicas(state)
+    case :ets.select(values, [{ {{topic, pid, key}, :_, {:"$1", :_}},
+      not_in(:"$1", replicas), [:"$_"]}]) do
+      [{{^topic, ^pid, ^key}, meta, _tag}] -> meta
+      [] -> nil
+    end
+  end
+
+  @doc """
   Checks if set has a non-empty delta.
   """
   @spec has_delta?(t) :: boolean

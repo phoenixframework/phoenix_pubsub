@@ -183,6 +183,12 @@ defmodule Phoenix.Tracker.IntegrationTest do
     assert_map %{@node2 => %Replica{status: :up}}, replicas(tracker), 1
   end
 
+  test "getting meta by key", %{tracker: tracker, topic: topic} do
+    {:ok, _ref} = Tracker.track(tracker, self(), topic, "me", %{name: "me"})
+
+    assert %{name: "me"} = Tracker.get_by_key(tracker, self(), topic, "me")
+  end
+
   test "node detects and locally broadcasts presence_join/leave",
     %{tracker: tracker, topic: topic} do
 
