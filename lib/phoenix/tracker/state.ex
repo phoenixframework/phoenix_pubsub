@@ -355,19 +355,16 @@ defmodule Phoenix.Tracker.State do
   @spec remove_down_replicas(t, name) :: t
   def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids} = state, replica) do
     new_ctx = Map.delete(ctx, replica)
-    match_spec = {:_, :_, {replica, :_}}
+    # fn {key, _, {^replica, _}} -> key end
+    ms = [{{:"$1", :_, {replica, :_}}, [], [:"$1"]}]
 
-    new_clouds =
-      values
-      |> :ets.match_object(match_spec)
-      |> Enum.reduce(state.clouds, fn {{topic, pid, key}, _meta, tag}, acc ->
-        1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
-        delete_tag(acc, tag)
-      end)
-      |> Map.delete(replica)
-
+    foldl(values, nil, ms, fn {topic, pid, key} = values_key, _ ->
+      :ets.delete(values, values_key)
+      :ets.match_delete(pids, {pid, topic, key})
+      nil
+    end)
+    new_clouds = Map.delete(state.clouds, replica)
     new_delta = remove_down_replicas(state.delta, replica)
-    true = :ets.match_delete(values, match_spec)
 
     %State{state | context: new_ctx, clouds: new_clouds, delta: new_delta}
   end
