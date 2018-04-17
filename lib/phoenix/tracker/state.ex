@@ -199,20 +199,23 @@ defmodule Phoenix.Tracker.State do
   def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
     pruned_clouds = Map.take(clouds, Map.keys(remote_context))
     # fn {{topic, pid, key}, meta, {replica, clock}} when replica !== remote_ref ->
-    #  {replica, {replica, clock}, {pid, topic, key, meta}}
+    #  {{replica, clock}, {pid, topic, key, meta}}
     # end
-    ms = [
-      {{{:"$1", :"$2", :"$3"}, :"$4", {:"$5", :"$6"}},
-       [{:"=/=", :"$5", {:const, remote_ref}}],
-       [{{:"$5", {{:"$5", :"$6"}}, {{:"$2", :"$1", :"$3", :"$4"}}}}]}
-    ]
-    map =
-      for {replica, tag, data} <- :ets.select(values, ms),
-        Map.has_key?(remote_context, replica),
-        into: %{},
-        do: {tag, data}
+    ms = [{
+      {{:"$1", :"$2", :"$3"}, :"$4", {:"$5", :"$6"}},
+      [{:"=/=", :"$5", {:const, remote_ref}}],
+      [{{{{:"$5", :"$6"}}, {{:"$2", :"$1", :"$3", :"$4"}}}}]
+    }]
+    data =
+      foldl(values, [], ms, fn {{replica, _} = tag, data}, acc ->
+        if match?(%{^replica => _}, remote_context) do
+          [{tag, data} | acc]
+        else
+          acc
+        end
+      end)
 
-    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, map}
+    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, Map.new(data)}
   end
 
   @doc """
@@ -265,12 +268,15 @@ defmodule Phoenix.Tracker.State do
   @spec observe_removes(t, t, [value]) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
+    %State{context: remote_context, clouds: remote_clouds, replica: replica} = remote
     init = {unioned_clouds, delta, []}
+    # fn {_, _, {^replica, _}} = result -> result end
+    ms = [{{:_, :_, {replica, :_}}, [], [:"$_"]}]
 
-    foldl(values, init, fn {{topic, pid, key}, _, tag} = el, {clouds, delta, leaves} ->
-      if in?(remote, tag) and not Map.has_key?(remote_map, tag) do
-        1 = :ets.select_delete(values, [{el, [], [true]}])
-        1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
+    foldl(values, init, ms, fn {{topic, pid, key} = values_key, _, tag} = el, {clouds, delta, leaves} ->
+      if not match?(%{^tag => _}, remote_map) and in?(remote_context, remote_clouds, tag) do
+        :ets.delete(values, values_key)
+        :ets.match_delete(pids, {pid, topic, key})
         {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves]}
       else
         {clouds, delta, leaves}
@@ -357,6 +363,7 @@ defmodule Phoenix.Tracker.State do
     new_ctx = Map.delete(ctx, replica)
     # fn {key, _, {^replica, _}} -> key end
     ms = [{{:"$1", :_, {replica, :_}}, [], [:"$1"]}]
+
 
     foldl(values, nil, ms, fn {topic, pid, key} = values_key, _ ->
       :ets.delete(values, values_key)
@@ -506,5 +513,14 @@ defmodule Phoenix.Tracker.State do
     :ets.match_object(values, {:_, :_, {replica, :_}})
   end
 
-  defp foldl(values, initial, func), do: :ets.foldl(func, initial, values)
+  @fold_batch_size 1000
+
+  defp foldl(table, initial, ms, func) do
+    foldl(:ets.select(table, ms, @fold_batch_size), initial, func)
+  end
+
+  defp foldl(:"$end_of_table", acc, _func), do: acc
+  defp foldl({objects, cont}, acc, func) do
+    foldl(:ets.select(cont), Enum.reduce(objects, acc, func), func)
+  end
 end
