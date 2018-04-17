@@ -198,15 +198,19 @@ defmodule Phoenix.Tracker.State do
   end
   def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
     pruned_clouds = Map.take(clouds, Map.keys(remote_context))
-    map = foldl(values, [], fn
-      {{_topic, _pid, _key}, _meta, {^remote_ref, _clock}}, acc -> acc
-      {{topic, pid, key}, meta, {replica, _clock} = tag}, acc ->
-        if Map.has_key?(remote_context, replica) do
-          [{tag, {pid, topic, key, meta}} | acc]
-        else
-          acc
-        end
-    end) |> :maps.from_list()
+    # fn {{topic, pid, key}, meta, {replica, clock}} when replica !== remote_ref ->
+    #  {replica, {replica, clock}, {pid, topic, key, meta}}
+    # end
+    ms = [
+      {{{:"$1", :"$2", :"$3"}, :"$4", {:"$5", :"$6"}},
+       [{:"=/=", :"$5", {:const, remote_ref}}],
+       [{{:"$5", {{:"$5", :"$6"}}, {{:"$2", :"$1", :"$3", :"$4"}}}}]}
+    ]
+    map =
+      for {replica, tag, data} <- :ets.select(values, ms),
+        Map.has_key?(remote_context, replica),
+        into: %{},
+        do: {tag, data}
 
     {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, map}
   end
