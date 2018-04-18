@@ -30,6 +30,18 @@ defmodule Phoenix.PubSub.PG2 do
   end
 
   @doc false
+  def child_spec(args) do
+    {
+      __MODULE__,
+      { __MODULE__, :start_link, args},
+      :permanent,
+      :infinity,
+      :supervisor,
+      [ __MODULE__ ]
+    }
+  end
+
+  @doc false
   def init([server, opts]) do
     scheduler_count = :erlang.system_info(:schedulers)
     pool_size = Keyword.get(opts, :pool_size, scheduler_count)
