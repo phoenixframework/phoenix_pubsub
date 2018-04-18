@@ -101,6 +101,7 @@ defmodule Phoenix.Tracker do
 
   @type presence :: {key :: String.t, meta :: Map.t}
   @type topic :: String.t
+  @type key :: term
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
@@ -202,6 +203,31 @@ defmodule Phoenix.Tracker do
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
     |> Enum.map(fn {{_topic, _pid, key},  meta, _tag} -> {key, meta} end)
+  end
+
+  @doc """
+  Retrieve a presence with a given key
+
+    * `server_name` - The registered name of the tracker server
+    * `key` - The key identifying this presence
+
+  Returns a presence's metadata.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.get_by_key(MyTracker, 456)
+      %{name: "user 456"}
+  """
+  @spec get_by_key(atom, key) :: [presence]
+  def get_by_key(server_name, key) do
+    # TODO avoid extra map (ideally crdt does an ets select only returning {key, meta})
+    complete_record =
+      server_name
+      |> GenServer.call({:list, ""})
+      |> State.get_by_key(key)
+
+    {{_topic, _pid, _key}, meta, _tag} = complete_record
+    meta
   end
 
   @doc """

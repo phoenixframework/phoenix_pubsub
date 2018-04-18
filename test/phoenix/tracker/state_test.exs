@@ -139,6 +139,57 @@ defmodule Phoenix.Tracker.StateTest do
     assert State.get_by_pid(state, pid, "notopic", "nokey") == nil
   end
 
+  test "get_by_key" do
+    pid = self()
+    state = new(:node1)
+    state2 = new(:node2)
+    state3 = new(:node3)
+    user2 = new_pid()
+    user3 = new_pid()
+
+    assert [] = State.get_by_topic(state, "topic")
+    state = State.join(state, pid, "topic", "key1", %{})
+    state = State.join(state, pid, "topic", "key2", %{})
+    state2 = State.join(state2, user2, "topic", "user2", %{})
+    state3 = State.join(state3, user3, "topic", "user3", %{})
+
+    # all replicas online
+    assert {{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}} =
+           State.get_by_key(state, "key1")
+    assert {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}} =
+           State.get_by_key(state, "key2")
+
+    {state, _, _} = State.merge(state, State.extract(state2))
+    {state, _, _} = State.merge(state, State.extract(state3))
+    assert {{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}} =
+           State.get_by_key(state, "key1")
+    assert {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}} =
+           State.get_by_key(state, "key2")
+    assert {{"topic", ^user2, "user2"}, %{}, {{:node2, 1}, 1}} =
+           State.get_by_key(state, "user2")
+    assert {{"topic", ^user3, "user3"}, %{}, {{:node3, 1}, 1}} =
+           State.get_by_key(state, "user3")
+
+    # one replica offline
+    {state, _, _} = State.replica_down(state, state2.replica)
+    assert {{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}} =
+           State.get_by_key(state, "key1")
+    assert {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}} =
+           State.get_by_key(state, "key2")
+    assert {{"topic", ^user3, "user3"}, %{}, {{:node3, 1}, 1}} =
+           State.get_by_key(state, "user3")
+
+    # two replicas offline
+    {state, _, _} = State.replica_down(state, state3.replica)
+    assert {{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}} =
+           State.get_by_key(state, "key1")
+    assert {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}} =
+           State.get_by_key(state, "key2")
+
+    assert %{} == State.get_by_key(state, "doesn't exist")
+  end
+
+
   test "get_by_topic" do
     pid = self()
     state = new(:node1)

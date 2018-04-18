@@ -119,6 +119,16 @@ defmodule Phoenix.Tracker.State do
     :ets.select(values, [{ {{topic, :_, :_}, :_, {:"$1", :_}},
       not_in(:"$1", replicas), [:"$_"]}])
   end
+
+  @spec get_by_key(t, key) :: [value]
+  def get_by_key(%State{values: values} = state, key) do
+    replicas = down_replicas(state)
+    case :ets.select(values, [{ {{:_, :_, key}, :_, {:"$1", :_}},
+      not_in(:"$1", replicas), [:"$_"]}]) do
+      [] -> %{}
+      [record | _] -> record
+    end
+  end
   defp not_in(_pos, []), do: []
   defp not_in(pos, replicas), do: [not: ors(pos, replicas)]
   defp ors(pos, [rep]), do: {:"==", pos, {rep}}
