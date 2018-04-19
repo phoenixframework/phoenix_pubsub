@@ -3,9 +3,9 @@ defmodule Phoenix.PubSub.Supervisor do
 
   def start(_type, _args) do
     children = if pubsub = Application.get_env(:phoenix_pubsub, :pubsub) do
-      [ { Phoenix.PubSub.PG2, pubsub } ]
+      [{Phoenix.PubSub.PG2, pubsub}]
     else
-      [ ]
+      []
     end
     opts = [strategy: :one_for_one]
     Supervisor.start_link(children, opts)

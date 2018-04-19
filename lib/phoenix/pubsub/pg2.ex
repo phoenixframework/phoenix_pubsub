@@ -33,11 +33,11 @@ defmodule Phoenix.PubSub.PG2 do
   def child_spec(args) do
     {
       __MODULE__,
-      { __MODULE__, :start_link, args},
+      {__MODULE__, :start_link, args},
       :permanent,
       :infinity,
       :supervisor,
-      [ __MODULE__ ]
+      [__MODULE__]
     }
   end
 

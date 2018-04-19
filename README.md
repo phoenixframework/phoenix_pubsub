@@ -25,7 +25,7 @@ defmodule MyApp do
   def start(_type, _args) do
 
     children = [
-      { Phoenix.PubSub.PG2, [ MyApp.PubSub, [] ]}
+      {Phoenix.PubSub.PG2, [MyApp.PubSub, []]}
     ]
 
     opts = [
