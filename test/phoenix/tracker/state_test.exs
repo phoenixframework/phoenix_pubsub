@@ -26,7 +26,7 @@ defmodule Phoenix.Tracker.StateTest do
 
   test "that this is set up correctly" do
     a = new(:a)
-    assert {_a, map} = State.extract(a, :a, a.context)
+    assert {_a, map} = State.extract(a, a.replica, a.context)
     assert map == %{}
   end
 
@@ -56,17 +56,17 @@ defmodule Phoenix.Tracker.StateTest do
     b = State.join(b, bob, "lobby", :bob)
 
     # Merging emits a bob join event
-    assert {a, [{{_, _, :bob}, _, _}], []} = State.merge(a, State.extract(b, :a, a.context))
+    assert {a, [{{_, _, :bob}, _, _}], []} = State.merge(a, State.extract(b, a.replica, a.context))
     assert [:alice, :bob] = keys(State.online_list(a))
 
     # Merging twice doesn't dupe events
     pids_before = tab2list(a.pids)
-    assert {newa, [], []} = State.merge(a, State.extract(b, :a, a.context))
+    assert {newa, [], []} = State.merge(a, State.extract(b, a.replica, a.context))
     assert newa == a
     assert pids_before == tab2list(newa.pids)
 
-    assert {b, [{{_, _, :alice}, _, _}], []} = State.merge(b, State.extract(a, :b, b.context))
-    assert {^b, [], []} = State.merge(b, State.extract(a, :b, b.context))
+    assert {b, [{{_, _, :alice}, _, _}], []} = State.merge(b, State.extract(a, b.replica, b.context))
+    assert {^b, [], []} = State.merge(b, State.extract(a, b.replica, b.context))
 
     # observe remove
     assert [{_, "lobby", :alice}, {_, "lobby", :bob}] = tab2list(a.pids)
@@ -74,17 +74,17 @@ defmodule Phoenix.Tracker.StateTest do
     assert [{_, "lobby", :bob}] = tab2list(a.pids)
     b_pids_before = tab2list(b.pids)
     assert [{_, "lobby", :alice}, {_, "lobby", :bob}] = b_pids_before
-    assert {b, [], [{{_, _, :alice}, _, _}]} = State.merge(b, State.extract(a, :b, b.context))
+    assert {b, [], [{{_, _, :alice}, _, _}]} = State.merge(b, State.extract(a, b.replica, b.context))
     assert [{_, "lobby", :alice}] = b_pids_before -- tab2list(b.pids)
 
     assert [:bob] = keys(State.online_list(b))
-    assert {^b, [], []} = State.merge(b, State.extract(a, :b, b.context))
+    assert {^b, [], []} = State.merge(b, State.extract(a, b.replica, b.context))
 
     b = State.join(b, carol, "lobby", :carol)
 
     assert [:bob, :carol] = keys(State.online_list(b))
-    assert {a, [{{_, _, :carol}, _, _}],[]} = State.merge(a, State.extract(b, :a, a.context))
-    assert {^a, [], []} = State.merge(a, State.extract(b, :a, a.context))
+    assert {a, [{{_, _, :carol}, _, _}],[]} = State.merge(a, State.extract(b, a.replica, a.context))
+    assert {^a, [], []} = State.merge(a, State.extract(b, a.replica, a.context))
 
     assert (State.online_list(b) |> Enum.sort) == (State.online_list(a) |> Enum.sort)
   end
@@ -103,7 +103,7 @@ defmodule Phoenix.Tracker.StateTest do
     a = State.join(a, alice, "lobby", :alice)
     b = State.join(b, bob, "lobby", :bob)
 
-    {a, [{{_, _, :bob}, _, _}], _} = State.merge(a, State.extract(b, :a, a.context))
+    {a, [{{_, _, :bob}, _, _}], _} = State.merge(a, State.extract(b, a.replica, a.context))
 
     assert [:alice, :bob] = a |> State.online_list() |> keys()
 
@@ -115,7 +115,7 @@ defmodule Phoenix.Tracker.StateTest do
 
     assert [:carol, :david] = keys(State.online_list(a))
 
-    assert {a,[],[]} = State.merge(a, State.extract(b, :a, a.context))
+    assert {a,[],[]} = State.merge(a, State.extract(b, a.replica, a.context))
     assert [:carol, :david] = keys(State.online_list(a))
 
     assert {a,[{{_, _, :bob}, _, _}],[]} = State.replica_up(a, {:b,1})
@@ -174,8 +174,8 @@ defmodule Phoenix.Tracker.StateTest do
             {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}}] =
            State.get_by_topic(state, "topic")
 
-    {state, _, _} = State.merge(state, State.extract(state2, :node1, state.context))
-    {state, _, _} = State.merge(state, State.extract(state3, :node1, state.context))
+    {state, _, _} = State.merge(state, State.extract(state2, state.replica, state.context))
+    {state, _, _} = State.merge(state, State.extract(state3, state.replica, state.context))
     assert [{{"topic", ^pid, "key1"}, %{}, {{:node1, 1}, 1}},
             {{"topic", ^pid, "key2"}, %{}, {{:node1, 1}, 2}},
             {{"topic", ^user2, "user2"}, %{}, {{:node2, 1}, 1}},
@@ -209,7 +209,7 @@ defmodule Phoenix.Tracker.StateTest do
 
     state1 = State.join(state1, alice, "lobby", :alice)
     state2 = State.join(state2, bob, "lobby", :bob)
-    {state2, _, _} = State.merge(state2, State.extract(state1, :node2, state2.context))
+    {state2, _, _} = State.merge(state2, State.extract(state1, state2.replica, state2.context))
     assert keys(State.online_list(state2)) == [:alice, :bob]
 
     {state2, _, _} = State.replica_down(state2, {:node1, 1})
