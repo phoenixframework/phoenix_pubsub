@@ -106,7 +106,7 @@ defmodule Phoenix.Tracker do
   alias Phoenix.Tracker.Shard
   require Logger
 
-  @type presence :: {key :: String.t, meta :: Map.t}
+  @type presence :: {key :: String.t, meta :: map}
   @type topic :: String.t
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
@@ -134,7 +134,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
       {:error, {:already_tracked, #PID<0.56.0>, "lobby", "123"}}
   """
-  @spec track(atom, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec track(atom, pid, topic, term, map) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(tracker_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
@@ -189,7 +189,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec update(atom, pid, topic, term, map | (map -> map)) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(tracker_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))

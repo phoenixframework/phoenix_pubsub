@@ -8,7 +8,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
 
   Falls back to extracting entire crdt if unable to match delta.
   """
-  @spec extract(State.delta, [State.delta], State.name, State.context) :: State.delta | State.t
+  @spec extract(State.t, [State.delta], State.name, State.context) :: State.delta | State.t
   def extract(%State{mode: :normal} = state, generations, remote_ref, remote_context) do
     case delta_fullfilling_clock(generations, remote_context) do
       {delta, index} ->
