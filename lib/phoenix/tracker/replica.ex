@@ -3,13 +3,13 @@ defmodule Phoenix.Tracker.Replica do
   alias Phoenix.Tracker.Replica
 
   @type name :: String.t
-  @type vsn :: term
+  @type vsn :: integer
   @type replica_ref :: {name, vsn}
 
   @type t :: %Replica{
     name: name,
     vsn: vsn,
-    last_heartbeat_at: pos_integer,
+    last_heartbeat_at: pos_integer | nil,
     status: :up | :down | :permdown
   }
 

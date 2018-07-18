@@ -1,7 +1,7 @@
 language: elixir
 elixir: 1.4.0
 otp_release:
-  - 18.0
+  - 19.0
 sudo: false
 before_script:
   - epmd -daemon

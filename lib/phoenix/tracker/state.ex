@@ -7,8 +7,8 @@ defmodule Phoenix.Tracker.State do
   @type name       :: term
   @type topic      :: String.t
   @type key        :: term
-  @type meta       :: Map.t
-  @type ets_id     :: pos_integer
+  @type meta       :: map
+  @type ets_id     :: :ets.tid
   @type clock      :: pos_integer
   @type tag        :: {name, clock}
   @type cloud      :: MapSet.t
@@ -188,7 +188,8 @@ defmodule Phoenix.Tracker.State do
 
   Used when merging two sets.
   """
-  @spec extract(t, remote_ref :: name, context) :: {t, values}
+
+  @spec extract(t, remote_ref :: name, context) :: t | {t, values}
   def extract(%State{mode: :delta, values: values, clouds: clouds} = state, remote_ref, remote_context) do
     {start_ctx, end_ctx} = state.range
     known_keys = Map.keys(remote_context)
@@ -276,7 +277,7 @@ defmodule Phoenix.Tracker.State do
     end)
   end
 
-  @spec observe_removes(t, t, [value]) :: {clouds, delta, leaves :: [value]}
+  @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
     %State{context: remote_context, clouds: remote_clouds, replica: replica} = remote
