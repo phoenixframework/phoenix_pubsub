@@ -46,43 +46,60 @@ defmodule Phoenix.PubSub.NodeCase do
     :ok = Phoenix.PubSub.subscribe(@pubsub, topic)
   end
 
-  def subscribe_to_tracker(tracker) do
-    :ok = Phoenix.PubSub.subscribe(@pubsub, namespaced_topic(tracker))
+  def subscribe_to_server(server) do
+    :ok = Phoenix.PubSub.subscribe(@pubsub, namespaced_topic(server))
   end
 
-  defp namespaced_topic(tracker), do: "phx_presence:#{tracker}"
+  defp namespaced_topic(server), do: "phx_presence:#{server}"
 
-  def start_tracker(node_name, opts) do
+  def shard_name(server), do: :"#{server}_shard0"
+
+  def start_shard(node_name, opts) do
     opts = Keyword.put_new(opts, :report_events_to, self())
-    call_node(node_name, fn -> start_tracker(opts) end)
+    call_node(node_name, fn -> start_shard(opts) end)
   end
 
-  def graceful_permdown(node_name, tracker) do
-    call_node(node_name, fn -> Phoenix.Tracker.graceful_permdown(tracker) end)
+  def graceful_permdown(node_name, server) do
+    call_node(node_name,
+      fn -> Phoenix.Tracker.Shard.graceful_permdown(server) end)
   end
 
-  def drop_gossips(tracker) do
-    :ok = GenServer.call(tracker, :unsubscribe)
+  def drop_gossips(server) do
+    :ok = GenServer.call(server, :unsubscribe)
   end
 
-  def resume_gossips(tracker) do
-    :ok = GenServer.call(tracker, :resubscribe)
+  def resume_gossips(server) do
+    :ok = GenServer.call(server, :resubscribe)
   end
 
-  def start_tracker(opts) do
-    opts = Keyword.put_new(opts, :report_events_to, self())
-    opts = Keyword.merge([
+  def start_shard(opts) do
+    opts = Keyword.merge(default_tracker_opts(),
+      Keyword.put_new(opts, :report_events_to, self()))
+    Phoenix.Tracker.Shard.start_link(TestTracker, opts, opts)
+  end
+
+  def start_pool(opts) do
+    opts = Keyword.merge(default_pool_opts(), opts)
+    Phoenix.Tracker.start_link(TestTracker, opts, opts)
+  end
+
+  defp default_pool_opts do
+    Keyword.merge([shard_number: 0], default_tracker_opts())
+  end
+
+  defp default_tracker_opts do
+    [
       pubsub_server: @pubsub,
       broadcast_period: @heartbeat,
       max_silent_periods: 2,
       permdown_period: @permdown,
-    ], opts)
-    Phoenix.Tracker.start_link(TestTracker, opts, opts)
+      shard_number: 0,
+    ]
   end
 
-  def track_presence(node_name, tracker, pid, topic, user_id, meta) do
+  def track_presence(node_name, server, pid, topic, user_id, meta) do
     call_node(node_name, fn ->
-      Phoenix.Tracker.track(tracker, pid, topic, user_id, meta)
+      Phoenix.Tracker.Shard.track(server, pid, topic, user_id, meta)
     end)
   end
 
@@ -92,8 +109,10 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
-  def spy_on_tracker(node_name, server \\ @pubsub, target_pid, tracker) do
-    spy_on_pubsub(node_name, server, target_pid, "phx_presence:#{tracker}")
+  def spy_on_server(node_name, pubsub_server \\ @pubsub,
+    target_pid, tracker_server) do
+    spy_on_pubsub(node_name, pubsub_server, target_pid,
+      "phx_presence:#{tracker_server}")
   end
 
   def spy_on_pubsub(node_name, server \\ @pubsub, target_pid, topic) do
