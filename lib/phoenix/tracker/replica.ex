@@ -77,9 +77,9 @@ defmodule Phoenix.Tracker.Replica do
     %Replica{replica | last_heartbeat_at: now_ms()}
   end
 
-  defp now_ms, do: System.system_time(:milli_seconds)
+  defp now_ms, do: System.system_time(:millisecond)
 
   defp unique_vsn do
-    System.system_time(:micro_seconds) + System.unique_integer([:positive])
+    System.system_time(:microsecond) + System.unique_integer([:positive])
   end
 end
