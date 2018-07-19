@@ -35,14 +35,14 @@ defmodule Phoenix.PubSub.LocalTest do
       # broadcast
       assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "foo", :hellofoo)
       assert_received :hellofoo
-      assert Process.info(pid)[:messages] == [:hellofoo]
+      assert Process.info(pid, :messages) == {:messages, [:hellofoo]}
 
       assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "bar", :hellobar)
       assert_received :hellobar
-      assert Process.info(pid)[:messages] == [:hellofoo]
+      assert Process.info(pid, :messages) == {:messages, [:hellofoo]}
 
       assert :ok = Local.broadcast(nil, config.pubsub, config.pool_size, :none, "unknown", :hellobar)
-      assert Process.info(self())[:messages] == []
+      assert Process.info(self(), :messages) == {:messages, []}
     end
 
     @tag pool_size: size

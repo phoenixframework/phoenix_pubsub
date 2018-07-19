@@ -126,13 +126,13 @@ defmodule Phoenix.PubSub.PubSubTest do
     refute_receive %Broadcast{}
     refute_receive %Message{}
     assert_receive {:fastlaned, %Broadcast{}}
-    assert Process.info(fastlane_pid)[:messages] == [fastlaned, fastlaned]
-    assert Process.info(self())[:messages] == [] # cached and fastlaned only sent once
+    assert Process.info(fastlane_pid, :messages) == {:messages, [fastlaned, fastlaned]}
+    assert Process.info(self(), :messages) == {:messages, []} # cached and fastlaned only sent once
 
     PubSub.broadcast(__MODULE__, "topic1", %Broadcast{event: "intercepted", topic: "topic1", payload: %{}})
 
     assert_receive %Broadcast{event: "intercepted", topic: "topic1", payload: %{}}
-    assert Process.info(fastlane_pid)[:messages]
-           == [fastlaned, fastlaned] # no additional messages received
+    assert Process.info(fastlane_pid, :messages)
+           == {:messages, [fastlaned, fastlaned]} # no additional messages received
   end
 end
