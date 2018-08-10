@@ -139,6 +139,23 @@ defmodule Phoenix.Tracker.StateTest do
     assert State.get_by_pid(state, pid, "notopic", "nokey") == nil
   end
 
+  test "get_by_key", config do
+    pid = self()
+    pid2 = spawn(fn -> Process.sleep(:infinity) end)
+    state = new(:node1, config)
+
+    assert State.get_by_key(state, "topic", "key1") == []
+    state = State.join(state, pid, "topic", "key1", %{device: :browser})
+    state = State.join(state, pid2, "topic", "key1", %{device: :ios})
+    state = State.join(state, pid2, "topic", "key2", %{device: :ios})
+
+    assert [{^pid, %{device: :browser}}, {pid2, %{device: :ios}}] =
+           State.get_by_key(state, "topic", "key1")
+
+    assert State.get_by_key(state, "another_topic", "key1") == []
+    assert State.get_by_key(state, "topic", "another_key") == []
+  end
+
   test "get_by_topic", config do
     pid = self()
     state = new(:node1, config)

@@ -200,7 +200,7 @@ defmodule Phoenix.Tracker do
   Lists all presences tracked under a given topic.
 
     * `server_name` - The registered name of the tracker server
-    * `topic` - The `Phoenix.PubSub` topic to update for this presence
+    * `topic` - The `Phoenix.PubSub` topic
 
   Returns a lists of presences in key/metadata tuple pairs.
 
@@ -214,6 +214,26 @@ defmodule Phoenix.Tracker do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
     |> Phoenix.Tracker.Shard.list(topic)
+  end
+
+  @doc """
+  Gets presences tracked under a given topic and key pair.
+
+    * `server_name` - The registered name of the tracker server
+    * `topic` - The `Phoenix.PubSub` topic
+    * `key` - The key of the presence
+
+  Returns a lists of presence metadata.
+
+  ## Examples
+
+      iex> Phoenix.Tracker.get_by_key(MyTracker, "lobby", "user1")
+      [{#PID<0.88.0>, %{name: "User 1"}, {#PID<0.89.0>, %{name: "User 1"}]
+  """
+  def get_by_key(tracker_name, topic, key) do
+    tracker_name
+    |> Shard.name_for_topic(topic, pool_size(tracker_name))
+    |> Phoenix.Tracker.Shard.get_by_key(topic, key)
   end
 
   @doc """

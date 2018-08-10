@@ -51,8 +51,17 @@ defmodule Phoenix.Tracker.Shard do
     |> GenServer.call({:list, topic})
     |> State.get_by_topic(topic)
   end
+
+  @doc false
   def dirty_list(shard_name, topic) do
     State.tracked_values(shard_name, topic, [])
+  end
+
+  @spec get_by_key(pid, topic, term) :: presence
+  def get_by_key(server_pid, topic, key) do
+    server_pid
+    |> GenServer.call({:list, topic})
+    |> State.get_by_key(topic, key)
   end
 
   @spec graceful_permdown(pid) :: :ok

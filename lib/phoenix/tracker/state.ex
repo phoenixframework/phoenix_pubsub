@@ -122,12 +122,36 @@ defmodule Phoenix.Tracker.State do
   end
 
   @doc """
-  Performs table lookup for tracked elements in the topic, filtering out
-  those present on downed replicas.
+  Returns a list of elements for the topic who belong to an online replica.
+  """
+  @spec get_by_key(t, topic, key) :: [key_meta]
+  def get_by_key(%State{values: values} = state, topic, key) do
+    case tracked_key(values, topic, key, down_replicas(state)) do
+      [] -> []
+      [_|_] = metas -> metas
+    end
+  end
+
+  @doc """
+  Performs table lookup for tracked elements in the topic.
+
+  Filters out those present on downed replicas.
   """
   def tracked_values(table, topic, down_replicas) do
     :ets.select(table,
       [{{{topic, :_, :"$1"}, :"$2", {:"$3", :_}},
+        not_in(:"$3", down_replicas),
+        [{{:"$1", :"$2"}}]}])
+  end
+
+  @doc """
+  Performs table lookup for tracked key in the topic.
+
+  Filters out those present on downed replicas.
+  """
+  def tracked_key(table, topic, key, down_replicas) do
+    :ets.select(table,
+      [{{{topic, :"$1", key}, :"$2", {:"$3", :_}},
         not_in(:"$3", down_replicas),
         [{{:"$1", :"$2"}}]}])
   end
