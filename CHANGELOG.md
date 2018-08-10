@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0-dev
+## v1.1.0 (2018-08-10)
 
 * Enhancements
   * Optimize Tracker CRDT operations for increased performance
