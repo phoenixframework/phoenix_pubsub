@@ -153,4 +153,19 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
 
     assert DeltaGeneration.extract(s3, [d2, d3], :r3, %{r2: 0}) == expected_delta
   end
+
+  test "delta that isn't dominating on common set of replicas is not extracted", config do
+    pid = new_pid()
+    s1 = new(:r1, config)
+    s2 = State.join(s1, pid, "lobby", "user1", %{})
+    d1 = s2.delta
+
+    s3 = State.join(s2, pid, "lobby", "user2", %{})
+    d2 = s3.delta
+
+    {d1_left, d1_right} = d1.range
+    d1 = %{d1 | range: {Map.put(d1_left, :r2, 0), Map.put(d1_right, :r2, 1)}}
+
+    assert DeltaGeneration.extract(s3, [d1, d2], :r3, %{r1: 1}) == d2
+  end
 end
