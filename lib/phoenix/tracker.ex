@@ -59,7 +59,7 @@ defmodule Phoenix.Tracker do
 
         def start_link(opts) do
           opts = Keyword.merge([name: __MODULE__], opts)
-          GenServer.start_link(Phoenix.Tracker, [__MODULE__, opts, opts], name: __MODULE__)
+          Phoenix.Tracker.start_link(__MODULE__, opts, opts)
         end
 
         def init(opts) do
