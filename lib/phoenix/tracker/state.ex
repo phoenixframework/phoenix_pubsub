@@ -304,10 +304,15 @@ defmodule Phoenix.Tracker.State do
   @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
-    %State{context: remote_context, clouds: remote_clouds, replica: replica} = remote
+    %State{context: remote_context, clouds: remote_clouds} = remote
     init = {unioned_clouds, delta, []}
-    # fn {_, _, {^replica, _}} = result -> result end
-    ms = [{{:_, :_, {replica, :_}}, [], [:"$_"]}]
+    local_replica = local.replica
+    # fn {_, _, {replica, _}} = result when replica != local_replica -> result end
+    ms = [{
+      {:_, :_, {:"$1", :_}},
+      [{:"/=", :"$1", {:const, local_replica}}],
+      [:"$_"]
+    }]
 
     foldl(values, init, ms, fn {{topic, pid, key} = values_key, _, tag} = el, {clouds, delta, leaves} ->
       if not match?(%{^tag => _}, remote_map) and in?(remote_context, remote_clouds, tag) do

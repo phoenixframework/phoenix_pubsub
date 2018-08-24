@@ -123,6 +123,53 @@ defmodule Phoenix.Tracker.StateTest do
     assert [:bob, :carol, :david] = keys(State.online_list(a))
   end
 
+  test "joins are observed via other node", config do
+    [a, b, c] = given_connected_cluster([:a, :b, :c], config)
+    alice = new_pid()
+    bob = new_pid()
+    a = State.join(a, alice, "lobby", :alice)
+    # the below join is just so that node c has some context from node a
+    {c, [{{_, _, :alice}, _, _}], []} =
+        State.merge(c, State.extract(a, c.replica, c.context))
+
+    # netsplit between a and c
+    {a, [], []} = State.replica_down(a, {:c, 1})
+    {c, [], [{{_, _, :alice}, _, _}]} = State.replica_down(c, {:a, 1})
+
+    a = State.join(a, bob, "lobby", :bob)
+    {b, [{{_, _, :bob}, _, _}, {{_, _, :alice}, _, _}], []} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+
+    assert {_, [{{_, _, :bob}, _, _}], []} =
+      State.merge(c, State.extract(b, c.replica, c.context))
+  end
+
+  test "removes are observed via other node", config do
+    [a, b, c] = given_connected_cluster([:a, :b, :c], config)
+    alice = new_pid()
+    bob = new_pid()
+    a = State.join(a, alice, "lobby", :alice)
+    {c, [{{_, _, :alice}, _, _}], []} =
+        State.merge(c, State.extract(a, c.replica, c.context))
+
+    # netsplit between a and c
+    {a, [], []} = State.replica_down(a, {:c, 1})
+    {c, [], [{{_, _, :alice}, _, _}]} = State.replica_down(c, {:a, 1})
+
+    a = State.join(a, bob, "lobby", :bob)
+    {b, [{{_, _, :bob}, _, _}, {{_, _, :alice}, _, _}], []} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+    {c, [{{_, _, :bob}, _, _}], []} =
+      State.merge(c, State.extract(b, c.replica, c.context))
+
+    a = State.leave(a, bob, "lobby", :bob)
+    {b, [], [{{_, _, :bob}, _, _}]} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+
+    assert {_, [], [{{_, _, :bob}, _, _}]} =
+        State.merge(c, State.extract(b, c.replica, c.context))
+  end
+
   test "get_by_pid", config do
     pid = self()
     state = new(:node1, config)
@@ -318,4 +365,19 @@ defmodule Phoenix.Tracker.StateTest do
     assert sorted_clouds(delta1.clouds) ==
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}, {{:s2, 1}, 3}]
   end
+
+  defp given_connected_cluster(nodes, config) do
+    states = Enum.map(nodes, fn n -> new(n, config) end)
+    replicas = Enum.map(states, fn s -> s.replica end)
+
+    Enum.map(states, fn s ->
+      Enum.reduce(replicas, s, fn replica, acc ->
+        case acc.replica == replica do
+          true -> acc
+          false -> State.replica_up(acc, replica) |> elem(0)
+        end
+      end)
+    end)
+  end
+
 end
