@@ -358,7 +358,10 @@ defmodule Phoenix.Tracker.State do
     %{values: local_values, range: {local_start, local_end}, context: local_context, clouds: local_clouds} = local
     %{range: {remote_start, remote_end}, context: remote_context, clouds: remote_clouds} = remote
 
-    if Clock.dominates_or_equal?(local_end, remote_start) do
+    if (Clock.dominates_or_equal?(remote_end, local_start) and
+        Clock.dominates_or_equal?(local_end, remote_start)) or
+       (Clock.dominates_or_equal?(local_end, remote_start) and
+        Clock.dominates_or_equal?(remote_end, local_start)) do
       new_start = Clock.lowerbound(local_start, remote_start)
       new_end = Clock.upperbound(local_end, remote_end)
       clouds = union_clouds(local, remote)

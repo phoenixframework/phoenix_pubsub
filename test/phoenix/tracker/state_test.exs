@@ -306,6 +306,16 @@ defmodule Phoenix.Tracker.StateTest do
     assert Enum.all?(Enum.map(b.clouds, fn {_, cloud} -> Enum.empty?(cloud) end))
   end
 
+  test "deltas are not merged for non-contiguous ranges", config do
+    s1 = new(:s1, config)
+    s2 = State.join(s1, new_pid(), "lobby", "user1", %{})
+    s3 = State.join(s2, new_pid(), "lobby", "user2", %{})
+    s4 = State.join(State.reset_delta(s3), new_pid(), "lobby", "user3", %{})
+
+    assert State.merge_deltas(s2.delta, s4.delta) == {:error, :not_contiguous}
+    assert State.merge_deltas(s4.delta, s2.delta) == {:error, :not_contiguous}
+  end
+
   test "merging deltas", config do
     s1 = new(:s1, config)
     s2 = new(:s2, config)
