@@ -100,7 +100,7 @@ defmodule Phoenix.PubSub do
   your PubSub adapter. See `Phoenix.PubSub.PG2` implementation for examples.
   """
 
-  @type node_name :: atom :: binary
+  @type node_name :: atom | binary
 
   defmodule BroadcastError do
     defexception [:message]
