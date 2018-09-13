@@ -6,12 +6,34 @@ defmodule Phoenix.Tracker.Shard do
   alias Phoenix.Tracker.{Clock, State, Replica, DeltaGeneration}
   require Logger
 
-  @type presence :: {key :: String.t, meta :: Map.t}
+  @type presence :: {key :: String.t, meta :: map()}
   @type topic :: String.t
 
   @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
 
+  @type t :: %{
+    shard_name: String.t(),
+    pubsub_server: atom(),
+    tracker: module,
+    tracker_state: any,
+    replica: Replica.t(),
+    report_events_to: any,
+    namespaced_topic: String.t(),
+    log_level: boolean | atom,
+    replicas: map,
+    pending_clockset: [],
+    presences: State.t(),
+    broadcast_period: integer,
+    max_silent_periods: integer(),
+    silent_periods: integer(),
+    down_period: integer,
+    permdown_period: integer,
+    clock_sample_periods: integer,
+    deltas: [State.delta()],
+    max_delta_sizes: integer,
+    current_sample_count: integer
+  }
 
   ## Used by Phoenix.Tracker for dispatching to appropriate shard
   @spec name_for_number(atom, non_neg_integer) :: atom
@@ -27,7 +49,7 @@ defmodule Phoenix.Tracker.Shard do
 
   ## Client
 
-  @spec track(pid, pid, topic, term, Map.t) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec track(pid, pid, topic, term, map()) :: {:ok, ref :: binary} | {:error, reason :: term}
   def track(server_pid, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
     GenServer.call(server_pid, {:track, pid, topic, key, meta})
   end
@@ -40,12 +62,12 @@ defmodule Phoenix.Tracker.Shard do
     GenServer.call(server_pid, {:untrack, pid})
   end
 
-  @spec update(pid, pid, topic, term, Map.t | (Map.t -> Map.t)) :: {:ok, ref :: binary} | {:error, reason :: term}
+  @spec update(pid, pid, topic, term, map() | (map() -> map())) :: {:ok, ref :: binary} | {:error, reason :: term}
   def update(server_pid, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     GenServer.call(server_pid, {:update, pid, topic, key, meta})
   end
 
-  @spec list(pid, topic) :: [presence]
+  @spec list(pid | atom, topic) :: [presence]
   def list(server_pid, topic) do
     server_pid
     |> GenServer.call({:list, topic})
@@ -57,7 +79,7 @@ defmodule Phoenix.Tracker.Shard do
     State.tracked_values(shard_name, topic, [])
   end
 
-  @spec get_by_key(pid, topic, term) :: presence
+  @spec get_by_key(pid | atom, topic, term) :: [presence]
   def get_by_key(server_pid, topic, key) do
     server_pid
     |> GenServer.call({:list, topic})
@@ -355,7 +377,7 @@ defmodule Phoenix.Tracker.Shard do
 
   defp clock(state), do: State.clocks(state.presences)
 
-  @spec clockset_to_sync(%{pending_clockset: [State.replica_context]}) :: [State.replica_name]
+  @spec clockset_to_sync(t) :: [State.replica_name]
   defp clockset_to_sync(state) do
     my_ref = Replica.ref(state.replica)
 
