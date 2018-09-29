@@ -316,6 +316,26 @@ defmodule Phoenix.Tracker.StateTest do
     assert State.merge_deltas(s4.delta, s2.delta) == {:error, :not_contiguous}
   end
 
+  test "extracted state context contains only replicas known to remote replica",
+    config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
+    s3 = new(:s3, config)
+    {s1, _, _} = State.replica_up(s1, s2.replica)
+    {s2, _, _} = State.replica_up(s2, s1.replica)
+    {s2, _, _} = State.replica_up(s2, s3.replica)
+    s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
+    s2 = State.join(s2, new_pid(), "lobby", "user2", %{})
+    s3 = State.join(s3, new_pid(), "lobby", "user3", %{})
+    {s1, _, _} = State.merge(s1, s2.delta)
+    {s2, _, _} = State.merge(s2, s1.delta)
+    {s2, _, _} = State.merge(s2, s3.delta)
+
+    {extracted, _} = State.extract(s2, s1.replica, s1.context)
+
+    assert extracted.context == %{{:s1, 1} => 1, {:s2, 1} => 1}
+  end
+
   test "merging deltas", config do
     s1 = new(:s1, config)
     s2 = new(:s2, config)

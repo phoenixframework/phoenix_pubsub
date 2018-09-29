@@ -233,7 +233,9 @@ defmodule Phoenix.Tracker.State do
     %State{state | values: map, clouds: pruned_clouds, range: {pruned_start, pruned_end}}
   end
   def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
-    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
+    known_keys = Map.keys(remote_context)
+    pruned_clouds = Map.take(clouds, known_keys)
+    pruned_context = Map.take(state.context, known_keys)
     # fn {{topic, pid, key}, meta, {replica, clock}} when replica !== remote_ref ->
     #  {{replica, clock}, {pid, topic, key, meta}}
     # end
@@ -251,7 +253,12 @@ defmodule Phoenix.Tracker.State do
         end
       end)
 
-    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, Map.new(data)}
+    {%State{state |
+        clouds: pruned_clouds,
+        context: pruned_context,
+        pids: nil,
+        values: nil,
+        delta: :unset}, Map.new(data)}
   end
 
   @doc """
