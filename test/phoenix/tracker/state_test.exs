@@ -123,6 +123,53 @@ defmodule Phoenix.Tracker.StateTest do
     assert [:bob, :carol, :david] = keys(State.online_list(a))
   end
 
+  test "joins are observed via other node", config do
+    [a, b, c] = given_connected_cluster([:a, :b, :c], config)
+    alice = new_pid()
+    bob = new_pid()
+    a = State.join(a, alice, "lobby", :alice)
+    # the below join is just so that node c has some context from node a
+    {c, [{{_, _, :alice}, _, _}], []} =
+        State.merge(c, State.extract(a, c.replica, c.context))
+
+    # netsplit between a and c
+    {a, [], []} = State.replica_down(a, {:c, 1})
+    {c, [], [{{_, _, :alice}, _, _}]} = State.replica_down(c, {:a, 1})
+
+    a = State.join(a, bob, "lobby", :bob)
+    {b, [{{_, _, :bob}, _, _}, {{_, _, :alice}, _, _}], []} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+
+    assert {_, [{{_, _, :bob}, _, _}], []} =
+      State.merge(c, State.extract(b, c.replica, c.context))
+  end
+
+  test "removes are observed via other node", config do
+    [a, b, c] = given_connected_cluster([:a, :b, :c], config)
+    alice = new_pid()
+    bob = new_pid()
+    a = State.join(a, alice, "lobby", :alice)
+    {c, [{{_, _, :alice}, _, _}], []} =
+        State.merge(c, State.extract(a, c.replica, c.context))
+
+    # netsplit between a and c
+    {a, [], []} = State.replica_down(a, {:c, 1})
+    {c, [], [{{_, _, :alice}, _, _}]} = State.replica_down(c, {:a, 1})
+
+    a = State.join(a, bob, "lobby", :bob)
+    {b, [{{_, _, :bob}, _, _}, {{_, _, :alice}, _, _}], []} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+    {c, [{{_, _, :bob}, _, _}], []} =
+      State.merge(c, State.extract(b, c.replica, c.context))
+
+    a = State.leave(a, bob, "lobby", :bob)
+    {b, [], [{{_, _, :bob}, _, _}]} =
+        State.merge(b, State.extract(a, b.replica, b.context))
+
+    assert {_, [], [{{_, _, :bob}, _, _}]} =
+        State.merge(c, State.extract(b, c.replica, c.context))
+  end
+
   test "get_by_pid", config do
     pid = self()
     state = new(:node1, config)
@@ -259,6 +306,36 @@ defmodule Phoenix.Tracker.StateTest do
     assert Enum.all?(Enum.map(b.clouds, fn {_, cloud} -> Enum.empty?(cloud) end))
   end
 
+  test "deltas are not merged for non-contiguous ranges", config do
+    s1 = new(:s1, config)
+    s2 = State.join(s1, new_pid(), "lobby", "user1", %{})
+    s3 = State.join(s2, new_pid(), "lobby", "user2", %{})
+    s4 = State.join(State.reset_delta(s3), new_pid(), "lobby", "user3", %{})
+
+    assert State.merge_deltas(s2.delta, s4.delta) == {:error, :not_contiguous}
+    assert State.merge_deltas(s4.delta, s2.delta) == {:error, :not_contiguous}
+  end
+
+  test "extracted state context contains only replicas known to remote replica",
+    config do
+    s1 = new(:s1, config)
+    s2 = new(:s2, config)
+    s3 = new(:s3, config)
+    {s1, _, _} = State.replica_up(s1, s2.replica)
+    {s2, _, _} = State.replica_up(s2, s1.replica)
+    {s2, _, _} = State.replica_up(s2, s3.replica)
+    s1 = State.join(s1, new_pid(), "lobby", "user1", %{})
+    s2 = State.join(s2, new_pid(), "lobby", "user2", %{})
+    s3 = State.join(s3, new_pid(), "lobby", "user3", %{})
+    {s1, _, _} = State.merge(s1, s2.delta)
+    {s2, _, _} = State.merge(s2, s1.delta)
+    {s2, _, _} = State.merge(s2, s3.delta)
+
+    {extracted, _} = State.extract(s2, s1.replica, s1.context)
+
+    assert extracted.context == %{{:s1, 1} => 1, {:s2, 1} => 1}
+  end
+
   test "merging deltas", config do
     s1 = new(:s1, config)
     s2 = new(:s2, config)
@@ -318,4 +395,19 @@ defmodule Phoenix.Tracker.StateTest do
     assert sorted_clouds(delta1.clouds) ==
       [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}, {{:s2, 1}, 3}]
   end
+
+  defp given_connected_cluster(nodes, config) do
+    states = Enum.map(nodes, fn n -> new(n, config) end)
+    replicas = Enum.map(states, fn s -> s.replica end)
+
+    Enum.map(states, fn s ->
+      Enum.reduce(replicas, s, fn replica, acc ->
+        case acc.replica == replica do
+          true -> acc
+          false -> State.replica_up(acc, replica) |> elem(0)
+        end
+      end)
+    end)
+  end
+
 end

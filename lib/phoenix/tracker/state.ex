@@ -233,7 +233,9 @@ defmodule Phoenix.Tracker.State do
     %State{state | values: map, clouds: pruned_clouds, range: {pruned_start, pruned_end}}
   end
   def extract(%State{mode: :normal, values: values, clouds: clouds} = state, remote_ref, remote_context) do
-    pruned_clouds = Map.take(clouds, Map.keys(remote_context))
+    known_keys = Map.keys(remote_context)
+    pruned_clouds = Map.take(clouds, known_keys)
+    pruned_context = Map.take(state.context, known_keys)
     # fn {{topic, pid, key}, meta, {replica, clock}} when replica !== remote_ref ->
     #  {{replica, clock}, {pid, topic, key, meta}}
     # end
@@ -251,7 +253,12 @@ defmodule Phoenix.Tracker.State do
         end
       end)
 
-    {%State{state | clouds: pruned_clouds, pids: nil, values: nil, delta: :unset}, Map.new(data)}
+    {%State{state |
+        clouds: pruned_clouds,
+        context: pruned_context,
+        pids: nil,
+        values: nil,
+        delta: :unset}, Map.new(data)}
   end
 
   @doc """
@@ -304,10 +311,15 @@ defmodule Phoenix.Tracker.State do
   @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
-    %State{context: remote_context, clouds: remote_clouds, replica: replica} = remote
+    %State{context: remote_context, clouds: remote_clouds} = remote
     init = {unioned_clouds, delta, []}
-    # fn {_, _, {^replica, _}} = result -> result end
-    ms = [{{:_, :_, {replica, :_}}, [], [:"$_"]}]
+    local_replica = local.replica
+    # fn {_, _, {replica, _}} = result when replica != local_replica -> result end
+    ms = [{
+      {:_, :_, {:"$1", :_}},
+      [{:"/=", :"$1", {:const, local_replica}}],
+      [:"$_"]
+    }]
 
     foldl(values, init, ms, fn {{topic, pid, key} = values_key, _, tag} = el, {clouds, delta, leaves} ->
       if not match?(%{^tag => _}, remote_map) and in?(remote_context, remote_clouds, tag) do
@@ -353,7 +365,10 @@ defmodule Phoenix.Tracker.State do
     %{values: local_values, range: {local_start, local_end}, context: local_context, clouds: local_clouds} = local
     %{range: {remote_start, remote_end}, context: remote_context, clouds: remote_clouds} = remote
 
-    if Clock.dominates_or_equal?(local_end, remote_start) do
+    if (Clock.dominates_or_equal?(remote_end, local_start) and
+        Clock.dominates_or_equal?(local_end, remote_start)) or
+       (Clock.dominates_or_equal?(local_end, remote_start) and
+        Clock.dominates_or_equal?(remote_end, local_start)) do
       new_start = Clock.lowerbound(local_start, remote_start)
       new_end = Clock.upperbound(local_end, remote_end)
       clouds = union_clouds(local, remote)
