@@ -71,6 +71,15 @@ defmodule Phoenix.Tracker.Clock do
     Map.merge(c1, c2, fn _, v1, v2 -> min(v1, v2) end)
   end
 
+  @doc """
+  Returns the clock with just provided replicas.
+  """
+  def filter_replicas(c, replicas), do: Map.take(c, replicas)
+
+  @doc """
+  Returns replicas from the given clock.
+  """
+  def replicas(c), do: Map.keys(c)
 
   defp filter_clocks(clockset, {node, clock}) do
     clockset

@@ -149,7 +149,7 @@ defmodule Phoenix.Tracker.StateTest do
     state = State.join(state, pid2, "topic", "key1", %{device: :ios})
     state = State.join(state, pid2, "topic", "key2", %{device: :ios})
 
-    assert [{^pid, %{device: :browser}}, {pid2, %{device: :ios}}] =
+    assert [{^pid, %{device: :browser}}, {_pid2, %{device: :ios}}] =
            State.get_by_key(state, "topic", "key1")
 
     assert State.get_by_key(state, "another_topic", "key1") == []

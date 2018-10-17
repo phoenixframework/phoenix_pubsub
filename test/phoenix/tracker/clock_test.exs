@@ -42,4 +42,17 @@ defmodule Phoenix.TrackerClockTest do
     assert Clock.lowerbound(%{}, %{a: 3, b: 1, d: 2}) == %{a: 3, b: 1, d: 2}
     assert Clock.lowerbound(%{a: 3, b: 1, d: 2}, %{}) == %{a: 3, b: 1, d: 2}
   end
+
+  test "filter replicas" do
+    assert Clock.filter_replicas(%{a: 1, b: 2, c: 3}, [:a, :b]) == %{a: 1, b: 2}
+    assert Clock.filter_replicas(%{a: 1, b: 2, c: 3}, [:a, :c]) == %{a: 1, c: 3}
+    assert Clock.filter_replicas(%{a: 1, b: 2, c: 3}, [:a, :d]) == %{a: 1}
+    assert Clock.filter_replicas(%{a: 1, b: 2, c: 3}, [:d]) == %{}
+  end
+
+  test "replicas" do
+    assert Clock.replicas(%{}) == []
+    assert Clock.replicas(%{a: 1}) == [:a]
+    assert Clock.replicas(%{a: 1, b: 2}) == [:a, :b]
+  end
 end
