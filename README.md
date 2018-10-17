@@ -16,20 +16,23 @@ def application do
   [applications: [:phoenix_pubsub]]
 end
 ```
-        
+
 ## Initialization (without Phoenix)
 ```elixir
 defmodule MyApp do
   use Application
 
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
 
     children = [
-      supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, []])
+      {Phoenix.PubSub.PG2, [MyApp.PubSub, []]}
     ]
 
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    opts = [
+      strategy: :one_for_one,
+      name:     MyApp.Supervisor
+    ]
+
     Supervisor.start_link(children, opts)
   end
 end
@@ -51,4 +54,3 @@ $ epmd -daemon
 ```
 
 before running the tests.
-
