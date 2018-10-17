@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.-dev
+
+* Bug fixes
+  * Fix issue causing empty deltas to be chosen for replication
+
 ## v1.1.0 (2018-08-10)
 
 * Enhancements
