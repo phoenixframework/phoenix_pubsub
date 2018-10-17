@@ -109,4 +109,48 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     assert {s3, [], []} = State.merge(s3, pruned_gen1)
     assert State.get_by_topic(s3, "lobby") == []
   end
+
+  test "whole state is extracted if there are no deltas", config do
+    pid = new_pid()
+    s1 = new(:r1, config)
+    s2 = State.join(s1, pid, "lobby", "user1", %{})
+
+    expected_state = %{s2 | pids: nil, values: nil, delta: :unset}
+    expected_values = %{{:r1, 1} => {pid, "lobby", "user1", %{}}}
+
+    assert DeltaGeneration.extract(s2, [], :r2, %{r1: 1}) ==
+      {expected_state, expected_values}
+  end
+
+  test "delta is extracted for the first delta with dominating clocks", config do
+    pid = new_pid()
+    s1 = new(:r1, config)
+    s2 = State.join(State.reset_delta(s1), pid, "lobby", "user1", %{})
+    d2 = s2.delta
+    s3 = State.join(State.reset_delta(s2), pid, "lobby", "user2", %{})
+    d3 = s3.delta
+
+    assert DeltaGeneration.extract(s3, [d2, d3], :r2, %{r1: 1}) == d3
+  end
+
+  test "an empty delta is not extracted", config do
+    pid = new_pid()
+    s1 = new(:r1, config)
+    s2 = State.join(s1, pid, "lobby", "user1", %{})
+    d1 = s2.delta
+    d2 = State.reset_delta(s2).delta
+
+    {d1_left, d1_right} = d1.range
+    d3 = %{d1 |
+      range: {Map.put(d1_left, :r2, 0), Map.put(d1_right, :r2, 1)},
+      values: Map.put(d1.values, {:r2, 1}, {pid, "lobby", "user2", %{}})}
+    s3 = %{s2 | delta: d3}
+
+    expected_delta = %{d3 |
+      clouds: %{},
+      range: {%{r2: 0}, %{r2: 1}},
+      values: %{{:r2, 1} => {pid, "lobby", "user2", %{}}}}
+
+    assert DeltaGeneration.extract(s3, [d2, d3], :r3, %{r2: 0}) == expected_delta
+  end
 end
