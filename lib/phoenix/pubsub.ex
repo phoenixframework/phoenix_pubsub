@@ -49,12 +49,12 @@ defmodule Phoenix.PubSub do
 
       iex> PubSub.subscribe :my_pubsub, "user:123"
       :ok
-      iex> Process.info(self())[:messages]
-      []
+      iex> Process.info(self(), :messages)
+      {:messages, []}
       iex> PubSub.broadcast :my_pubsub, "user:123", {:user_update, %{id: 123, name: "Shane"}}
       :ok
-      iex> Process.info(self())[:messages]
-      {:user_update, %{id: 123, name: "Shane"}}
+      iex> Process.info(self(), :messages)
+      {:messages, [{:user_update, %{id: 123, name: "Shane"}}]}
 
   ## Implementing your own adapter
 
