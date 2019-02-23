@@ -379,10 +379,11 @@ defmodule Phoenix.Tracker.State do
 
       merged_vals = for {tag, value} <- remote_values,
                     not match?(%{^tag => _}, local_values) and not in?(local_context, local_clouds, tag),
-                    into: filtered_locals,
                     do: {tag, value}
 
-      {:ok, %State{local | clouds: clouds, values: Map.new(merged_vals), range: {new_start, new_end}}}
+      all_vals = filtered_locals ++ merged_vals
+
+      {:ok, %State{local | clouds: clouds, values: Map.new(all_vals), range: {new_start, new_end}}}
     else
       {:error, :not_contiguous}
     end
