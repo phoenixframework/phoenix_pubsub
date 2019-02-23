@@ -1,10 +1,15 @@
 # Changelog
 
+## v1.1.2 (2019-02-23)
+
+* Bug fixes
+  * Avoid warnings when running on Elixir v1.8
+
 ## v1.1.1 (2018-10-17)
 
 * Bug fixes
   * Fix issue causing empty deltas to be chosen for replication
-  * Improve replication over netsplit 
+  * Improve replication over netsplit
 
 ## v1.1.0 (2018-08-10)
 
