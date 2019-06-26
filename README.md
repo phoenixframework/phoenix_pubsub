@@ -1,38 +1,41 @@
 # Phoenix.PubSub
+
 > Distributed PubSub and Presence platform for the Phoenix Framework
 
 [![Build Status](https://api.travis-ci.org/phoenixframework/phoenix_pubsub.svg)](https://travis-ci.org/phoenixframework/phoenix_pubsub)
 
-## Installation
-1. Add phoenix_pubsub to your list of dependencies in `mix.exs`:
+## Usage
+
+Add `phoenix_pubsub` to your list of dependencies in `mix.exs`:
+
 ```elixir
 def deps do
-  [{:phoenix_pubsub, "~> 1.0"}]
+  [{:phoenix_pubsub, "~> 2.0"}]
 end
 ```
-2. Ensure phoenix_pubsub is started before your application:
-```elixir
-def application do
-  [applications: [:phoenix_pubsub]]
-end
-```
-        
-## Initialization (without Phoenix)
+
+Then start your a PubSub instance:
+
 ```elixir
 defmodule MyApp do
   use Application
 
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-
     children = [
-      supervisor(Phoenix.PubSub.PG2, [MyApp.PubSub, []])
+      {Phoenix.PubSub, name: MyApp.PubSub}
     ]
 
     opts = [strategy: :one_for_one, name: MyApp.Supervisor]
     Supervisor.start_link(children, opts)
   end
 end
+```
+
+Now broadcast and subscribe:
+
+```elixir
+Phoenix.PubSub.subscribe(MyApp.PubSub, "user:123")
+Phoenix.PubSub.broadcast(MyApp.PubSub, "user:123", :hello_world)
 ```
 
 ## Testing
@@ -51,4 +54,3 @@ $ epmd -daemon
 ```
 
 before running the tests.
-

@@ -10,8 +10,10 @@ defmodule Phoenix.PubSub.PG2 do
 
   ## Adapter callbacks
 
+  @impl true
   def node_name(_), do: node()
 
+  @impl true
   def broadcast(adapter_name, topic, message, dispatcher) do
     case :pg2.get_members(pg2_namespace(adapter_name)) do
       {:error, {:no_such_group, _}} ->
@@ -28,6 +30,7 @@ defmodule Phoenix.PubSub.PG2 do
     end
   end
 
+  @impl true
   def direct_broadcast(adapter_name, node_name, topic, message, dispatcher) do
     send({adapter_name, node_name}, {:forward_to_local, topic, message, dispatcher})
     :ok
@@ -39,12 +42,14 @@ defmodule Phoenix.PubSub.PG2 do
 
   ## GenServer callbacks
 
+  @doc false
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     adapter_name = Keyword.fetch!(opts, :adapter_name)
     GenServer.start_link(__MODULE__, {name, adapter_name}, name: adapter_name)
   end
 
+  @impl true
   def init({name, adapter_name}) do
     pg2_group = pg2_namespace(adapter_name)
     :ok = :pg2.create(pg2_group)
@@ -57,6 +62,7 @@ defmodule Phoenix.PubSub.PG2 do
     {:noreply, pubsub}
   end
 
+  @impl true
   def handle_info(_, pubsub) do
     {:noreply, pubsub}
   end
