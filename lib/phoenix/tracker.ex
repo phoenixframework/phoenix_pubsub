@@ -107,7 +107,7 @@ defmodule Phoenix.Tracker do
   offloaded with a `Task.Supervisor` spawned process.
   """
   use Supervisor
-  import Supervisor.Spec
+
   alias Phoenix.Tracker.Shard
   require Logger
 
@@ -271,13 +271,20 @@ defmodule Phoenix.Tracker do
       for n <- 0..(pool_size - 1) do
         shard_name = Shard.name_for_number(name, n)
         shard_opts = Keyword.put(opts, :shard_number, n)
-        worker(Phoenix.Tracker.Shard, [tracker, tracker_opts, shard_opts],
-          id: shard_name)
+
+        %{
+          id: shard_name,
+          start: {Phoenix.Tracker.Shard, :start_link, [tracker, tracker_opts, shard_opts]}
+        }
       end
 
-    supervise(shards, strategy: :one_for_one,
+    opts = [
+      strategy: :one_for_one,
       max_restarts: pool_size * 2,
-      max_seconds: 1)
+      max_seconds: 1
+    ]
+
+    Supervisor.init(shards, opts)
   end
 
   defp pool_size(tracker_name) do
