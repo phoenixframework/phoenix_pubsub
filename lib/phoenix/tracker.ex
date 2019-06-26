@@ -49,7 +49,10 @@ defmodule Phoenix.Tracker do
 
   To start a tracker, first add the tracker to your supervision tree:
 
-      worker(MyTracker, [[name: MyTracker, pubsub_server: MyPubSub]])
+      children = [
+        # ...
+        {MyTracker, [name: MyTracker, pubsub_server: MyApp.PubSub]}
+      ]
 
   Next, implement `MyTracker` with support for the `Phoenix.Tracker`
   behaviour callbacks. An example of a minimal tracker could include:
