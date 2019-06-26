@@ -1,52 +1,18 @@
 defmodule Phoenix.PubSub do
   @moduledoc """
-  Front-end to Phoenix pubsub layer.
+  Realtime Publisher/Subscriber servicec.
 
-  Used internally by Channels for pubsub broadcast but
-  also provides an API for direct usage.
+  ## Getting started
 
-  ## Adapters
+  You start Phoenix.PubSub directly in your supervision
+  tree:
 
-  Phoenix pubsub was designed to be flexible and support
-  multiple backends. We currently ship with two backends:
-
-    * `Phoenix.PubSub.PG2` - uses Distributed Elixir,
-      directly exchanging notifications between servers
-
-    * `Phoenix.PubSub.Redis` - uses Redis to exchange
-      data between servers
-
-  Pubsub adapters are often configured in your endpoint:
-
-      config :my_app, MyApp.Endpoint,
-        pubsub: [adapter: Phoenix.PubSub.PG2,
-                 pool_size: 1,
-                 name: MyApp.PubSub]
-
-  The configuration above takes care of starting the
-  pubsub backend and exposing its functions via the
-  endpoint module. If no adapter but a name is given,
-  nothing will be started, but the pubsub system will
-  work by sending events and subscribing to the given
-  name.
-
-  ## Direct usage
-
-  It is also possible to use `Phoenix.PubSub` directly
-  or even run your own pubsub backends outside of an
-  Endpoint.
-
-  The first step is to start the adapter of choice in your
-  supervision tree:
-
-      supervisor(Phoenix.PubSub.Redis, [:my_pubsub, host: "192.168.100.1"])
-
-  The configuration above will start a Redis pubsub and
-  register it with name `:my_pubsub`.
+      {Phoenix.PubSub, name: :my_pubsub}
 
   You can now use the functions in this module to subscribe
   and broadcast messages:
 
+      iex> alias Phoenix.PubSub
       iex> PubSub.subscribe :my_pubsub, "user:123"
       :ok
       iex> Process.info(self(), :messages)
@@ -56,58 +22,71 @@ defmodule Phoenix.PubSub do
       iex> Process.info(self(), :messages)
       {:messages, [{:user_update, %{id: 123, name: "Shane"}}]}
 
-  ## Implementing your own adapter
+  ## Adapters
 
-  PubSub adapters run inside their own supervision tree.
-  If you are interested in providing your own adapter,  let's
-  call it `Phoenix.PubSub.MyQueue`, the first step is to provide
-  a supervisor module that receives the server name and a bunch
-  of options on `start_link/2`:
+  Phoenix PubSub was designed to be flexible and support
+  multiple backends. There are two officially supported
+  backends:
 
-      defmodule Phoenix.PubSub.MyQueue do
-        def start_link(name, options) do
-          Supervisor.start_link(__MODULE__, {name, options},
-                                name: Module.concat(name, Supervisor))
-        end
+    * `Phoenix.PubSub.PG2` - the default adapter that ships
+      as part of Phoenix.PubSub. It uses Distributed Elixir,
+      directly exchanging notifications between servers
 
-        def init({name, options}) do
-          ...
-        end
-      end
+    * `Phoenix.PubSub.Redis` - uses Redis to exchange
+      data between servers. It requires the
+      `:phoenix_pubsub_redis` dependency
 
-  On `init/1`, you will define the supervision tree and use the given
-  `name` to register the main pubsub process locally. This process must
-  be able to handle the following GenServer calls:
+  See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 
-    * `subscribe` - subscribes the given pid to the given topic
-      sends:        `{:subscribe, pid, topic, opts}`
-      respond with: `:ok | {:error, reason} | {:perform, {m, f, a}}`
+  ## Custom dispatching
 
-    * `unsubscribe` - unsubscribes the given pid from the given topic
-      sends:        `{:unsubscribe, pid, topic}`
-      respond with: `:ok | {:error, reason} | {:perform, {m, f, a}}`
+  Phoenix.PubSub allows developers to perform custom dispatching
+  by passing a `dispatcher` module which is responsible for local
+  message deliveries.
 
-    * `broadcast` - broadcasts a message on the given topic
-      sends:        `{:broadcast, :none | pid, topic, message}`
-      respond with: `:ok | {:error, reason} | {:perform, {m, f, a}}`
+  The dispatcher must be available on all nodes running the PubSub
+  system. The `dispatch/3` function of the given module will be
+  invoked with the subscriptions entries, the broadcaster identifier
+  (either a pid or `:none`), and the message to broadcast.
 
-  ### Offloading work to clients via MFA response
-
-  The `Phoenix.PubSub` API allows any of its functions to handle a
-  response from the adapter matching `{:perform, {m, f, a}}`. The PubSub
-  client will recursively invoke all MFA responses until a result is
-  returned. This is useful for offloading work to clients without blocking
-  your PubSub adapter. See `Phoenix.PubSub.PG2` implementation for examples.
+  You may want to use the dispatcher to perform special delivery for
+  certain subscriptions. This can be done by passing the :metadata
+  option during subscriptions. For instance, Phoenix Channels use a
+  custom `value` to provide "fastlaning", allowing messages broadcast
+  to thousands or even millions of users to be encoded once and written
+  directly to sockets instead of being encoded per channel.
   """
 
   @type node_name :: atom | binary
+  @type t :: atom
+  @type topic :: binary
+  @type message :: term
+  @type dispatcher :: module
 
   defmodule BroadcastError do
     defexception [:message]
+
     def exception(msg) do
-      %BroadcastError{message: "broadcast failed with #{inspect msg}"}
+      %BroadcastError{message: "broadcast failed with #{inspect(msg)}"}
     end
   end
+
+  @doc """
+  Returns a child specifiction for pubsub with the given `options`.
+
+  The `:name` is required as part of `options`. The remaining options
+  are described below.
+
+  ## Options
+
+    * `:name` - the name of the pubsub to be started
+    * `:adapter` - the adapter to use (defauls to `Phoenix.PubSub.PG2`)
+    * `:pool_size` - number of pubsub partitions to launch
+      (defaults to one partition for every 4 cores)
+
+  """
+  @spec child_spec(keyword) :: Supervisor.child_spec()
+  defdelegate child_spec(options), to: Phoenix.PubSub.Supervisor
 
   @doc """
   Subscribes the caller to the PubSub adapter's topic.
@@ -126,166 +105,185 @@ defmodule Phoenix.PubSub do
 
   ## Options
 
-    * `:link` - links the subscriber to the pubsub adapter
-    * `:fastlane` - Provides a fastlane path for the broadcasts for
-      `%Phoenix.Socket.Broadcast{}` events. The fastlane process is
-      notified of a cached message instead of the normal subscriber.
-      Fastlane handlers must implement `fastlane/1` callbacks which accepts
-      a `Phoenix.Socket.Broadcast` struct and returns a fastlaned format
-      for the handler. For example:
+    * `:metadata` - provides metadata to be attached to this
+      subscription. The metadata can be used by custom
+      dispatching mechanisms. See the "Custom dispatching"
+      section in the module documentation
 
-          PubSub.subscribe(MyApp.PubSub, "topic1",
-            fastlane: {fast_pid, Phoenix.Transports.WebSocketSerializer, ["event1"]})
   """
-  @spec subscribe(atom, pid, binary) :: :ok | {:error, term}
-  def subscribe(server, pid, topic)
-    when is_atom(server) and is_pid(pid) and is_binary(topic) do
-    subscribe(server, pid, topic, [])
-  end
-  @spec subscribe(atom, binary, Keyword.t) :: :ok | {:error, term}
-  def subscribe(server, topic, opts)
-    when is_atom(server) and is_binary(topic) and is_list(opts) do
-    call(server, :subscribe, [self(), topic, opts])
-  end
-  @spec subscribe(atom, binary) :: :ok | {:error, term}
-  def subscribe(server, topic) when is_atom(server) and is_binary(topic) do
-    subscribe(server, topic, [])
-  end
-  @spec subscribe(atom, pid, binary, Keyword.t) :: :ok | {:error, term}
-  def subscribe(server, pid, topic, opts) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.subscribe is deprecated. " <>
-                      "Only the calling process may subscribe to topics"
-    call(server, :subscribe, [pid, topic, opts])
+  @spec subscribe(t, topic, keyword) :: :ok | {:error, term}
+  def subscribe(pubsub, topic, opts \\ [])
+      when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
+    case Registry.register(pubsub, topic, opts[:metadata]) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
   end
 
   @doc """
   Unsubscribes the caller from the PubSub adapter's topic.
   """
-  @spec unsubscribe(atom, pid, binary) :: :ok | {:error, term}
-  def unsubscribe(server, pid, topic) when is_atom(server) do
-    IO.write :stderr, "[warning] Passing a Pid to Phoenix.PubSub.unsubscribe is deprecated. " <>
-                      "Only the calling process may unsubscribe from topics"
-    call(server, :unsubscribe, [pid, topic])
-  end
-
-  @spec unsubscribe(atom, binary) :: :ok | {:error, term}
-  def unsubscribe(server, topic) when is_atom(server) do
-    call(server, :unsubscribe, [self(), topic])
+  @spec unsubscribe(t, topic) :: :ok
+  def unsubscribe(pubsub, topic) when is_atom(pubsub) and is_binary(topic) do
+    Registry.unregister(pubsub, topic)
   end
 
   @doc """
-  Broadcasts message on given topic.
+  Broadcasts message on given topic across the whole cluster.
 
-    * `server` - The Pid or registered server name and optional node to
-      scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
+    * `pubsub` - The name of the pubsub sytem
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
+  A custom dispatcher may also be given as a fourth, optional argument.
+  See the "Custom dispatching" section in the module documentation.
   """
-  @spec broadcast(atom, binary, term) :: :ok | {:error, term}
-  def broadcast(server, topic, message) when is_atom(server) or is_tuple(server),
-    do: call(server, :broadcast, [:none, topic, message])
+  @spec broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
+  def broadcast(pubsub, topic, message, dispatcher \\ __MODULE__)
+      when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
+    {:ok, {adapter, name}} = Registry.meta(pubsub, :pubsub)
 
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
+      dispatch(pubsub, :none, topic, message, dispatcher)
+    end
+  end
 
   @doc """
-  Broadcasts message on given topic, to a single node.
+  Broadcasts message on given topic from the given process across the whole cluster.
 
-    * `node` - The name of the node to broadcast the message on
-    * `server` - The Pid or registered server name and optional node to
-      scope the broadcast, for example: `MyApp.PubSub`, `{MyApp.PubSub, :a@node}`
+    * `pubsub` - The name of the pubsub sytem
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
+  A custom dispatcher may also be given as a fourth, optional argument.
+  See the "Custom dispatching" section in the module documentation.
   """
-  @spec direct_broadcast(node_name, atom, binary, term) :: :ok | {:error, term}
-  def direct_broadcast(node_name, server, topic, message) when is_atom(server),
-    do: call(server, :direct_broadcast, [node_name, :none, topic, message])
+  @spec broadcast_from(t, pid, topic, message, dispatcher) :: :ok | {:error, term}
+  def broadcast_from(pubsub, from, topic, message, dispatcher \\ __MODULE__)
+      when is_atom(pubsub) and is_pid(from) and is_binary(topic) and is_atom(dispatcher) do
+    {:ok, {adapter, name}} = Registry.meta(pubsub, :pubsub)
 
-  @doc """
-  Broadcasts message on given topic.
-
-  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
-  """
-  @spec broadcast!(atom, binary, term) :: :ok | no_return
-  def broadcast!(server, topic, message) do
-    case broadcast(server, topic, message) do
-      :ok -> :ok
-      {:error, reason} -> raise BroadcastError, message: reason
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
+      dispatch(pubsub, from, topic, message, dispatcher)
     end
   end
 
   @doc """
-  Broadcasts message on given topic, to a single node.
+  Broadcasts message on given topic only for the current node.
 
-  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
+    * `pubsub` - The name of the pubsub sytem
+    * `topic` - The topic to broadcast to, ie: `"users:123"`
+    * `message` - The payload of the broadcast
+
+  A custom dispatcher may also be given as a fourth, optional argument.
+  See the "Custom dispatching" section in the module documentation.
   """
-  @spec direct_broadcast!(node_name, atom, binary, term) :: :ok | no_return
-  def direct_broadcast!(node_name, server, topic, message) do
-    case direct_broadcast(node_name, server, topic, message) do
+  @spec local_broadcast(t, topic, message, dispatcher) :: :ok
+  def local_broadcast(pubsub, topic, message, dispatcher \\ __MODULE__)
+      when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
+    dispatch(pubsub, :none, topic, message, dispatcher)
+  end
+
+  @doc """
+  Broadcasts message on given topic from a given process only for the current node.
+
+    * `pubsub` - The name of the pubsub sytem
+    * `topic` - The topic to broadcast to, ie: `"users:123"`
+    * `message` - The payload of the broadcast
+
+  A custom dispatcher may also be given as a fifth, optional argument.
+  See the "Custom dispatching" section in the module documentation.
+  """
+  @spec local_broadcast_from(t, pid, topic, message, dispatcher) :: :ok
+  def local_broadcast_from(pubsub, from, topic, message, dispatcher \\ __MODULE__)
+      when is_atom(pubsub) and is_pid(from) and is_binary(topic) and is_atom(dispatcher) do
+    dispatch(pubsub, from, topic, message, dispatcher)
+  end
+
+  @doc """
+  Broadcasts message on given topic to a given node.
+
+    * `node_name` - The target node name
+    * `pubsub` - The name of the pubsub sytem
+    * `topic` - The topic to broadcast to, ie: `"users:123"`
+    * `message` - The payload of the broadcast
+
+  **DO NOT** use this function if you wish to broadcast to the current
+  node, as it is always serialized, use `local_broadcast/4` instead.
+
+  A custom dispatcher may also be given as a fifth, optional argument.
+  See the "Custom dispatching" section in the module documentation.
+  """
+  @spec direct_broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
+  def direct_broadcast(node_name, pubsub, topic, message, dispatcher \\ __MODULE__)
+      when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
+    {:ok, {adapter, name}} = Registry.meta(pubsub, :pubsub)
+    adapter.direct_broadcast(name, node_name, topic, message, dispatcher)
+  end
+
+  @doc """
+  Raising version of `broadcast!/4`.
+  """
+  @spec broadcast!(t, topic, message, dispatcher) :: :ok | no_return
+  def broadcast!(pubsub, topic, message, dispatcher \\ __MODULE__) do
+    case broadcast(pubsub, topic, message, dispatcher) do
       :ok -> :ok
-      {:error, reason} -> raise BroadcastError, message: reason
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
     end
   end
 
   @doc """
-  Broadcasts message to all but `from_pid` on given topic.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
+  Raising version of `broadcast_from!/5`.
   """
-  @spec broadcast_from(atom, pid, binary, term) :: :ok | {:error, term}
-  def broadcast_from(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid),
-    do: call(server, :broadcast, [from_pid, topic, message])
-
-  @doc """
-  Broadcasts message to all but `from_pid` on given topic, to a single node.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
-  """
-  @spec direct_broadcast_from(node_name, atom, pid, binary, term) :: :ok | {:error, term}
-  def direct_broadcast_from(node_name, server, from_pid, topic, message)
-    when is_atom(server) and is_pid(from_pid),
-    do: call(server, :direct_broadcast, [node_name, from_pid, topic, message])
-
-  @doc """
-  Broadcasts message to all but `from_pid` on given topic.
-
-  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
-  """
-  @spec broadcast_from!(atom | {atom, atom}, pid, binary, term) :: :ok | no_return
-  def broadcast_from!(server, from_pid, topic, message) when is_atom(server) and is_pid(from_pid) do
-    case broadcast_from(server, from_pid, topic, message) do
+  @spec broadcast_from!(t, pid, topic, message, dispatcher) :: :ok | no_return
+  def broadcast_from!(pubsub, from, topic, message, dispatcher \\ __MODULE__) do
+    case broadcast_from(pubsub, from, topic, message, dispatcher) do
       :ok -> :ok
-      {:error, reason} -> raise BroadcastError, message: reason
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
     end
   end
 
   @doc """
-  Broadcasts message to all but `from_pid` on given topic, to a single node.
-
-  Raises `Phoenix.PubSub.BroadcastError` if broadcast fails.
-  See `Phoenix.PubSub.broadcast/3` for usage details.
+  Raising version of `direct_broadcast!/5`.
   """
-  @spec direct_broadcast_from!(node_name, atom, pid, binary, term) :: :ok | no_return
-  def direct_broadcast_from!(node_name, server, from_pid, topic, message)
-    when is_atom(server) and is_pid(from_pid) do
-
-    case direct_broadcast_from(node_name, server, from_pid, topic, message) do
+  @spec direct_broadcast!(node_name, t, topic, message, dispatcher) :: :ok | no_return
+  def direct_broadcast!(node_name, pubsub, topic, message, dispatcher \\ __MODULE__) do
+    case direct_broadcast(node_name, pubsub, topic, message, dispatcher) do
       :ok -> :ok
-      {:error, reason} -> raise BroadcastError, message: reason
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
     end
   end
 
   @doc """
   Returns the node name of the PubSub server.
   """
-  @spec node_name(atom) :: atom :: binary
-  def node_name(server) do
-    call(server, :node_name, [])
+  @spec node_name(t) :: node_name
+  def node_name(pubsub) do
+    {:ok, {adapter, name}} = Registry.meta(pubsub, :pubsub)
+    adapter.node_name(name)
   end
 
-  defp call(server, kind, args) do
-    [{^kind, module, head}] = :ets.lookup(server, kind)
-    apply(module, kind, head ++ args)
+  ## Dispatch callback
+
+  @doc false
+  def dispatch(entries, :none, message) do
+    for {pid, _} <- entries do
+      send(pid, message)
+    end
+
+    :ok
+  end
+
+  def dispatch(entries, from, message) do
+    for {pid, _} <- entries, pid != from do
+      send(pid, message)
+    end
+
+    :ok
+  end
+
+  defp dispatch(pubsub, from, topic, message, dispatcher) do
+    Registry.dispatch(pubsub, topic, {dispatcher, :dispatch, [from, message]})
+    :ok
   end
 end

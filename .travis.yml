@@ -1,18 +1,12 @@
 language: elixir
-elixir:
-  - 1.4
-  - 1.5
-  - 1.6
-otp_release:
-  - 19.3
-  - 20.3
-  - 21.0
+elixir: 1.6
+otp_release: 19.3
 matrix:
-  exclude:
-    - elixir: 1.5
-      otp_release: 21.0
-    - elixir: 1.4
-      otp_release: 21.0
+  include:
+    - elixir: 1.7
+      otp_release: 20.3
+    - elixir: 1.8
+      otp_release: 21.3
 sudo: false
 before_script:
   - epmd -daemon

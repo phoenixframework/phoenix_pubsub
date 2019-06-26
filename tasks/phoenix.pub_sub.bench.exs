@@ -5,10 +5,11 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
   ## Examples
 
       mix phoenix.pub_sub.bench --size 25000 --delta-size 1000
+
   """
   use Mix.Task
-  alias Phoenix.Tracker.State
 
+  alias Phoenix.Tracker.State
 
   def run(opts) do
     Mix.Task.run("app.start", [])

@@ -1,14 +1,12 @@
 defmodule Phoenix.PubSub.Cluster do
 
-  def spawn do
+  def spawn(nodes) do
     # Turn node into a distributed node with the given long name
     :net_kernel.start([:"primary@127.0.0.1"])
 
     # Allow spawned nodes to fetch all code from this node
     :erl_boot_server.start([])
     allow_boot to_charlist("127.0.0.1")
-
-    nodes = Application.get_env(:phoenix_pubsub, :nodes, [])
 
     nodes
     |> Enum.map(&Task.async(fn -> spawn_node(&1) end))
@@ -20,6 +18,7 @@ defmodule Phoenix.PubSub.Cluster do
     add_code_paths(node)
     transfer_configuration(node)
     ensure_applications_started(node)
+    start_pubsub(node)
     {:ok, node}
   end
 
@@ -54,6 +53,15 @@ defmodule Phoenix.PubSub.Cluster do
     for {app_name, _, _} <- Application.loaded_applications do
       rpc(node, Application, :ensure_all_started, [app_name])
     end
+  end
+
+  defp start_pubsub(node) do
+    args = [
+      [{Phoenix.PubSub, name: Phoenix.PubSubTest, pool_size: 1}],
+      [strategy: :one_for_one]
+    ]
+
+    rpc(node, Supervisor, :start_link, args)
   end
 
   defp node_name(node_host) do

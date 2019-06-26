@@ -3,13 +3,13 @@ Enum.each(Path.wildcard("tasks/*.exs"), &Code.require_file/1)
 defmodule Phoenix.PubSub.Mixfile do
   use Mix.Project
 
-  @version "1.1.2"
+  @version "2.0.0-dev"
 
   def project do
     [
       app: :phoenix_pubsub,
       version: @version,
-      elixir: "~> 1.4",
+      elixir: "~> 1.6",
       description: "Distributed PubSub and Presence platform",
       homepage_url: "http://www.phoenixframework.org",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -25,13 +25,11 @@ defmodule Phoenix.PubSub.Mixfile do
   def application do
     [
       applications: [:logger, :crypto],
-      mod: {Phoenix.PubSub.Supervisor, []}
     ]
   end
 
   defp deps do
     [
-      {:dialyze, "~> 0.2.0", only: :dev},
       {:ex_doc, ">= 0.0.0", only: :docs}
     ]
   end

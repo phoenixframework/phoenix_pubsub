@@ -2,7 +2,7 @@ defmodule Phoenix.PubSub.NodeCase do
   @timeout 1000
   @heartbeat 100
   @permdown 1500
-  @pubsub Phoenix.PubSub.Test.PubSub
+  @pubsub Phoenix.PubSubTest
 
   defmacro __using__(opts \\ []) do
     quote do
@@ -60,8 +60,7 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def graceful_permdown(node_name, server) do
-    call_node(node_name,
-      fn -> Phoenix.Tracker.Shard.graceful_permdown(server) end)
+    call_node(node_name, fn -> Phoenix.Tracker.Shard.graceful_permdown(server) end)
   end
 
   def drop_gossips(server) do
@@ -73,8 +72,7 @@ defmodule Phoenix.PubSub.NodeCase do
   end
 
   def start_shard(opts) do
-    opts = Keyword.merge(default_tracker_opts(),
-      Keyword.put_new(opts, :report_events_to, self()))
+    opts = Keyword.merge(default_tracker_opts(), Keyword.put_new(opts, :report_events_to, self()))
     Phoenix.Tracker.Shard.start_link(TestTracker, opts, opts)
   end
 
@@ -100,12 +98,6 @@ defmodule Phoenix.PubSub.NodeCase do
   def track_presence(node_name, server, pid, topic, user_id, meta) do
     call_node(node_name, fn ->
       Phoenix.Tracker.Shard.track(server, pid, topic, user_id, meta)
-    end)
-  end
-
-  def start_pubsub(node_name, adapter, server_name, opts) do
-    call_node(node_name, fn ->
-      adapter.start_link(server_name, opts)
     end)
   end
 

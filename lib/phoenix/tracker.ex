@@ -58,6 +58,8 @@ defmodule Phoenix.Tracker do
   behaviour callbacks. An example of a minimal tracker could include:
 
       defmodule MyTracker do
+        use GenServer
+
         @behaviour Phoenix.Tracker
 
         def start_link(opts) do
