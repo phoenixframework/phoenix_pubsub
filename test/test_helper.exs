@@ -1,5 +1,5 @@
 Logger.configure(level: :info)
-Application.put_env(:phoenix_pubsub, :test_adapter, Phoenix.PubSub.PG2)
+Application.put_env(:phoenix_pubsub, :test_adapter, {Phoenix.PubSub.PG2, []})
 exclude = Keyword.get(ExUnit.configuration(), :exclude, [])
 
 Supervisor.start_link(
