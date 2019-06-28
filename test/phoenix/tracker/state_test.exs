@@ -409,5 +409,4 @@ defmodule Phoenix.Tracker.StateTest do
       end)
     end)
   end
-
 end

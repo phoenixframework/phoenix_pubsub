@@ -58,9 +58,7 @@ defmodule Phoenix.Tracker do
   behaviour callbacks. An example of a minimal tracker could include:
 
       defmodule MyTracker do
-        use GenServer
-
-        @behaviour Phoenix.Tracker
+        use Phoenix.Tracker
 
         def start_link(opts) do
           opts = Keyword.merge([name: __MODULE__], opts)
@@ -106,8 +104,6 @@ defmodule Phoenix.Tracker do
   crash the tracker server, so operations that may crash the server should be
   offloaded with a `Task.Supervisor` spawned process.
   """
-  use Supervisor
-
   alias Phoenix.Tracker.Shard
   require Logger
 
@@ -116,6 +112,30 @@ defmodule Phoenix.Tracker do
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
+
+  defmacro __using__(_opts) do
+    quote location: :keep do
+      @behaviour Phoenix.Tracker
+
+      if Module.get_attribute(__MODULE__, :doc) == nil do
+        @doc """
+        Returns a specification to start this module under a supervisor.
+
+        See `Supervisor`.
+        """
+      end
+
+      def child_spec(init_arg) do
+        default = %{
+          id: __MODULE__,
+          start: {__MODULE__, :start_link, [init_arg]},
+          type: :supervisor
+        }
+      end
+
+      defoverridable child_spec: 1
+    end
+  end
 
   ## Client
 
