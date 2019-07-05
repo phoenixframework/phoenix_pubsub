@@ -19,6 +19,7 @@ defmodule Phoenix.Tracker.State do
   @type key_meta   :: {key, meta}
   @type delta      :: %State{mode: :delta}
   @type pid_lookup :: {pid, topic, key}
+  @type tag_lookup :: {tag, {topic, pid, key}}
 
   @type t :: %State{
     replica:  name,
@@ -26,6 +27,7 @@ defmodule Phoenix.Tracker.State do
     clouds:   clouds,
     values:   values,
     pids:     ets_id,
+    tags:     ets_id,
     mode:     :unset | :delta | :normal,
     delta:    :unset | delta,
     replicas: %{name => :up | :down},
@@ -37,6 +39,7 @@ defmodule Phoenix.Tracker.State do
             clouds: %{},
             values: nil,
             pids: nil,
+            tags: nil,
             mode: :unset,
             delta: :unset,
             replicas: %{},
@@ -61,6 +64,7 @@ defmodule Phoenix.Tracker.State do
       mode: :normal,
       values: :ets.new(shard_name, [:named_table, :protected, :ordered_set]),
       pids: :ets.new(:pids, [:duplicate_bag]),
+      tags: :ets.new(:tags, [:duplicate_bag]),
       replicas: %{replica => :up}})
   end
 
@@ -159,7 +163,11 @@ defmodule Phoenix.Tracker.State do
   defp not_in(_pos, []), do: []
   defp not_in(pos, replicas), do: [not: ors(pos, replicas)]
   defp ors(pos, [rep]), do: {:"=:=", pos, {rep}}
-  defp ors(pos, [rep | rest]), do: {:or, {:"=:=", pos, {rep}}, ors(pos, rest)}
+  defp ors(pos, [rep | rest]), do: {:orelse, {:"=:=", pos, {rep}}, ors(pos, rest)}
+
+  defp or_filter(x, nil), do: x
+  defp or_filter(nil, y), do: y
+  defp or_filter(x, y), do: {:orelse, x, y}
 
   @doc """
   Returns the element matching the pid, topic, and key.
@@ -257,6 +265,7 @@ defmodule Phoenix.Tracker.State do
         clouds: pruned_clouds,
         context: pruned_context,
         pids: nil,
+        tags: nil,
         values: nil,
         delta: :unset}, Map.new(data)}
   end
@@ -282,10 +291,11 @@ defmodule Phoenix.Tracker.State do
   end
 
   defp merge(local, remote, remote_map) do
-    {pids, joins} = accumulate_joins(local, remote_map)
+    {pids, joins, tags} = accumulate_joins(local, remote_map)
     {clouds, delta, leaves} = observe_removes(local, remote, remote_map)
     true = :ets.insert(local.values, joins)
     true = :ets.insert(local.pids, pids)
+    true = :ets.insert(local.tags, tags)
     known_remote_context = Map.take(remote.context, Map.keys(local.context))
     ctx = Clock.upperbound(local.context, known_remote_context)
     new_state =
@@ -296,40 +306,78 @@ defmodule Phoenix.Tracker.State do
     {new_state, joins, leaves}
   end
 
-  @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
+  @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values], [tag_lookup]}
   defp accumulate_joins(local, remote_map) do
     %State{context: context, clouds: clouds} = local
-    Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds} ->
+    Enum.reduce(remote_map, {[], [], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds, tags} ->
       if not match?(%{^replica => _}, context) or in?(context, clouds, tag) do
-        {pids, adds}
+        {pids, adds, tags}
       else
-        {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
+        {
+          [{pid, topic, key} | pids],
+          [{{topic, pid, key}, meta, tag} | adds],
+          [{tag, {topic, pid, key}} | tags]
+        }
       end
     end)
   end
 
   @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
-  defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
+  defp observe_removes(%State{pids: pids, tags: tags, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
     %State{context: remote_context, clouds: remote_clouds} = remote
     init = {unioned_clouds, delta, []}
     local_replica = local.replica
-    # fn {_, _, {replica, _}} = result when replica != local_replica -> result end
-    ms = [{
-      {:_, :_, {:"$1", :_}},
-      [{:"/=", :"$1", {:const, local_replica}}],
-      [:"$_"]
-    }]
 
-    foldl(values, init, ms, fn {{topic, pid, key} = values_key, _, tag} = el, {clouds, delta, leaves} ->
-      if not match?(%{^tag => _}, remote_map) and in?(remote_context, remote_clouds, tag) do
-        :ets.delete(values, values_key)
-        :ets.match_delete(pids, {pid, topic, key})
-        {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves]}
-      else
-        {clouds, delta, leaves}
+    records_to_remove_from_remote_clouds =
+      Enum.flat_map(remote_clouds, fn {replica, cloud} ->
+        if replica == local_replica do
+          []
+        else
+          Enum.reject(cloud, &tag_in_remote_map?(&1, remote_map))
+        end
+      end)
+
+    records_to_remove_from_remote_context =
+      tags
+      |> records_from_remote_context(remote_context, local_replica)
+      |> Enum.reject(&tag_in_remote_map?(&1, remote_map))
+
+    records_to_remove = MapSet.new(records_to_remove_from_remote_context ++ records_to_remove_from_remote_clouds)
+
+    Enum.reduce(records_to_remove, init, fn tag, {clouds, delta, leaves} ->
+      case :ets.lookup(tags, tag) do
+        [{_tag, {topic, pid, key} = values_key}] ->
+          [el] = :ets.lookup(values, values_key)
+
+          :ets.delete(values, values_key)
+          :ets.match_delete(pids, {pid, topic, key})
+          :ets.delete(tags, tag)
+
+          {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves]}
+        [] ->
+          {clouds, delta, leaves}
       end
     end)
+  end
+
+  defp records_from_remote_context(tags, remote_context, local_replica) do
+    in_remote_ctx_filter = Enum.reduce(remote_context, nil, fn {replica, clock}, acc ->
+      if replica == local_replica do
+        or_filter(acc, nil)
+      else
+        or_filter(acc, {:andalso,
+                         {:==, :"$1", {:const, replica}},
+                         {:<, :"$2", clock}})
+      end
+    end)
+
+    if in_remote_ctx_filter do
+      ms = [{{{:"$1", :"$2"}, :_}, [in_remote_ctx_filter], [{{:"$1", :"$2"}}]}]
+      :ets.select(tags, ms)
+    else
+      %{}
+    end
   end
 
   defp put_tag(clouds, {name, _clock} = tag) do
@@ -411,17 +459,20 @@ defmodule Phoenix.Tracker.State do
   Removes all elements for replicas that are permanently gone.
   """
   @spec remove_down_replicas(t, name) :: t
-  def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids} = state, replica) do
+  def remove_down_replicas(%State{mode: :normal, context: ctx, values: values, pids: pids, tags: tags} = state, replica) do
     new_ctx = Map.delete(ctx, replica)
-    # fn {key, _, {^replica, _}} -> key end
-    ms = [{{:"$1", :_, {replica, :_}}, [], [:"$1"]}]
 
+    # fn {{^replica, _}, _} = record -> record end
+    ms = [{{{replica, :_}, :_}, [], [:"$_"]}]
 
-    foldl(values, nil, ms, fn {topic, pid, key} = values_key, _ ->
+    foldl(tags, nil, ms, fn {tag, {topic, pid, key} = values_key}, _ ->
       :ets.delete(values, values_key)
       :ets.match_delete(pids, {pid, topic, key})
+      :ets.delete(tags, tag)
+
       nil
     end)
+
     new_clouds = Map.delete(state.clouds, replica)
     new_delta = remove_down_replicas(state.delta, replica)
 
@@ -462,15 +513,17 @@ defmodule Phoenix.Tracker.State do
     tag = tag(state)
     true = :ets.insert(state.values, {{topic, pid, key}, meta, tag})
     true = :ets.insert(state.pids, {pid, topic, key})
+    true = :ets.insert(state.tags, {tag, {topic, pid, key}})
     new_delta = %State{delta | values: Map.put(delta.values, tag, {pid, topic, key, meta})}
     %State{state | delta: new_delta}
   end
 
   @spec remove(t, pid, topic, key) :: t
-  defp remove(%State{pids: pids, values: values} = state, pid, topic, key) do
+  defp remove(%State{pids: pids, tags: tags, values: values} = state, pid, topic, key) do
     [{{^topic, ^pid, ^key}, _meta, tag}] = :ets.lookup(values, {topic, pid, key})
-    1 = :ets.select_delete(values, [{{{topic, pid, key}, :_, :_}, [], [true]}])
-    1 = :ets.select_delete(pids, [{{pid, topic, key}, [], [true]}])
+    :ets.delete(values, {topic, pid, key})
+    :ets.delete(tags, tag)
+    :ets.match_delete(pids, {pid, topic, key})
     pruned_clouds = delete_tag(state.clouds, tag)
     new_delta = remove_delta_tag(state.delta, tag)
 
@@ -491,7 +544,7 @@ defmodule Phoenix.Tracker.State do
   def compact(%State{context: ctx, clouds: clouds} = state) do
     {new_ctx, new_clouds} =
       Enum.reduce(clouds, {ctx, clouds}, fn {name, cloud}, {ctx_acc, clouds_acc} ->
-        {new_ctx, new_cloud} = do_compact(ctx_acc, Enum.sort(MapSet.to_list(cloud)))
+        {new_ctx, new_cloud} = do_compact(ctx_acc, cloud)
         {new_ctx, Map.put(clouds_acc, name, MapSet.new(new_cloud))}
       end)
 
@@ -501,19 +554,20 @@ defmodule Phoenix.Tracker.State do
   defp do_compact(ctx, cloud) do
     Enum.reduce(cloud, {ctx, []}, fn {replica, clock} = tag, {ctx_acc, cloud_acc} ->
       case ctx_acc do
-        %{^replica => ctx_clock} when ctx_clock + 1 == clock ->
-          {%{ctx_acc | replica => clock}, cloud_acc}
         %{^replica => ctx_clock} when ctx_clock >= clock ->
+          # Continue when we already saw a higher clock
           {ctx_acc, cloud_acc}
-        _ when clock == 1 ->
-          {Map.put(ctx_acc, replica, clock), cloud_acc}
+        %{^replica => ctx_clock} when ctx_clock < clock ->
+          # Update clock
+          {%{ctx_acc | replica => clock}, cloud_acc}
         _ ->
-          {ctx_acc, [tag | cloud_acc]}
+          # Add replica when not in ctx_acc already
+          {Map.put(ctx_acc, replica, clock), [tag | cloud_acc]}
       end
     end)
   end
 
-  @compile {:inline, in?: 3, in_ctx?: 3, in_clouds?: 3}
+  @compile {:inline, in?: 3, in_ctx?: 3, in_clouds?: 3, tag_in_remote_map?: 2}
 
   defp in?(context, clouds, {replica, clock} = tag) do
     in_ctx?(context, replica, clock) or in_clouds?(clouds, replica, tag)
@@ -529,6 +583,9 @@ defmodule Phoenix.Tracker.State do
       %{^replica => cloud} -> MapSet.member?(cloud, tag)
       _ -> false
     end
+  end
+  defp tag_in_remote_map?(tag, remote_map) do
+    match?(%{^tag => _}, remote_map)
   end
 
   @spec tag(t) :: tag

@@ -115,7 +115,7 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     s1 = new(:r1, config)
     s2 = State.join(s1, pid, "lobby", "user1", %{})
 
-    expected_state = %{s2 | pids: nil, values: nil, delta: :unset}
+    expected_state = %{s2 | pids: nil, tags: nil, values: nil, delta: :unset}
     expected_values = %{{:r1, 1} => {pid, "lobby", "user1", %{}}}
 
     assert DeltaGeneration.extract(s2, [], :r2, %{r1: 1}) ==
