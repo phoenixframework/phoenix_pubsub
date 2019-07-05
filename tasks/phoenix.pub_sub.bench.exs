@@ -9,6 +9,8 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
   """
   use Mix.Task
 
+  import ExUnit.Assertions, only: [assert: 1, assert: 2]
+
   alias Phoenix.Tracker.State
 
   def run(opts) do
@@ -20,33 +22,42 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
     topic_size = trunc(size / 10)
 
     {s1, s2} = time "Creating 2 #{size} element sets", fn ->
-      s1 = Enum.reduce(1..size, State.new(:s1, :s1_shard), fn i, acc ->
+      s1 = Enum.reduce(1..size, State.new({:s1, 1}, :s1_shard), fn i, acc ->
         State.join(acc, make_ref(), "topic#{:erlang.phash2(i, topic_size)}", "user#{i}", %{name: i})
       end)
 
-      s2 = Enum.reduce(1..size, State.new(:s2, :s2_shard), fn i, acc ->
-        State.join(acc, make_ref(), "topic#{i}", "user#{i}", %{name: i})
+      s2 = Enum.reduce(1..size, State.new({:s2, 1}, :s2_shard), fn i, acc ->
+        State.join(acc, make_ref(), "topic#{:erlang.phash2(i, topic_size)}", "user#{i}", %{name: i})
       end)
+
+      {s1, _, _} = State.replica_up(s1, s2.replica)
+      {s2, _, _} = State.replica_up(s2, s1.replica)
 
       {s1, s2}
     end
+
+    assert length(State.online_list(s1)) == size
+    assert length(State.online_list(s2)) == size
+
     user = make_ref()
     s1 = State.join(s1, user, "topic100", "user100", %{name: 100})
 
     {_, s2_vals} = extracted_s2 = time "extracting #{size} element set", fn ->
-      State.extract(s2, :s2, s2.context)
+      State.extract(s2, s1.replica, s1.context)
     end
 
     {s1, _, _} = time "merging 2 #{size} element sets", fn ->
       State.merge(s1, extracted_s2)
     end
+    assert length(State.online_list(s1)) == size * 2 + 1
 
     {s1, [], []} = time "merging again #{size} element sets", fn ->
       State.merge(s1, extracted_s2)
     end
+    assert length(State.online_list(s1)) == size * 2 + 1
 
-    time "get_by_topic for 1000 members of #{size * 2} element set", fn ->
-      State.get_by_topic(s1, "topic10")
+    time "get_by_topic for #{topic_size} members of #{size * 2} element set", fn ->
+      State.get_by_topic(s1, "topic5")
     end
 
     [{{topic, pid, key}, _meta, _tag} | _] = time "get_by_pid/2 for #{size * 2} element set", fn ->
@@ -71,7 +82,7 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
             |> State.join(make_ref(), "delta#{i}", "user#{i}", %{name: i})
             |> State.leave(pid, topic, key)
           {new_acc, rest}
-        
+
         _, result ->
           result
       end)
@@ -81,11 +92,11 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
       State.merge(s1, s2.delta)
     end
 
-    {s1, _, _} = time "replica_down from #{size *2} replica with downed holding #{size} elements", fn ->
+    {s1, _, _} = time "replica_down from #{size * 2} replica with downed holding #{size} elements", fn ->
       State.replica_down(s1, s2.replica)
     end
 
-    _s1 = time "remove_down_replicas from #{size *2} replica with downed holding #{size} elements", fn ->
+    _s1 = time "remove_down_replicas from #{size * 2} replica with downed holding #{size} elements", fn ->
       State.remove_down_replicas(s1, s2.replica)
     end
   end
