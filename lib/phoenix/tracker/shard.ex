@@ -465,14 +465,21 @@ defmodule Phoenix.Tracker.Shard do
   defp report_diff(state, [], []), do: state
   defp report_diff(state, joined, left) do
     join_diff = Enum.reduce(joined, %{}, fn {{topic, _pid, key}, meta, _}, acc ->
-      Map.update(acc, topic, {[{key, meta}], []}, fn {joins, leaves} ->
-        {[{key, meta} | joins], leaves}
-      end)
+      case acc do
+        %{^topic => {joins, leaves}} ->
+          Map.put(acc, topic, {[{key, meta} | joins], leaves})
+        _ ->
+          Map.put(acc, topic, {[{key, meta}], []})
+      end
     end)
+
     full_diff = Enum.reduce(left, join_diff, fn {{topic, _pid, key}, meta, _}, acc ->
-      Map.update(acc, topic, {[], [{key, meta}]}, fn {joins, leaves} ->
-        {joins, [{key, meta} | leaves]}
-      end)
+      case acc do
+        %{^topic => {joins, leaves}} ->
+          Map.put(acc, topic, {joins, [{key, meta} | leaves]})
+        _ ->
+          Map.put(acc, topic, {[], [{key, meta}]})
+      end
     end)
 
     full_diff
