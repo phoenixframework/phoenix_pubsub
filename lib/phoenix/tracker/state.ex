@@ -21,15 +21,15 @@ defmodule Phoenix.Tracker.State do
   @type pid_lookup :: {pid, topic, key}
 
   @type t :: %State{
-    replica:  name,
-    context:  context,
-    clouds:   clouds,
-    values:   values,
-    pids:     ets_id,
-    mode:     :unset | :delta | :normal,
-    delta:    :unset | delta,
-    replicas: %{name => :up | :down},
-    range:    {context, context}
+    replica:       name,
+    context:       context,
+    clouds:        clouds,
+    values:        values,
+    pids:          ets_id,
+    mode:          :unset | :delta | :normal,
+    delta:         :unset | delta,
+    down_replicas: ets_id,
+    range:         {context, context}
   }
 
   defstruct replica: nil,
@@ -39,7 +39,7 @@ defmodule Phoenix.Tracker.State do
             pids: nil,
             mode: :unset,
             delta: :unset,
-            replicas: %{},
+            down_replicas: nil,
             range: {%{}, %{}}
 
   @compile {:inline, tag: 1, clock: 1, put_tag: 2, delete_tag: 2, remove_delta_tag: 2}
@@ -61,7 +61,7 @@ defmodule Phoenix.Tracker.State do
       mode: :normal,
       values: :ets.new(shard_name, [:named_table, :protected, :ordered_set]),
       pids: :ets.new(:pids, [:duplicate_bag]),
-      replicas: %{replica => :up}})
+      down_replicas: :ets.new(down_replicas_table(shard_name), [:named_table, :protected, :bag])})
   end
 
   @doc """
@@ -116,17 +116,26 @@ defmodule Phoenix.Tracker.State do
   @doc """
   Returns a list of elements for the topic who belong to an online replica.
   """
-  @spec get_by_topic(t, topic) :: [key_meta]
+  @spec get_by_topic(t | atom, topic) :: [key_meta]
   def get_by_topic(%State{values: values} = state, topic) do
     tracked_values(values, topic, down_replicas(state))
+  end
+  def get_by_topic(shard_name, topic) do
+    tracked_values(shard_name, topic, down_replicas(shard_name))
   end
 
   @doc """
   Returns a list of elements for the topic who belong to an online replica.
   """
-  @spec get_by_key(t, topic, key) :: [key_meta]
+  @spec get_by_key(t | atom, topic, key) :: [key_meta]
   def get_by_key(%State{values: values} = state, topic, key) do
     case tracked_key(values, topic, key, down_replicas(state)) do
+      [] -> []
+      [_|_] = metas -> metas
+    end
+  end
+  def get_by_key(shard_name, topic, key) do
+    case tracked_key(shard_name, topic, key, down_replicas(shard_name)) do
       [] -> []
       [_|_] = metas -> metas
     end
@@ -393,18 +402,18 @@ defmodule Phoenix.Tracker.State do
   Marks a replica as up in the set and returns rejoined users.
   """
   @spec replica_up(t, name) :: {t, joins :: [values], leaves :: []}
-  def replica_up(%State{replicas: replicas, context: ctx} = state, replica) do
-    {%State{state |
-            context: Map.put_new(ctx, replica, 0),
-            replicas: Map.put(replicas, replica, :up)}, replica_users(state, replica), []}
+  def replica_up(%State{down_replicas: down_replicas, context: ctx} = state, replica) do
+    :ets.delete_object(down_replicas, replica)
+    {%State{state | context: Map.put_new(ctx, replica, 0)}, replica_users(state, replica), []}
   end
 
   @doc """
   Marks a replica as down in the set and returns left users.
   """
   @spec replica_down(t, name) :: {t, joins:: [], leaves :: [values]}
-  def replica_down(%State{replicas: replicas} = state, replica) do
-    {%State{state | replicas: Map.put(replicas, replica, :down)}, [], replica_users(state, replica)}
+  def replica_down(%State{down_replicas: down_replicas} = state, replica) do
+    :ets.insert(down_replicas, replica)
+    {state, [], replica_users(state, replica)}
   end
 
   @doc """
@@ -555,10 +564,9 @@ defmodule Phoenix.Tracker.State do
            delta: %State{delta | range: {start_clock, new_end}}}
   end
 
-  @spec down_replicas(t) :: [name]
-  defp down_replicas(%State{replicas: replicas})  do
-    for {replica, :down} <- replicas, do: replica
-  end
+  @spec down_replicas(t | atom) :: [name]
+  defp down_replicas(%State{down_replicas: down_replicas}), do: :ets.tab2list(down_replicas)
+  defp down_replicas(shard_name), do: :ets.tab2list(down_replicas_table(shard_name))
 
   @spec replica_users(t, name) :: [value]
   defp replica_users(%State{values: values}, replica) do
@@ -574,5 +582,9 @@ defmodule Phoenix.Tracker.State do
   defp foldl(:"$end_of_table", acc, _func), do: acc
   defp foldl({objects, cont}, acc, func) do
     foldl(:ets.select(cont), Enum.reduce(objects, acc, func), func)
+  end
+
+  defp down_replicas_table(shard_name) do
+    :"#{shard_name}.down_replicas"
   end
 end
