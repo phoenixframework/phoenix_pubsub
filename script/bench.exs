@@ -1,18 +1,16 @@
-defmodule Mix.Tasks.Phoenix.PubSub.Bench do
+defmodule Bench do
   @moduledoc """
   Runs simple benchmarks for merge operations.
 
   ## Examples
 
-      mix phoenix.pub_sub.bench --size 25000 --delta-size 1000
+      mix run script/bench.exs --size 25000 --delta-size 1000
 
   """
-  use Mix.Task
 
   alias Phoenix.Tracker.State
 
   def run(opts) do
-    Mix.Task.run("app.start", [])
     {opts, [], []} = OptionParser.parse(opts, strict: [size: :integer,
                                                        delta_size: :integer])
     size       = opts[:size] || 100_000
@@ -101,3 +99,5 @@ defmodule Mix.Tasks.Phoenix.PubSub.Bench do
     result
   end
 end
+
+Bench.run(System.argv())
