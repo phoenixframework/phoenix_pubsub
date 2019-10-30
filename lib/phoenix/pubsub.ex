@@ -224,7 +224,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Raising version of `broadcast!/4`.
   """
-  @spec broadcast!(t, topic, message, dispatcher) :: :ok
+  @spec broadcast!(t, topic, message, dispatcher) :: :ok | no_return
   def broadcast!(pubsub, topic, message, dispatcher \\ __MODULE__) do
     case broadcast(pubsub, topic, message, dispatcher) do
       :ok -> :ok
@@ -235,7 +235,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Raising version of `broadcast_from!/5`.
   """
-  @spec broadcast_from!(t, pid, topic, message, dispatcher) :: :ok
+  @spec broadcast_from!(t, pid, topic, message, dispatcher) :: :ok | no_return
   def broadcast_from!(pubsub, from, topic, message, dispatcher \\ __MODULE__) do
     case broadcast_from(pubsub, from, topic, message, dispatcher) do
       :ok -> :ok
@@ -246,7 +246,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Raising version of `direct_broadcast!/5`.
   """
-  @spec direct_broadcast!(node_name, t, topic, message, dispatcher) :: :ok
+  @spec direct_broadcast!(node_name, t, topic, message, dispatcher) :: :ok | no_return
   def direct_broadcast!(node_name, pubsub, topic, message, dispatcher \\ __MODULE__) do
     case direct_broadcast(node_name, pubsub, topic, message, dispatcher) do
       :ok -> :ok
