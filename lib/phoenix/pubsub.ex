@@ -1,6 +1,6 @@
 defmodule Phoenix.PubSub do
   @moduledoc """
-  Realtime Publisher/Subscriber servicec.
+  Realtime Publisher/Subscriber service.
 
   ## Getting started
 
@@ -72,7 +72,7 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Returns a child specifiction for pubsub with the given `options`.
+  Returns a child specification for pubsub with the given `options`.
 
   The `:name` is required as part of `options`. The remaining options
   are described below.
@@ -131,7 +131,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic across the whole cluster.
 
-    * `pubsub` - The name of the pubsub sytem
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
@@ -151,7 +151,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic from the given process across the whole cluster.
 
-    * `pubsub` - The name of the pubsub sytem
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
@@ -171,7 +171,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic only for the current node.
 
-    * `pubsub` - The name of the pubsub sytem
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
@@ -187,7 +187,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Broadcasts message on given topic from a given process only for the current node.
 
-    * `pubsub` - The name of the pubsub sytem
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
@@ -204,7 +204,7 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic to a given node.
 
     * `node_name` - The target node name
-    * `pubsub` - The name of the pubsub sytem
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
