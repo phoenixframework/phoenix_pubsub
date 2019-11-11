@@ -347,7 +347,7 @@ defmodule Phoenix.Tracker.Shard do
 
   defp request_transfer(state, {name, _vsn}) do
     log state, fn -> "#{state.replica.name}: transfer_req from #{name}" end
-    ref = make_ref()
+    ref = random_ref()
     msg = {:pub, :transfer_req, ref, Replica.ref(state.replica), clock(state)}
     direct_broadcast(state, name, msg)
   end
