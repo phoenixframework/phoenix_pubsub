@@ -8,11 +8,16 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   setup config do
     tracker = config.test
-    {:ok, shard_pid} = start_shard(name: tracker)
-    {:ok, topic: to_string(config.test),
+
+    tracker_opts = config |> Map.get(:tracker_opts, []) |> Keyword.put_new(:name, tracker)
+    {:ok, shard_pid} = start_shard(tracker_opts)
+
+    {:ok,
+     topic: to_string(tracker),
      shard: shard_name(tracker),
      shard_pid: shard_pid,
-     tracker: tracker}
+     tracker: tracker,
+     tracker_opts: tracker_opts}
   end
 
   test "heartbeats", %{shard: shard} do
@@ -340,6 +345,48 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert_leave ^topic, "node1", %{name: "s1"}
     assert [] = list(shard, topic)
     assert replicas(shard) == %{}
+  end
+
+  # By default permdown period is 1.5 seconds in the tests. This however is
+  # not enough to test this case.
+  @tag tracker_opts: [permdown_period: 2000]
+  test "rolling node update", %{topic: topic, shard: shard_name, tracker_opts: tracker_opts} do
+    permdown_period = Keyword.fetch!(tracker_opts, :permdown_period)
+
+    # Ensure 2 online shards - primary and node1
+    spy_on_server(@primary, self(), shard_name)
+    spy_on_server(@node1, self(), shard_name)
+    {node1_node, {:ok, node1_shared}} = start_shard(@node1, tracker_opts)
+
+    assert_receive {{:replica_up, @primary}, @node1}, @timeout
+    assert_receive {{:replica_up, @node1}, @primary}, @timeout
+
+    # Add one user to primary to ensure transfers are requested from new nodes
+    track_presence(@primary, shard_name, spawn_pid(), topic, "primary", %{})
+
+    assert_heartbeat(to: @primary, from: @node1)
+    assert_heartbeat(to: @node1, from: @primary)
+
+    # Remove node 1 (starts permdown grace on primary)
+    Process.unlink(node1_node)
+    Process.exit(node1_shared, :kill)
+    assert_receive {{:replica_down, @node1}, @primary}, @timeout
+
+    # Start node 2 (has no knowledge of node1)
+    spy_on_server(@node2, self(), shard_name)
+    {_node2_node, {:ok, _node2_shard}} = start_shard(@node2, tracker_opts)
+
+    assert_receive {{:replica_up, @node2}, @primary}, @timeout
+    assert_receive {{:replica_up, @primary}, @node2}, @timeout
+
+    # Sends transfer request once
+    assert_transfer_req(from: @node2, to: @primary)
+
+    # Does not send more transfer requests
+    refute_transfer_req(from: @node2, to: @primary)
+
+    # Wait until primary is permanently down
+    assert_receive {{:replica_permdown, @node1}, @primary}, permdown_period * 2
   end
 
   ## Helpers
