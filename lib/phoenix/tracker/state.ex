@@ -68,7 +68,14 @@ defmodule Phoenix.Tracker.State do
   Returns the causal context for the set.
   """
   @spec clocks(t) :: {name, context}
-  def clocks(%State{replica: rep, context: ctx}), do: {rep, ctx}
+  def clocks(%State{replica: rep, context: ctx} = state) do
+    # Exclude down replicas from clocks as they are also not included in
+    # deltas. Otherwise if this node knows of a down node X in permdown grace
+    # period, another node Y which came up after X went down will keep
+    # requesting full state from this node as the clock of Y will be dominated
+    # by the clock of this node.
+    {rep, Map.drop(ctx, down_replicas(state))}
+  end
 
   @doc """
   Adds a new element to the set.
