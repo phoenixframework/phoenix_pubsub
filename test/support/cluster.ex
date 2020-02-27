@@ -40,7 +40,7 @@ defmodule Phoenix.PubSub.Cluster do
   end
 
   defp transfer_configuration(node) do
-    for {app_name, _, _} <- Application.loaded_applications do
+    for {app_name, _, _} <- Application.loaded_applications() do
       for {key, val} <- Application.get_all_env(app_name) do
         rpc(node, Application, :put_env, [app_name, key, val])
       end
@@ -50,7 +50,7 @@ defmodule Phoenix.PubSub.Cluster do
   defp ensure_applications_started(node) do
     rpc(node, Application, :ensure_all_started, [:mix])
     rpc(node, Mix, :env, [Mix.env()])
-    for {app_name, _, _} <- Application.loaded_applications do
+    for {app_name, _, _} <- Application.loaded_applications() do
       rpc(node, Application, :ensure_all_started, [app_name])
     end
   end
