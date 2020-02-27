@@ -22,6 +22,7 @@ defmodule Phoenix.PubSub.Mixfile do
 
   def application do
     [
+      mod: {Phoenix.PubSub.Application, []},
       applications: [:logger, :crypto],
     ]
   end

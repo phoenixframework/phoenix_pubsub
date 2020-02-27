@@ -1,6 +1,6 @@
 defmodule Phoenix.PubSub.PG2 do
   @moduledoc """
-  Phoenix PubSub adapter based on `:pg2`.
+  Phoenix PubSub adapter based on `:pg`/`:pg2`.
 
   It runs on Distributed Erlang and is the default adapter.
   """
@@ -15,7 +15,7 @@ defmodule Phoenix.PubSub.PG2 do
 
   @impl true
   def broadcast(adapter_name, topic, message, dispatcher) do
-    case :pg2.get_members(pg2_namespace(adapter_name)) do
+    case pg_members(adapter_name) do
       {:error, {:no_such_group, _}} ->
         {:error, :no_such_group}
 
@@ -51,12 +51,11 @@ defmodule Phoenix.PubSub.PG2 do
 
   @impl true
   def init({name, adapter_name}) do
-    pg2_group = pg2_namespace(adapter_name)
-    :ok = :pg2.create(pg2_group)
-    :ok = :pg2.join(pg2_group, self())
+    :ok = pg_join(adapter_name)
     {:ok, name}
   end
 
+  @impl true
   def handle_info({:forward_to_local, topic, message, dispatcher}, pubsub) do
     Phoenix.PubSub.local_broadcast(pubsub, topic, message, dispatcher)
     {:noreply, pubsub}
@@ -67,5 +66,26 @@ defmodule Phoenix.PubSub.PG2 do
     {:noreply, pubsub}
   end
 
-  defp pg2_namespace(server_name), do: {:phx, server_name}
+  if Code.ensure_loaded?(:pg) do
+    defp pg_members(adapter_name) do
+      :pg.get_members(Phoenix.PubSub, adapter_name)
+    end
+
+    defp pg_join(adapter_name) do
+      :ok = :pg.join(Phoenix.PubSub, adapter_name, self())
+    end
+  else
+    defp pg_members(adapter_name) do
+      :pg2.get_members(pg2_namespace(adapter_name))
+    end
+
+    defp pg_join(adapter_name) do
+      namespace = pg2_namespace(adapter_name)
+      :ok = :pg2.create(namespace)
+      :ok = :pg2.join(namespace, self())
+      :ok
+    end
+
+    defp pg2_namespace(adapter_name), do: {:phx, adapter_name}
+  end
 end
