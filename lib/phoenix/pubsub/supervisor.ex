@@ -23,7 +23,8 @@ defmodule Phoenix.PubSub.Supervisor do
       meta: [pubsub: {adapter, adapter_name}],
       partitions: partitions,
       keys: :duplicate,
-      name: name
+      name: name,
+      parallel: Keyword.get(opts, :dispatch_parallel, false)
     ]
 
     children = [
