@@ -14,7 +14,7 @@ def deps do
 end
 ```
 
-Then start your a PubSub instance:
+Then start your PubSub instance:
 
 ```elixir
 defmodule MyApp do
