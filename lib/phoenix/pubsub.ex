@@ -152,10 +152,11 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic from the given process across the whole cluster.
 
     * `pubsub` - The name of the pubsub system
+    * `from` - The pid that will send the message
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
-  A custom dispatcher may also be given as a fourth, optional argument.
+  A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
   @spec broadcast_from(t, pid, topic, message, dispatcher) :: :ok | {:error, term}
@@ -188,6 +189,7 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic from a given process only for the current node.
 
     * `pubsub` - The name of the pubsub system
+    * `from` - The pid that will send the message
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
@@ -222,7 +224,7 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Raising version of `broadcast!/4`.
+  Raising version of `broadcast/4`.
   """
   @spec broadcast!(t, topic, message, dispatcher) :: :ok
   def broadcast!(pubsub, topic, message, dispatcher \\ __MODULE__) do
@@ -233,7 +235,7 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Raising version of `broadcast_from!/5`.
+  Raising version of `broadcast_from/5`.
   """
   @spec broadcast_from!(t, pid, topic, message, dispatcher) :: :ok
   def broadcast_from!(pubsub, from, topic, message, dispatcher \\ __MODULE__) do
@@ -244,7 +246,7 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Raising version of `direct_broadcast!/5`.
+  Raising version of `direct_broadcast/5`.
   """
   @spec direct_broadcast!(node_name, t, topic, message, dispatcher) :: :ok
   def direct_broadcast!(node_name, pubsub, topic, message, dispatcher \\ __MODULE__) do
