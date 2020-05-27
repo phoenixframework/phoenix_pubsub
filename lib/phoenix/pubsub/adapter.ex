@@ -27,9 +27,9 @@ defmodule Phoenix.PubSub.Adapter do
   """
   @callback broadcast(
               adapter_name,
-              Phoenix.PubSub.topic(),
-              Phoenix.PubSub.message(),
-              Phoenix.PubSub.dispatcher()
+              topic :: Phoenix.PubSub.topic(),
+              message :: Phoenix.PubSub.message(),
+              dispatcher :: Phoenix.PubSub.dispatcher()
             ) :: :ok | {:error, term}
 
   @doc """
@@ -38,9 +38,9 @@ defmodule Phoenix.PubSub.Adapter do
   """
   @callback direct_broadcast(
               adapter_name,
-              Phoenix.PubSub.node_name(),
-              Phoenix.PubSub.topic(),
-              Phoenix.PubSub.message(),
-              Phoenix.PubSub.dispatcher()
+              node_name :: Phoenix.PubSub.node_name(),
+              topic :: Phoenix.PubSub.topic(),
+              message :: Phoenix.PubSub.message(),
+              dispatcher :: Phoenix.PubSub.dispatcher()
             ) :: :ok | {:error, term}
 end
