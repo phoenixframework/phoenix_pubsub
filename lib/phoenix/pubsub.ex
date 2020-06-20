@@ -91,7 +91,7 @@ defmodule Phoenix.PubSub do
   @doc """
   Subscribes the caller to the PubSub adapter's topic.
 
-    * `server` - The Pid registered name of the server
+    * `pubsub` - The name of the pubsub system
     * `topic` - The topic to subscribe to, for example: `"users:123"`
     * `opts` - The optional list of options. See below.
 
