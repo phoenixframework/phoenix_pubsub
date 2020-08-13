@@ -2,7 +2,7 @@
 
 > Distributed PubSub and Presence platform for the Phoenix Framework
 
-[![Build Status](https://api.travis-ci.org/phoenixframework/phoenix_pubsub.svg)](https://travis-ci.org/phoenixframework/phoenix_pubsub)
+[![Build Status](https://github.com/phoenixframework/phoenix_pubsub/workflows/CI/badge.svg)](https://github.com/phoenixframework/phoenix_pubsub/actions?query=workflow%3A%22CI%22)
 
 ## Usage
 
