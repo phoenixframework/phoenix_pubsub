@@ -150,6 +150,7 @@ defmodule Phoenix.PubSub do
 
   @doc """
   Broadcasts message on given topic from the given process across the whole cluster.
+  Sent to all subscribers of a topic, excluding the process described by `from`.
 
     * `pubsub` - The name of the pubsub system
     * `from` - The pid that will send the message
