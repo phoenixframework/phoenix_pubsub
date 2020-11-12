@@ -20,8 +20,8 @@ defmodule Phoenix.Tracker do
 
   ## Required `pool_opts`:
 
-    * `:name` - The name of the server, such as: `MyApp.Tracker`
-                This will also form the common prefix for all shard names
+    * `:name` - The name of the server, such as: `MyApp.Tracker`. This will also
+      form the common prefix for all shard names
     * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
 
   ## Optional `pool_opts`:
