@@ -28,16 +28,18 @@ defmodule Phoenix.PubSub.NodeCase do
     end
 
     def handle_diff(diff, state) do
-      for {topic, {joins, leaves}}  <- diff do
+      for {topic, {joins, leaves}} <- diff do
         for {key, meta} <- joins do
           msg = %{topic: topic, event: "presence_join", payload: {key, meta}}
           Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
         end
+
         for {key, meta} <- leaves do
           msg = %{topic: topic, event: "presence_leave", payload: {key, meta}}
           Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
         end
       end
+
       {:ok, state}
     end
   end
@@ -91,7 +93,7 @@ defmodule Phoenix.PubSub.NodeCase do
       broadcast_period: @heartbeat,
       max_silent_periods: 2,
       permdown_period: @permdown,
-      shard_number: 0,
+      shard_number: 0
     ]
   end
 
@@ -101,21 +103,22 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
-  def spy_on_server(node_name, pubsub_server \\ @pubsub,
-    target_pid, tracker_server) do
-    spy_on_pubsub(node_name, pubsub_server, target_pid,
-      "phx_presence:#{tracker_server}")
+  def spy_on_server(node_name, pubsub_server \\ @pubsub, target_pid, tracker_server) do
+    spy_on_pubsub(node_name, pubsub_server, target_pid, "phx_presence:#{tracker_server}")
   end
 
   def spy_on_pubsub(node_name, server \\ @pubsub, target_pid, topic) do
     call_node(node_name, fn ->
       Phoenix.PubSub.subscribe(server, topic)
+
       loop = fn next ->
         receive do
-          msg -> send target_pid, {node_name, msg}
+          msg -> send(target_pid, {node_name, msg})
         end
+
         next.(next)
       end
+
       loop.(loop)
     end)
   end
@@ -123,20 +126,22 @@ defmodule Phoenix.PubSub.NodeCase do
   defmacro assert_join(topic, key, meta, timeout \\ @timeout) do
     quote do
       assert_receive %{
-        event: "presence_join",
-        topic: unquote(topic),
-        payload: {unquote(key), unquote(meta)}
-      }, unquote(timeout)
+                       event: "presence_join",
+                       topic: unquote(topic),
+                       payload: {unquote(key), unquote(meta)}
+                     },
+                     unquote(timeout)
     end
   end
 
   defmacro assert_leave(topic, key, meta, timeout \\ @timeout) do
     quote do
       assert_receive %{
-        event: "presence_leave",
-        topic: unquote(topic),
-        payload: {unquote(key), unquote(meta)}
-      }, unquote(timeout)
+                       event: "presence_leave",
+                       topic: unquote(topic),
+                       payload: {unquote(key), unquote(meta)}
+                     },
+                     unquote(timeout)
     end
   end
 
@@ -168,14 +173,16 @@ defmodule Phoenix.PubSub.NodeCase do
     parent = self()
     ref = make_ref()
 
-    pid = Node.spawn_link(node, fn ->
-      result = func.()
-      send parent, {ref, result}
-      ref = Process.monitor(parent)
-      receive do
-        {:DOWN, ^ref, :process, _, _} -> :ok
-      end
-    end)
+    pid =
+      Node.spawn_link(node, fn ->
+        result = func.()
+        send(parent, {ref, result})
+        ref = Process.monitor(parent)
+
+        receive do
+          {:DOWN, ^ref, :process, _, _} -> :ok
+        end
+      end)
 
     receive do
       {^ref, result} -> {pid, result}
