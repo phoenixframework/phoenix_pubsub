@@ -5,7 +5,7 @@ This new version of Phoenix.PubSub provides a simpler, more extensible, and more
 ## 2.0.0 (2020-04-14)
 
 ### Enhancements
-  - Use erlang's new `:pg` module if available instead of `:pg2`
+  - Use erlang's new `:pg` module if available instead of `:pg2` (checked at compile time)
 
 ### Backwards incompatible changes
   - Frameworks and other adapters will require the use of the new child_spec API
