@@ -70,6 +70,16 @@ defmodule Phoenix.PubSubTest do
       assert subscribers(config, config.topic) |> length == 0
     end
 
+    test "pool #{size}: subscribe_uniq and unsubscribe", config do
+      pid = spawn_pid()
+      assert subscribers(config, config.topic) |> length == 0
+      assert rpc(pid, fn -> PubSub.subscribe_uniq(config.pubsub, config.topic) end)
+      assert rpc(pid, fn -> PubSub.subscribe_uniq(config.pubsub, config.topic) end)
+      assert subscribers(config, config.topic) == [{pid, nil}]
+      assert rpc(pid, fn -> PubSub.unsubscribe(config.pubsub, config.topic) end)
+      assert subscribers(config, config.topic) |> length == 0
+    end
+
     @tag pool_size: size
     test "pool #{size}: broadcast/3 and broadcast!/3 publishes message to each subscriber",
          config do
