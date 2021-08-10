@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature requests❓
+    url: http://groups.google.com/group/phoenix-core
+    about: Please propose feature requests on the phoenix-core mailing list
