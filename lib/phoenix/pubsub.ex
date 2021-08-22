@@ -216,7 +216,7 @@ defmodule Phoenix.PubSub do
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
-  @spec direct_broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
+  @spec direct_broadcast(node_name, t, topic, message, dispatcher) :: :ok | {:error, term}
   def direct_broadcast(node_name, pubsub, topic, message, dispatcher \\ __MODULE__)
       when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {adapter, name}} = Registry.meta(pubsub, :pubsub)
