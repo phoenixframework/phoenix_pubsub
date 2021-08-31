@@ -1,49 +1,12 @@
 defmodule Phoenix.Tracker do
   @moduledoc ~S"""
-  Provides distributed Presence tracking to processes.
-
-  The `Tracker` API is used as a facade for a pool of `Phoenix.Tracker.Shard`s.
-  The responsibility of which calls go to which `Shard` is determined based on
-  the topic, on which a given function is called.
+  Provides distributed presence tracking to processes.
 
   Tracker shards use a heartbeat protocol and CRDT to replicate presence
   information across a cluster in an eventually consistent, conflict-free
   manner. Under this design, there is no single source of truth or global
-  process. Each node runs a pool of `Phoenix.Tracker.Shard`s and node-local
-  changes are replicated across the cluster and handled locally as a diff of
-  changes.
-
-    * `tracker` - The name of the tracker handler module implementing the
-      `Phoenix.Tracker` behaviour
-    * `tracker_opts` - The list of options to pass to the tracker handler
-    * `pool_opts` - The list of options used to construct the shard pool
-
-  ## Required `pool_opts`:
-
-    * `:name` - The name of the server, such as: `MyApp.Tracker`
-                This will also form the common prefix for all shard names
-    * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
-
-  ## Optional `pool_opts`:
-
-    * `:broadcast_period` - The interval in milliseconds to send delta broadcasts
-      across the cluster. Default `1500`
-    * `:max_silent_periods` - The max integer of broadcast periods for which no
-      delta broadcasts have been sent. Default `10` (15s heartbeat)
-    * `:down_period` - The interval in milliseconds to flag a replica
-      as temporarily down. Default `broadcast_period * max_silent_periods * 2`
-      (30s down detection). Note: This must be at least 2x the `broadcast_period`.
-    * `:permdown_period` - The interval in milliseconds to flag a replica
-      as permanently down, and discard its state.
-      Note: This must be at least greater than the `down_period`.
-      Default `1_200_000` (20 minutes)
-    * `:clock_sample_periods` - The numbers of heartbeat windows to sample
-      remote clocks before collapsing and requesting transfer. Default `2`
-    * `:max_delta_sizes` - The list of delta generation sizes to keep before
-      falling back to sending entire state. Defaults `[100, 1000, 10_000]`.
-    * `:log_level` - The log level to log events, defaults `:debug` and can be
-      disabled with `false`
-    * `:pool_size` - The number of tracker shards to launch. Default `1`
+  process. Each node runs a pool of trackers and node-local changes are
+  replicated across the cluster and handled locally as a diff of changes.
 
   ## Implementing a Tracker
 
@@ -87,8 +50,8 @@ defmodule Phoenix.Tracker do
         end
       end
 
-  Trackers must implement `start_link/1`, `init/1`, and `handle_diff/2`.
-  The `init/1` callback allows the tracker to manage its own state when
+  Trackers must implement `start_link/1`, `c:init/1`, and `c:handle_diff/2`.
+  The `c:init/1` callback allows the tracker to manage its own state when
   running within the `Phoenix.Tracker` server. The `handle_diff` callback
   is invoked with a diff of presence join and leave events, grouped by
   topic. As replicas heartbeat and replicate data, the local tracker state is
@@ -255,6 +218,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.get_by_key(MyTracker, "lobby", "user1")
       [{#PID<0.88.0>, %{name: "User 1"}, {#PID<0.89.0>, %{name: "User 1"}]
   """
+  @spec get_by_key(tracker, topic, term) :: [presence]
   def get_by_key(tracker_name, topic, key) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
@@ -275,13 +239,46 @@ defmodule Phoenix.Tracker do
     Supervisor.stop(tracker_name)
   end
 
-  def start_link(tracker, tracker_opts, pool_opts) do
+  @doc """
+  Starts a tracker pool.
+
+    * `tracker` - The tracker module implementing the `Phoenix.Tracker` behaviour
+    * `tracker_arg` - The argument to pass to the tracker handler `c:init/1`
+    * `pool_opts` - The list of options used to construct the shard pool
+
+  ## Required `pool_opts`:
+
+    * `:name` - The name of the server, such as: `MyApp.Tracker`
+      This will also form the common prefix for all shard names
+    * `:pubsub_server` - The name of the PubSub server, such as: `MyApp.PubSub`
+
+  ## Optional `pool_opts`:
+
+    * `:broadcast_period` - The interval in milliseconds to send delta broadcasts
+      across the cluster. Default `1500`
+    * `:max_silent_periods` - The max integer of broadcast periods for which no
+      delta broadcasts have been sent. Default `10` (15s heartbeat)
+    * `:down_period` - The interval in milliseconds to flag a replica
+      as temporarily down. Default `broadcast_period * max_silent_periods * 2`
+      (30s down detection). Note: This must be at least 2x the `broadcast_period`.
+    * `:permdown_period` - The interval in milliseconds to flag a replica
+      as permanently down, and discard its state.
+      Note: This must be at least greater than the `down_period`.
+      Default `1_200_000` (20 minutes)
+    * `:clock_sample_periods` - The numbers of heartbeat windows to sample
+      remote clocks before collapsing and requesting transfer. Default `2`
+    * `:max_delta_sizes` - The list of delta generation sizes to keep before
+      falling back to sending entire state. Defaults `[100, 1000, 10_000]`.
+    * `:log_level` - The log level to log events, defaults `:debug` and can be
+      disabled with `false`
+    * `:pool_size` - The number of tracker shards to launch. Default `1`
+  """
+  def start_link(tracker, tracker_arg, pool_opts) do
     name = Keyword.fetch!(pool_opts, :name)
-    Supervisor.start_link(__MODULE__,
-      [tracker, tracker_opts, pool_opts, name],
-      name: name)
+    Supervisor.start_link(__MODULE__, [tracker, tracker_arg, pool_opts, name], name: name)
   end
 
+  @doc false
   def init([tracker, tracker_opts, opts, name]) do
     pool_size = Keyword.get(opts, :pool_size, 1)
     ^name = :ets.new(name, [:set, :named_table, read_concurrency: true])

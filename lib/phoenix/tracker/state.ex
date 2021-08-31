@@ -1,7 +1,5 @@
 defmodule Phoenix.Tracker.State do
-  @moduledoc """
-  Provides an ORSWOT CRDT.
-  """
+  @moduledoc false
   alias Phoenix.Tracker.{State, Clock}
 
   @type name       :: term

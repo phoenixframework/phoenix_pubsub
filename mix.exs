@@ -8,6 +8,7 @@ defmodule Phoenix.PubSub.Mixfile do
       app: :phoenix_pubsub,
       version: @version,
       elixir: "~> 1.6",
+      name: "Phoenix.PubSub",
       description: "Distributed PubSub and Presence platform",
       homepage_url: "http://www.phoenixframework.org",
       elixirc_paths: elixirc_paths(Mix.env()),

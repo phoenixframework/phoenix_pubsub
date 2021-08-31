@@ -1,7 +1,5 @@
 defmodule Phoenix.Tracker.Shard do
-  @moduledoc """
-  Keeps track of presences in a single shard
-  """
+  @moduledoc false
   use GenServer
   alias Phoenix.Tracker.{Clock, State, Replica, DeltaGeneration}
   require Logger
