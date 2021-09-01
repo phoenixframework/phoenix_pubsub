@@ -67,8 +67,9 @@ defmodule Phoenix.Tracker do
   crash the tracker server, so operations that may crash the server should be
   offloaded with a `Task.Supervisor` spawned process.
   """
-  alias Phoenix.Tracker.Shard
+  use Supervisor
   require Logger
+  alias Phoenix.Tracker.Shard
 
   @type presence :: {key :: String.t, meta :: map}
   @type topic :: String.t
@@ -218,7 +219,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.get_by_key(MyTracker, "lobby", "user1")
       [{#PID<0.88.0>, %{name: "User 1"}, {#PID<0.89.0>, %{name: "User 1"}]
   """
-  @spec get_by_key(tracker, topic, term) :: [presence]
+  @spec get_by_key(atom, topic, term) :: [presence]
   def get_by_key(tracker_name, topic, key) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
@@ -278,7 +279,7 @@ defmodule Phoenix.Tracker do
     Supervisor.start_link(__MODULE__, [tracker, tracker_arg, pool_opts, name], name: name)
   end
 
-  @doc false
+  @impl true
   def init([tracker, tracker_opts, opts, name]) do
     pool_size = Keyword.get(opts, :pool_size, 1)
     ^name = :ets.new(name, [:set, :named_table, read_concurrency: true])
