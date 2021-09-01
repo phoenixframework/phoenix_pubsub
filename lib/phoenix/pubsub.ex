@@ -32,11 +32,13 @@ defmodule Phoenix.PubSub do
       as part of Phoenix.PubSub. It uses Distributed Elixir,
       directly exchanging notifications between servers.
       It supports a `:pool_size` option to be given alongside
-      the name, defaults to `1`.
+      the name, defaults to `1`. Note the `:pool_size` must
+      be the same throughout the cluster, therefore don't
+      configure the pool size based on `System.schedulers_online/1`, 
+      especially if you are using machines with different specs.
 
-    * `Phoenix.PubSub.Redis` - uses Redis to exchange
-      data between servers. It requires the
-      `:phoenix_pubsub_redis` dependency.
+    * `Phoenix.PubSub.Redis` - uses Redis to exchange data between
+      servers. It requires the `:phoenix_pubsub_redis` dependency.
 
   See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 
