@@ -30,11 +30,13 @@ defmodule Phoenix.PubSub do
 
     * `Phoenix.PubSub.PG2` - the default adapter that ships
       as part of Phoenix.PubSub. It uses Distributed Elixir,
-      directly exchanging notifications between servers
+      directly exchanging notifications between servers.
+      It supports a `:pool_size` option to be given alongside
+      the name, defaults to `1`.
 
     * `Phoenix.PubSub.Redis` - uses Redis to exchange
       data between servers. It requires the
-      `:phoenix_pubsub_redis` dependency
+      `:phoenix_pubsub_redis` dependency.
 
   See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 

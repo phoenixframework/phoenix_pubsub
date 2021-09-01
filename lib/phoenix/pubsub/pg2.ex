@@ -5,8 +5,8 @@ defmodule Phoenix.PubSub.PG2 do
   It runs on Distributed Erlang and is the default adapter.
   """
 
-  use GenServer
   @behaviour Phoenix.PubSub.Adapter
+  use Supervisor
 
   ## Adapter callbacks
 
@@ -15,7 +15,7 @@ defmodule Phoenix.PubSub.PG2 do
 
   @impl true
   def broadcast(adapter_name, topic, message, dispatcher) do
-    case pg_members(adapter_name) do
+    case pg_members(group(adapter_name)) do
       {:error, {:no_such_group, _}} ->
         {:error, :no_such_group}
 
@@ -32,7 +32,7 @@ defmodule Phoenix.PubSub.PG2 do
 
   @impl true
   def direct_broadcast(adapter_name, node_name, topic, message, dispatcher) do
-    send({adapter_name, node_name}, {:forward_to_local, topic, message, dispatcher})
+    send({group(adapter_name), node_name}, {:forward_to_local, topic, message, dispatcher})
     :ok
   end
 
@@ -40,18 +40,61 @@ defmodule Phoenix.PubSub.PG2 do
     {:forward_to_local, topic, message, dispatcher}
   end
 
-  ## GenServer callbacks
+  defp group(adapter_name) do
+    groups = :persistent_term.get(adapter_name)
+    elem(groups, :erlang.phash2(self(), tuple_size(groups)))
+  end
+
+  if Code.ensure_loaded?(:pg) do
+    defp pg_members(group) do
+      :pg.get_members(Phoenix.PubSub, group)
+    end
+  else
+    defp pg_members(group) do
+      :pg2.get_members({:phx, group})
+    end
+  end
+
+  ## Supervisor callbacks
 
   @doc false
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
+    pool_size = Keyword.get(opts, :pool_size, 1)
     adapter_name = Keyword.fetch!(opts, :adapter_name)
-    GenServer.start_link(__MODULE__, {name, adapter_name}, name: adapter_name)
+    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size}, name: adapter_name)
   end
 
   @impl true
-  def init({name, adapter_name}) do
-    :ok = pg_join(adapter_name)
+  def init({name, adapter_name, pool_size}) do
+    groups =
+      for number <- 1..pool_size do
+        :"#{adapter_name}_#{number}"
+      end
+
+    :persistent_term.put(adapter_name, List.to_tuple(groups))
+
+    children =
+      for group <- groups do
+        Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
+      end
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+end
+
+defmodule Phoenix.PubSub.PG2Worker do
+  @moduledoc false
+  use GenServer
+
+  @doc false
+  def start_link({name, group}) do
+    GenServer.start_link(__MODULE__, {name, group}, name: group)
+  end
+
+  @impl true
+  def init({name, group}) do
+    :ok = pg_join(group)
     {:ok, name}
   end
 
@@ -67,25 +110,15 @@ defmodule Phoenix.PubSub.PG2 do
   end
 
   if Code.ensure_loaded?(:pg) do
-    defp pg_members(adapter_name) do
-      :pg.get_members(Phoenix.PubSub, adapter_name)
-    end
-
-    defp pg_join(adapter_name) do
-      :ok = :pg.join(Phoenix.PubSub, adapter_name, self())
+    defp pg_join(group) do
+      :ok = :pg.join(Phoenix.PubSub, group, self())
     end
   else
-    defp pg_members(adapter_name) do
-      :pg2.get_members(pg2_namespace(adapter_name))
-    end
-
-    defp pg_join(adapter_name) do
-      namespace = pg2_namespace(adapter_name)
+    defp pg_join(group) do
+      namespace = {:phx, group}
       :ok = :pg2.create(namespace)
       :ok = :pg2.join(namespace, self())
       :ok
     end
-
-    defp pg2_namespace(adapter_name), do: {:phx, adapter_name}
   end
 end

@@ -16,8 +16,8 @@ defmodule Phoenix.PubSub.Adapter do
 
   `child_spec` will receive all options given `Phoenix.PubSub`.
   Note, however, that the `:name` under options is the name
-  of the complete PubSub system. The name of the process to
-  be used by adapter is under the `:adapter_name` key.
+  of the complete PubSub system. The reserved key space to
+  be used by the adapter is under the `:adapter_name` key.
   """
   @callback child_spec(keyword) :: Supervisor.child_spec()
 

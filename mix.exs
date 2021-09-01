@@ -1,7 +1,7 @@
 defmodule Phoenix.PubSub.Mixfile do
   use Mix.Project
 
-  @version "2.0.0"
+  @version "2.1.0-dev"
 
   def project do
     [
@@ -24,7 +24,7 @@ defmodule Phoenix.PubSub.Mixfile do
   def application do
     [
       mod: {Phoenix.PubSub.Application, []},
-      applications: [:logger, :crypto],
+      extra_applications: [:logger, :crypto],
     ]
   end
 
