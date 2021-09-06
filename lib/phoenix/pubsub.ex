@@ -84,7 +84,7 @@ defmodule Phoenix.PubSub do
   ## Options
 
     * `:name` - the name of the pubsub to be started
-    * `:adapter` - the adapter to use (defauls to `Phoenix.PubSub.PG2`)
+    * `:adapter` - the adapter to use (default to `Phoenix.PubSub.PG2`)
     * `:pool_size` - number of pubsub partitions to launch
       (defaults to one partition for every 4 cores)
 
