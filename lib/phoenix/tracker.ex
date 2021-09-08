@@ -206,6 +206,29 @@ defmodule Phoenix.Tracker do
   end
 
   @doc """
+  Optimized presence list with potentially stale data.
+
+    * `server_name` - The registered name of the tracker server
+    * `topic` - The `Phoenix.PubSub` topic
+
+  Useful for times where you do not require consistency and favor faster reads.
+
+  Returns a lists of presences in key/metadata tuple pairs.
+
+
+  ## Examples
+
+      iex> Phoenix.Tracker.dirty_list(MyTracker, "lobby")
+      [{123, %{name: "user 123"}}, {456, %{name: "user 456"}}]
+  """
+  @spec dirty_list(atom, topic) :: [presence]
+  def dirty_list(tracker_name, topic) do
+    tracker_name
+    |> Shard.name_for_topic(topic, pool_size(tracker_name))
+    |> Phoenix.Tracker.Shard.dirty_list(topic)
+  end
+
+  @doc """
   Gets presences tracked under a given topic and key pair.
 
     * `server_name` - The registered name of the tracker server

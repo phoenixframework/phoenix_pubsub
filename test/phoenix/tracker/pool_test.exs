@@ -17,6 +17,9 @@ defmodule Phoenix.Tracker.PoolTest do
       {:ok, ref} = Tracker.track(server, self(), "topic", "me", %{name: "me"})
       assert [{"me", %{name: "me", phx_ref: ^ref}}]
         = Tracker.list(server, "topic")
+
+      assert [{"me", %{name: "me", phx_ref: ^ref}}]
+        = Tracker.dirty_list(server, "topic")
     end
 
     @tag pool_size: pool_size
