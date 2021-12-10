@@ -202,7 +202,7 @@ defmodule Phoenix.Tracker do
   def list(tracker_name, topic) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
-    |> Phoenix.Tracker.Shard.list(topic)
+    |> Phoenix.Tracker.Shard.dirty_list(topic)
   end
 
   @doc """
