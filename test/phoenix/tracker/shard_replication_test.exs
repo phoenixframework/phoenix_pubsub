@@ -44,7 +44,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     resume_gossips(shard)
     # primary sends transfer_req to node1 after seeing behind
     ref = assert_transfer_req to: @node1, from: @primary
-    # node1 fulfills tranfer request and sends transfer_ack to primary
+    # node1 fulfills transfer request and sends transfer_ack to primary
     assert_transfer_ack ref, from: @node1
     assert_heartbeat to: @node1, from: @primary
     assert [{"node1", _}] = list(shard, topic)
