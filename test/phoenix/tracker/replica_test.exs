@@ -29,8 +29,9 @@ defmodule Phoenix.Tracker.ReplicaTest do
   test "put_heartbeat/2 with previously tracked name" do
     for status <- [:up, :down] do
       existing_node = Replica.new("existing") |> Map.put(:status, status)
+
       assert {replicas, ^existing_node, updated_node} =
-            Replica.put_heartbeat(%{ "existing" => existing_node}, Replica.ref(existing_node))
+               Replica.put_heartbeat(%{"existing" => existing_node}, Replica.ref(existing_node))
 
       assert replicas["existing"] == updated_node
       assert updated_node.name == existing_node.name
@@ -42,9 +43,17 @@ defmodule Phoenix.Tracker.ReplicaTest do
   end
 
   test "detect_down/4 with temporarily downed node" do
-    {replicas, nil, tempdown_node} = Replica.put_heartbeat(%{}, Replica.ref(Replica.new("tempdown")))
+    {replicas, nil, tempdown_node} =
+      Replica.put_heartbeat(%{}, Replica.ref(Replica.new("tempdown")))
+
     assert {replicas, ^tempdown_node, updated_tempdown} =
-           Replica.detect_down(replicas, tempdown_node, 5, 10, tempdown_node.last_heartbeat_at + 6)
+             Replica.detect_down(
+               replicas,
+               tempdown_node,
+               5,
+               10,
+               tempdown_node.last_heartbeat_at + 6
+             )
 
     assert Map.fetch(replicas, "tempdown") == {:ok, updated_tempdown}
     assert updated_tempdown.name == "tempdown"
@@ -53,9 +62,17 @@ defmodule Phoenix.Tracker.ReplicaTest do
   end
 
   test "detect_down/4 with permanently downed node removes from replicas map" do
-    {replicas, nil, tempdown_node} = Replica.put_heartbeat(%{}, Replica.ref(Replica.new("tempdown")))
+    {replicas, nil, tempdown_node} =
+      Replica.put_heartbeat(%{}, Replica.ref(Replica.new("tempdown")))
+
     assert {replicas, ^tempdown_node, updated_tempdown} =
-           Replica.detect_down(replicas, tempdown_node, 5, 10, tempdown_node.last_heartbeat_at + 11)
+             Replica.detect_down(
+               replicas,
+               tempdown_node,
+               5,
+               10,
+               tempdown_node.last_heartbeat_at + 11
+             )
 
     assert Map.fetch(replicas, "tempdown") == :error
     assert updated_tempdown.name == "tempdown"
@@ -65,8 +82,9 @@ defmodule Phoenix.Tracker.ReplicaTest do
 
   test "detect_down/4 with up node" do
     {replicas, nil, up_node} = Replica.put_heartbeat(%{}, Replica.ref(Replica.new("up")))
+
     assert {replicas, ^up_node, ^up_node} =
-           Replica.detect_down(replicas, up_node, 5, 10, up_node.last_heartbeat_at)
+             Replica.detect_down(replicas, up_node, 5, 10, up_node.last_heartbeat_at)
 
     assert Map.fetch(replicas, "up") == {:ok, up_node}
     assert up_node.status == :up

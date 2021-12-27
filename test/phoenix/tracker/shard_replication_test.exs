@@ -22,16 +22,15 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   test "heartbeats", %{shard: shard} do
     subscribe_to_server(shard)
-    assert_heartbeat from: @primary
+    assert_heartbeat(from: @primary)
     flush()
-    assert_heartbeat from: @primary
+    assert_heartbeat(from: @primary)
     flush()
-    assert_heartbeat from: @primary
+    assert_heartbeat(from: @primary)
   end
 
   test "gossip from unseen node triggers nodeup and transfer request",
-    %{shard: shard, topic: topic, tracker: tracker} do
-
+       %{shard: shard, topic: topic, tracker: tracker} do
     assert list(shard, topic) == []
     subscribe_to_server(shard)
     drop_gossips(shard)
@@ -39,28 +38,29 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     start_shard(@node1, name: tracker)
     track_presence(@node1, shard, spawn_pid(), topic, "node1", %{})
     flush()
-    assert_heartbeat from: @node1
+    assert_heartbeat(from: @node1)
 
     resume_gossips(shard)
     # primary sends transfer_req to node1 after seeing behind
-    ref = assert_transfer_req to: @node1, from: @primary
+    ref = assert_transfer_req(to: @node1, from: @primary)
     # node1 fulfills transfer request and sends transfer_ack to primary
-    assert_transfer_ack ref, from: @node1
-    assert_heartbeat to: @node1, from: @primary
+    assert_transfer_ack(ref, from: @node1)
+    assert_heartbeat(to: @node1, from: @primary)
     assert [{"node1", _}] = list(shard, topic)
   end
 
   test "requests for transfer collapses clocks",
-    %{shard: shard, topic: topic, tracker: tracker} do
-
+       %{shard: shard, topic: topic, tracker: tracker} do
     subscribe_to_server(shard)
     subscribe(topic)
+
     for node <- [@node1, @node2] do
       spy_on_server(node, self(), shard)
       start_shard(node, name: tracker)
       assert_receive {{:replica_up, ^node}, @primary}, @timeout
       assert_receive {{:replica_up, @primary}, ^node}, @timeout
     end
+
     assert_receive {{:replica_up, @node2}, @node1}, @timeout
     assert_receive {{:replica_up, @node1}, @node2}, @timeout
 
@@ -71,10 +71,12 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     track_presence(@node2, shard, spawn_pid(), topic, "node2", %{})
 
     # node1 sends delta broadcast to node2
-    assert_receive {@node1, {:pub, :heartbeat, {@node2, _vsn}, %State{mode: :delta}, _clocks}}, @timeout
+    assert_receive {@node1, {:pub, :heartbeat, {@node2, _vsn}, %State{mode: :delta}, _clocks}},
+                   @timeout
 
     # node2 sends delta broadcast to node1
-    assert_receive {@node2, {:pub, :heartbeat, {@node1, _vsn}, %State{mode: :delta}, _clocks}}, @timeout
+    assert_receive {@node2, {:pub, :heartbeat, {@node1, _vsn}, %State{mode: :delta}, _clocks}},
+                   @timeout
 
     flush()
     resume_gossips(shard)
@@ -86,23 +88,23 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert_receive {:pub, :transfer_ack, ^ref, {^node, _vsn}, _state}, @timeout
 
     # wait for local sync
-    assert_join ^topic, "node1", %{}
-    assert_join ^topic, "node1.2", %{}
-    assert_join ^topic, "node2", %{}
-    assert_heartbeat from: @node1
-    assert_heartbeat from: @node2
+    assert_join(^topic, "node1", %{})
+    assert_join(^topic, "node1.2", %{})
+    assert_join(^topic, "node2", %{})
+    assert_heartbeat(from: @node1)
+    assert_heartbeat(from: @node2)
 
     assert [{"node1", _}, {"node1.2", _}, {"node2", _}] = list(shard, topic)
   end
 
   test "old pids from a node are permdowned when the node comes back up",
-    %{shard: shard, shard_pid: shard_pid, topic: topic, tracker: tracker} do
+       %{shard: shard, shard_pid: shard_pid, topic: topic, tracker: tracker} do
     track_presence(@primary, shard, self(), topic, @primary, %{})
     {node1_node, {:ok, node1_shard}} = start_shard(@node1, name: tracker)
     track_presence(@node1, shard, node1_node, topic, @node1, %{})
 
     spy_on_server(@node1, self(), shard)
-    assert_heartbeat to: @node1, from: @primary
+    assert_heartbeat(to: @node1, from: @primary)
 
     {node2_node, {:ok, node2_shard}} = start_shard(@node2, name: tracker)
     track_presence(@node2, shard, node2_node, topic, @node2, %{})
@@ -118,8 +120,8 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
     flush()
     spy_on_server(@node1, self(), shard)
-    assert_heartbeat to: @node2, from: @primary
-    assert_heartbeat to: @node1, from: @node2
+    assert_heartbeat(to: @node2, from: @primary)
+    assert_heartbeat(to: @node1, from: @node2)
 
     refute {@node1, node1_node} in get_values(@primary, shard_pid)
     refute {@node1, node1_node} in get_values(@node1, node1_shard)
@@ -128,65 +130,90 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   # TODO split into multiple testscases
   test "tempdowns with nodeups of new vsn, and permdowns",
-    %{shard: shard, topic: topic, tracker: tracker} do
-
+       %{shard: shard, topic: topic, tracker: tracker} do
     subscribe_to_server(shard)
     subscribe(topic)
 
     {node1_node, {:ok, node1_server}} = start_shard(@node1, name: tracker)
     {_node2_node, {:ok, _node2_server}} = start_shard(@node2, name: tracker)
+
     for node <- [@node1, @node2] do
       track_presence(node, shard, spawn_pid(), topic, node, %{})
-      assert_join ^topic, ^node, %{}
+      assert_join(^topic, ^node, %{})
     end
-    assert_map %{@node1 => %Replica{status: :up, vsn: vsn_before},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+
+    assert_map(
+      %{@node1 => %Replica{status: :up, vsn: vsn_before}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
 
     # tempdown netsplit
     flush()
     :ok = :sys.suspend(node1_server)
-    assert_leave ^topic, @node1, %{}
-    assert_map %{@node1 => %Replica{status: :down, vsn: ^vsn_before},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+    assert_leave(^topic, @node1, %{})
+
+    assert_map(
+      %{@node1 => %Replica{status: :down, vsn: ^vsn_before}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
+
     flush()
     :ok = :sys.resume(node1_server)
-    assert_join ^topic, @node1, %{}
-    assert_heartbeat from: @node1
-    assert_map %{@node1 => %Replica{status: :up, vsn: ^vsn_before},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+    assert_join(^topic, @node1, %{})
+    assert_heartbeat(from: @node1)
+
+    assert_map(
+      %{@node1 => %Replica{status: :up, vsn: ^vsn_before}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
 
     # tempdown crash
     Process.unlink(node1_node)
     Process.exit(node1_server, :kill)
-    assert_leave ^topic, @node1, %{}
-    assert_map %{@node1 => %Replica{status: :down},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+    assert_leave(^topic, @node1, %{})
+
+    assert_map(
+      %{@node1 => %Replica{status: :down}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
 
     # tempdown => nodeup with new vsn
     {node1_node, {:ok, node1_server}} = start_shard(@node1, name: tracker)
     track_presence(@node1, shard, spawn_pid(), topic, "node1-back", %{})
-    assert_join ^topic, "node1-back", %{}
+    assert_join(^topic, "node1-back", %{})
     assert [{@node2, _}, {"node1-back", _}] = list(shard, topic)
-    assert_map %{@node1 => %Replica{status: :up, vsn: new_vsn},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+
+    assert_map(
+      %{@node1 => %Replica{status: :up, vsn: new_vsn}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
+
     assert vsn_before != new_vsn
 
     # tempdown again
     Process.unlink(node1_node)
     Process.exit(node1_server, :kill)
-    assert_leave ^topic, "node1-back", %{}
-    assert_map %{@node1 => %Replica{status: :down},
-                 @node2 => %Replica{status: :up}}, replicas(shard), 2
+    assert_leave(^topic, "node1-back", %{})
+
+    assert_map(
+      %{@node1 => %Replica{status: :down}, @node2 => %Replica{status: :up}},
+      replicas(shard),
+      2
+    )
 
     # tempdown => permdown
     flush()
     for _ <- 0..trunc(@permdown / @heartbeat), do: assert_heartbeat(from: @primary)
-    assert_map %{@node2 => %Replica{status: :up}}, replicas(shard), 1
+    assert_map(%{@node2 => %Replica{status: :up}}, replicas(shard), 1)
   end
 
   test "node detects and locally broadcasts presence_join/leave",
-    %{shard: shard, topic: topic, tracker: tracker} do
-
+       %{shard: shard, topic: topic, tracker: tracker} do
     local_presence = spawn_pid()
     remote_pres = spawn_pid()
 
@@ -194,52 +221,53 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     subscribe(topic)
     assert list(shard, topic) == []
     {:ok, _ref} = Shard.track(shard, self(), topic, "me", %{name: "me"})
-    assert_join ^topic, "me", %{name: "me"}
+    assert_join(^topic, "me", %{name: "me"})
     assert [{"me", %{name: "me", phx_ref: _}}] = list(shard, topic)
 
-    {:ok, _ref} = Shard.track(shard, local_presence , topic, "me2", %{name: "me2"})
-    assert_join ^topic, "me2", %{name: "me2"}
-    assert [{"me", %{name: "me", phx_ref: _}},
-            {"me2",%{name: "me2", phx_ref: _}}] =
-           list(shard, topic)
+    {:ok, _ref} = Shard.track(shard, local_presence, topic, "me2", %{name: "me2"})
+    assert_join(^topic, "me2", %{name: "me2"})
+
+    assert [{"me", %{name: "me", phx_ref: _}}, {"me2", %{name: "me2", phx_ref: _}}] =
+             list(shard, topic)
 
     # remote joins
     assert replicas(shard) == %{}
     start_shard(@node1, name: tracker)
     track_presence(@node1, shard, remote_pres, topic, "node1", %{name: "s1"})
-    assert_join ^topic, "node1", %{name: "s1"}
-    assert_map %{@node1 => %Replica{status: :up}}, replicas(shard), 1
-    assert [{"me", %{name: "me", phx_ref: _}},
-            {"me2",%{name: "me2", phx_ref: _}},
-            {"node1", %{name: "s1", phx_ref: _}}] =
-           list(shard, topic)
+    assert_join(^topic, "node1", %{name: "s1"})
+    assert_map(%{@node1 => %Replica{status: :up}}, replicas(shard), 1)
+
+    assert [
+             {"me", %{name: "me", phx_ref: _}},
+             {"me2", %{name: "me2", phx_ref: _}},
+             {"node1", %{name: "s1", phx_ref: _}}
+           ] = list(shard, topic)
 
     # local leaves
     Process.exit(local_presence, :kill)
-    assert_leave ^topic, "me2", %{name: "me2"}
-    assert [{"me", %{name: "me", phx_ref: _}},
-            {"node1", %{name: "s1", phx_ref: _}}] =
-           list(shard, topic)
+    assert_leave(^topic, "me2", %{name: "me2"})
+
+    assert [{"me", %{name: "me", phx_ref: _}}, {"node1", %{name: "s1", phx_ref: _}}] =
+             list(shard, topic)
 
     # remote leaves
     Process.exit(remote_pres, :kill)
-    assert_leave ^topic, "node1", %{name: "s1"}
+    assert_leave(^topic, "node1", %{name: "s1"})
     assert [{"me", %{name: "me", phx_ref: _}}] = list(shard, topic)
   end
 
   test "detects nodedown and locally broadcasts leaves",
-    %{shard: shard, topic: topic, tracker: tracker} do
-
+       %{shard: shard, topic: topic, tracker: tracker} do
     local_presence = spawn_pid()
     subscribe(topic)
     {node_pid, {:ok, node1_server}} = start_shard(@node1, name: tracker)
     assert list(shard, topic) == []
 
-    {:ok, _ref} = Shard.track(shard, local_presence , topic, "local1", %{name: "l1"})
-    assert_join ^topic, "local1", %{}
+    {:ok, _ref} = Shard.track(shard, local_presence, topic, "local1", %{name: "l1"})
+    assert_join(^topic, "local1", %{})
 
     track_presence(@node1, shard, spawn_pid(), topic, "node1", %{name: "s1"})
-    assert_join ^topic, "node1", %{name: "s1"}
+    assert_join(^topic, "node1", %{name: "s1"})
     assert %{@node1 => %Replica{status: :up}} = replicas(shard)
     assert [{"local1", _}, {"node1", _}] = list(shard, topic)
     assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
@@ -247,24 +275,22 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     # nodedown
     Process.unlink(node_pid)
     Process.exit(node1_server, :kill)
-    assert_leave ^topic, "node1", %{name: "s1"}
+    assert_leave(^topic, "node1", %{name: "s1"})
     assert %{@node1 => %Replica{status: :down}} = replicas(shard)
     assert [{"local1", _}] = list(shard, topic)
     assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
 
-    :timer.sleep(@permdown + 2*@heartbeat)
+    :timer.sleep(@permdown + 2 * @heartbeat)
     assert [{"local1", _}] = dirty_list(shard, topic)
   end
 
-
   test "untrack with no tracked topic is a noop",
-    %{shard: shard, topic: topic} do
+       %{shard: shard, topic: topic} do
     assert Shard.untrack(shard, self(), topic, "foo") == :ok
   end
 
   test "untrack with topic",
-    %{shard: shard, topic: topic} do
-
+       %{shard: shard, topic: topic} do
     Shard.track(shard, self(), topic, "user1", %{name: "user1"})
     Shard.track(shard, self(), "another:topic", "user2", %{name: "user2"})
     assert [{"user1", %{name: "user1"}}] = list(shard, topic)
@@ -279,8 +305,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   end
 
   test "untrack from all topics",
-    %{shard: shard, topic: topic} do
-
+       %{shard: shard, topic: topic} do
     Shard.track(shard, self(), topic, "user1", %{name: "user1"})
     Shard.track(shard, self(), "another:topic", "user2", %{name: "user2"})
     assert [{"user1", %{name: "user1"}}] = list(shard, topic)
@@ -293,25 +318,26 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   end
 
   test "updating presence sends join/leave and phx_ref_prev",
-    %{shard: shard, topic: topic} do
-
+       %{shard: shard, topic: topic} do
     subscribe(topic)
     {:ok, _ref} = Shard.track(shard, self(), topic, "u1", %{name: "u1"})
     assert [{"u1", %{name: "u1", phx_ref: ref}}] = list(shard, topic)
     {:ok, _ref} = Shard.update(shard, self(), topic, "u1", %{name: "u1-updated"})
-    assert_leave ^topic, "u1", %{name: "u1", phx_ref: ^ref}
-    assert_join ^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref}
+    assert_leave(^topic, "u1", %{name: "u1", phx_ref: ^ref})
+    assert_join(^topic, "u1", %{name: "u1-updated", phx_ref_prev: ^ref})
   end
 
   test "updating presence sends join/leave and phx_ref_prev with profer diffs if function for update used",
-    %{shard: shard, topic: topic} do
-
+       %{shard: shard, topic: topic} do
     subscribe(topic)
     {:ok, _ref} = Shard.track(shard, self(), topic, "u1", %{browser: "Chrome", status: "online"})
     assert [{"u1", %{browser: "Chrome", status: "online", phx_ref: ref}}] = list(shard, topic)
-    {:ok, _ref} = Shard.update(shard, self(), topic, "u1", fn meta -> Map.put(meta, :status, "away") end)
-    assert_leave ^topic, "u1", %{browser: "Chrome", status: "online", phx_ref: ^ref}
-    assert_join ^topic, "u1", %{browser: "Chrome", status: "away", phx_ref_prev: ^ref}
+
+    {:ok, _ref} =
+      Shard.update(shard, self(), topic, "u1", fn meta -> Map.put(meta, :status, "away") end)
+
+    assert_leave(^topic, "u1", %{browser: "Chrome", status: "online", phx_ref: ^ref})
+    assert_join(^topic, "u1", %{browser: "Chrome", status: "away", phx_ref_prev: ^ref})
   end
 
   test "updating with no prior presence", %{shard: shard, topic: topic} do
@@ -321,8 +347,10 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   test "duplicate tracking", %{shard: shard, topic: topic} do
     pid = self()
     assert {:ok, _ref} = Shard.track(shard, pid, topic, "u1", %{})
+
     assert {:error, {:already_tracked, ^pid, ^topic, "u1"}} =
-           Shard.track(shard, pid, topic, "u1", %{})
+             Shard.track(shard, pid, topic, "u1", %{})
+
     assert {:ok, _ref} = Shard.track(shard, pid, "another:topic", "u1", %{})
     assert {:ok, _ref} = Shard.track(shard, pid, topic, "anotherkey", %{})
 
@@ -332,17 +360,17 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   end
 
   test "graceful exits with permdown",
-    %{shard: shard, topic: topic, tracker: tracker} do
+       %{shard: shard, topic: topic, tracker: tracker} do
     subscribe(topic)
     {_node_pid, {:ok, _node1_server}} = start_shard(@node1, name: tracker)
     track_presence(@node1, shard, spawn_pid(), topic, "node1", %{name: "s1"})
-    assert_join ^topic, "node1", %{name: "s1"}
+    assert_join(^topic, "node1", %{name: "s1"})
     assert %{@node1 => %Replica{status: :up}} = replicas(shard)
     assert [{"node1", _}] = list(shard, topic)
 
     # graceful permdown
     {_, :ok} = graceful_permdown(@node1, shard)
-    assert_leave ^topic, "node1", %{name: "s1"}
+    assert_leave(^topic, "node1", %{name: "s1"})
     assert [] = list(shard, topic)
     assert replicas(shard) == %{}
   end
@@ -410,6 +438,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   def assert_transfer_ack(ref, opts) do
     from = Keyword.fetch!(opts, :from)
+
     if to = opts[:to] do
       assert_receive {^to, {:pub, :transfer_ack, ^ref, {^from, _vsn}, _state}}, @timeout
     else
@@ -419,6 +448,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   def assert_heartbeat(opts) do
     from = Keyword.fetch!(opts, :from)
+
     if to = opts[:to] do
       assert_receive {^to, {:pub, :heartbeat, {^from, _vsn}, _delta, _clocks}}, @timeout
     else

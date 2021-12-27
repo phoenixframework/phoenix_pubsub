@@ -105,7 +105,10 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     s3 = new(:s3, config)
     s2 = State.join(s2, new_pid(), "lobby", "user2", %{})
     assert [gen1, gen1, gen1] = gens = push(s1, [], s2.delta, [5, 10, 15])
-    assert [pruned_gen1, pruned_gen1, pruned_gen1] = DeltaGeneration.remove_down_replicas(gens, :s2)
+
+    assert [pruned_gen1, pruned_gen1, pruned_gen1] =
+             DeltaGeneration.remove_down_replicas(gens, :s2)
+
     assert {s3, [], []} = State.merge(s3, pruned_gen1)
     assert State.get_by_topic(s3, "lobby") == []
   end
@@ -119,7 +122,7 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     expected_values = %{{:r1, 1} => {pid, "lobby", "user1", %{}}}
 
     assert DeltaGeneration.extract(s2, [], :r2, %{r1: 1}) ==
-      {expected_state, expected_values}
+             {expected_state, expected_values}
   end
 
   test "delta is extracted for the first delta with dominating clocks", config do
@@ -141,15 +144,21 @@ defmodule Phoenix.Tracker.DeltaGenerationTest do
     d2 = State.reset_delta(s2).delta
 
     {d1_left, d1_right} = d1.range
-    d3 = %{d1 |
-      range: {Map.put(d1_left, :r2, 0), Map.put(d1_right, :r2, 1)},
-      values: Map.put(d1.values, {:r2, 1}, {pid, "lobby", "user2", %{}})}
+
+    d3 = %{
+      d1
+      | range: {Map.put(d1_left, :r2, 0), Map.put(d1_right, :r2, 1)},
+        values: Map.put(d1.values, {:r2, 1}, {pid, "lobby", "user2", %{}})
+    }
+
     s3 = %{s2 | delta: d3}
 
-    expected_delta = %{d3 |
-      clouds: %{},
-      range: {%{r2: 0}, %{r2: 1}},
-      values: %{{:r2, 1} => {pid, "lobby", "user2", %{}}}}
+    expected_delta = %{
+      d3
+      | clouds: %{},
+        range: {%{r2: 0}, %{r2: 1}},
+        values: %{{:r2, 1} => {pid, "lobby", "user2", %{}}}
+    }
 
     assert DeltaGeneration.extract(s3, [d2, d3], :r3, %{r2: 0}) == expected_delta
   end
