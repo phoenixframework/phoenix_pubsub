@@ -34,7 +34,7 @@ defmodule Phoenix.PubSub do
       It supports a `:pool_size` option to be given alongside
       the name, defaults to `1`. Note the `:pool_size` must
       be the same throughout the cluster, therefore don't
-      configure the pool size based on `System.schedulers_online/1`, 
+      configure the pool size based on `System.schedulers_online/1`,
       especially if you are using machines with different specs.
 
     * `Phoenix.PubSub.Redis` - uses Redis to exchange data between
@@ -286,6 +286,14 @@ defmodule Phoenix.PubSub do
     end
 
     :ok
+  end
+
+  @doc """
+  Returns `true` if Phoenix PubSub has been started, otherwise it returns false.
+  """
+  def is_running? do
+    started_applications = Application.started_applications() |> Enum.map(&elem(&1, 0))
+    :phoenix_pubsub in started_applications
   end
 
   defp dispatch(pubsub, from, topic, message, dispatcher) do
