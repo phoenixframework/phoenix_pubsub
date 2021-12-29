@@ -289,7 +289,7 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Returns `true` if Phoenix PubSub has been started, otherwise it returns false.
+  Returns `true` if Phoenix PubSub has been started, otherwise it returns `false`.
   """
   def is_running? do
     started_applications = Application.started_applications() |> Enum.map(&elem(&1, 0))
