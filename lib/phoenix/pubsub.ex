@@ -289,11 +289,13 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Returns `true` if Phoenix PubSub has been started, otherwise it returns `false`.
+  Returns `true` if the provided PubSub has been started, otherwise it returns `false`.
+
+  ## Example
+    iex> is_started?(MyApp.PubSub)
   """
-  def is_running? do
-    started_applications = Application.started_applications() |> Enum.map(&elem(&1, 0))
-    :phoenix_pubsub in started_applications
+  def is_started?(pubsub) do
+    Enum.member?(Process.registered(), pubsub)
   end
 
   defp dispatch(pubsub, from, topic, message, dispatcher) do
