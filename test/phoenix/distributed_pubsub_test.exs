@@ -17,7 +17,7 @@ defmodule Phoenix.PubSub.DistributedTest do
     :ok = PubSub.broadcast(config.pubsub, config.topic, :ping)
     assert_receive {@node1, :ping}
     assert_receive {@node2, :ping}
-    
+
     :ok = PubSub.broadcast(config.pubsub, config.topic, :ping)
     assert_receive {@node1, :ping}
     assert_receive {@node2, :ping}

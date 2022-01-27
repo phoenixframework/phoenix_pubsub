@@ -71,11 +71,12 @@ defmodule Phoenix.Tracker do
   require Logger
   alias Phoenix.Tracker.Shard
 
-  @type presence :: {key :: String.t, meta :: map}
-  @type topic :: String.t
+  @type presence :: {key :: String.t(), meta :: map}
+  @type topic :: String.t()
 
-  @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
-  @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
+  @callback init(Keyword.t()) :: {:ok, state :: term} | {:error, reason :: term}
+  @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) ::
+              {:ok, state :: term}
 
   defmacro __using__(_opts) do
     quote location: :keep do
@@ -154,6 +155,7 @@ defmodule Phoenix.Tracker do
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
     |> GenServer.call({:untrack, pid, topic, key})
   end
+
   def untrack(tracker_name, pid) when is_pid(pid) do
     shard_multicall(tracker_name, {:untrack, pid})
     :ok
@@ -178,8 +180,10 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, map | (map -> map)) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def update(tracker_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
+  @spec update(atom, pid, topic, term, map | (map -> map)) ::
+          {:ok, ref :: binary} | {:error, reason :: term}
+  def update(tracker_name, pid, topic, key, meta)
+      when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
     |> GenServer.call({:update, pid, topic, key, meta})

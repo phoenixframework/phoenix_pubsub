@@ -24,7 +24,7 @@ defmodule Phoenix.PubSub.Mixfile do
   def application do
     [
       mod: {Phoenix.PubSub.Application, []},
-      extra_applications: [:logger, :crypto],
+      extra_applications: [:logger, :crypto]
     ]
   end
 
