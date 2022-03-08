@@ -5,6 +5,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   @primary :"primary@127.0.0.1"
   @node1 :"node1@127.0.0.1"
   @node2 :"node2@127.0.0.1"
+  @moduletag :capture_log
 
   setup config do
     tracker = config.test
@@ -387,6 +388,20 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
     # Wait until primary is permanently down
     assert_receive {{:replica_permdown, @node1}, @primary}, permdown_period * 2
+  end
+
+  test "handle_info callback with bad return", %{shard_pid: shard_pid} do
+    Process.unlink(shard_pid)
+    ref = Process.monitor(shard_pid)
+    send(shard_pid, {:run, fn _state -> :bad end})
+    assert_receive {:DOWN, ^ref, :process, ^shard_pid, _}
+  end
+
+  test "handle_info callback with valid return", %{shard_pid: shard_pid} do
+    parent = self()
+    ref = make_ref()
+    send(shard_pid, {:run, fn _state -> {:noreply, send(parent, ref)} end})
+    assert_receive ^ref
   end
 
   ## Helpers

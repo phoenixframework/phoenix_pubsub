@@ -40,6 +40,10 @@ defmodule Phoenix.PubSub.NodeCase do
       end
       {:ok, state}
     end
+
+    def handle_info({:run, func}, state) do
+      func.(state)
+    end
   end
 
   def subscribe(topic) do

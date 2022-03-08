@@ -59,6 +59,9 @@ defmodule Phoenix.Tracker do
   handler can use this information to notify subscribers of events, as
   done above.
 
+  An optional `handle_info/2` callback may also be invoked to handle
+  application specific messages within your tracker.
+
   ## Special Considerations
 
   Operations within `handle_diff/2` happen *in the tracker server's context*.
@@ -76,6 +79,8 @@ defmodule Phoenix.Tracker do
 
   @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
+  @callback handle_info(message :: term, state :: term) :: {:noreply, state :: term}
+  @optional_callbacks handle_info: 2
 
   defmacro __using__(_opts) do
     quote location: :keep do

@@ -9,6 +9,8 @@ defmodule Phoenix.Tracker.Shard do
 
   @callback init(Keyword.t) :: {:ok, pid} | {:error, reason :: term}
   @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
+  @callback handle_info(message :: term, state :: term) :: {:noreply, state :: term}
+  @optional_callbacks handle_info: 2
 
   @type t :: %{
     shard_name: String.t(),
@@ -214,6 +216,24 @@ defmodule Phoenix.Tracker.Shard do
 
   def handle_info({:EXIT, pid, _reason}, state) do
     {:noreply, drop_presence(state, pid)}
+  end
+
+  def handle_info(msg, state) do
+    if function_exported?(state.tracker, :handle_info, 2) do
+      case state.tracker.handle_info(msg, state.tracker_state) do
+        {:noreply, new_tracker_state} ->
+          %{state | tracker_state: new_tracker_state}
+
+        other ->
+          raise ArgumentError, """
+          expected #{state.tracker}.handle_info/2 to return {:noreply, state}, but got:
+
+              #{inspect other}
+          """
+      end
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_call(:values, _from, state) do
@@ -494,7 +514,7 @@ defmodule Phoenix.Tracker.Shard do
   end
   defp handle_tracker_result(other, state) do
     raise ArgumentError, """
-    expected #{state.tracker} to return {:ok, state}, but got:
+    expected #{state.tracker}.handle_diff/2 to return {:ok, state}, but got:
 
         #{inspect other}
     """
