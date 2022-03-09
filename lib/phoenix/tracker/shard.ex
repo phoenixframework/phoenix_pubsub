@@ -222,7 +222,7 @@ defmodule Phoenix.Tracker.Shard do
     if function_exported?(state.tracker, :handle_info, 2) do
       case state.tracker.handle_info(msg, state.tracker_state) do
         {:noreply, new_tracker_state} ->
-          %{state | tracker_state: new_tracker_state}
+          {:noreply, %{state | tracker_state: new_tracker_state}}
 
         other ->
           raise ArgumentError, """
