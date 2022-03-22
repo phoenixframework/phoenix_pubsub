@@ -3,6 +3,10 @@ defmodule Phoenix.PubSub.PG2 do
   Phoenix PubSub adapter based on `:pg`/`:pg2`.
 
   It runs on Distributed Erlang and is the default adapter.
+  
+  Please note that `pg` stands for "Process Group" (an Erlang module).
+
+  This PubSub adapter is in no way related to Postgres, the database.
   """
 
   @behaviour Phoenix.PubSub.Adapter
