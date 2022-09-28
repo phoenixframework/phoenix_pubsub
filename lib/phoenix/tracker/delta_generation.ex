@@ -45,7 +45,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
   end
 
   @doc """
-  Prunes permanently downed replicaes from the delta generation list
+  Prunes permanently downed replicates from the delta generation list
   """
   @spec remove_down_replicas([State.delta], Replica.replica_ref) :: [State.delta]
   def remove_down_replicas(generations, replica_ref) do

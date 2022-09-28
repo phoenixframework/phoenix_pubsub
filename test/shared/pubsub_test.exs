@@ -105,7 +105,7 @@ defmodule Phoenix.PubSubTest do
     end
 
     @tag pool_size: size
-    test "pool #{size}: unsubscribe on not subcribed topic noops", config do
+    test "pool #{size}: unsubscribe on not subscribed topic noops", config do
       assert :ok = PubSub.unsubscribe(config.pubsub, config.topic)
       assert subscribers(config, config.topic) == []
     end

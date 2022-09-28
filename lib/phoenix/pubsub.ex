@@ -13,11 +13,11 @@ defmodule Phoenix.PubSub do
   and broadcast messages:
 
       iex> alias Phoenix.PubSub
-      iex> PubSub.subscribe :my_pubsub, "user:123"
+      iex> PubSub.subscribe(:my_pubsub, "user:123")
       :ok
       iex> Process.info(self(), :messages)
       {:messages, []}
-      iex> PubSub.broadcast :my_pubsub, "user:123", {:user_update, %{id: 123, name: "Shane"}}
+      iex> PubSub.broadcast(:my_pubsub, "user:123", {:user_update, %{id: 123, name: "Shane"}})
       :ok
       iex> Process.info(self(), :messages)
       {:messages, [{:user_update, %{id: 123, name: "Shane"}}]}
@@ -84,7 +84,7 @@ defmodule Phoenix.PubSub do
   ## Options
 
     * `:name` - the name of the pubsub to be started
-    * `:adapter` - the adapter to use (defauls to `Phoenix.PubSub.PG2`)
+    * `:adapter` - the adapter to use (defaults to `Phoenix.PubSub.PG2`)
     * `:pool_size` - number of pubsub partitions to launch
       (defaults to one partition for every 4 cores)
 
