@@ -62,19 +62,15 @@ defmodule Phoenix.PubSub.PG2 do
     name = Keyword.fetch!(opts, :name)
     pool_size = Keyword.get(opts, :pool_size, 1)
     adapter_name = Keyword.fetch!(opts, :adapter_name)
-    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size}, name: :"#{adapter_name}_supervisor")
+    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size}, name: adapter_name)
   end
 
   @impl true
   def init({name, adapter_name, pool_size}) do
-    [_ | groups] =
+    groups =
       for number <- 1..pool_size do
         :"#{adapter_name}_#{number}"
       end
-
-    # Use `adapter_name` for the first in the pool for backwards compatability
-    # with v2.0 when the pool_size is 1.
-    groups = [adapter_name | groups]
 
     :persistent_term.put(adapter_name, List.to_tuple(groups))
 
