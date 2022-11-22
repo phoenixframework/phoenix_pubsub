@@ -134,6 +134,9 @@ defmodule Phoenix.PubSub do
 
   @doc """
   Broadcasts message on given topic across the whole cluster.
+  If the calling process is subscribed to the topic, it will receive its own
+  message.
+  If it should not receive its own message, use `broadcast_from/5`.
 
     * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
@@ -154,6 +157,9 @@ defmodule Phoenix.PubSub do
 
   @doc """
   Broadcasts message on given topic from the given process across the whole cluster.
+  If the calling process is subscribed to the topic, it will not receive its
+  own message.
+  If it should receive its own message, use `broadcast/4`.
 
     * `pubsub` - The name of the pubsub system
     * `from` - The pid that will send the message
@@ -175,6 +181,9 @@ defmodule Phoenix.PubSub do
 
   @doc """
   Broadcasts message on given topic only for the current node.
+  If the calling process is subscribed to the topic, it will receive its own
+  message.
+  If it should not receive its own message, use `local_broadcast_from/5`.
 
     * `pubsub` - The name of the pubsub system
     * `topic` - The topic to broadcast to, ie: `"users:123"`
@@ -191,6 +200,9 @@ defmodule Phoenix.PubSub do
 
   @doc """
   Broadcasts message on given topic from a given process only for the current node.
+  If the calling process is subscribed to the topic, it will not receive its
+  own message.
+  If it should receive its own message, use `local_broadcast/4`.
 
     * `pubsub` - The name of the pubsub system
     * `from` - The pid that will send the message
