@@ -160,6 +160,9 @@ defmodule Phoenix.PubSub do
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
+  The default dispatcher will broadcast the message to all subscribers except for the
+  process that initiated the broadcast.
+  
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
@@ -197,6 +200,9 @@ defmodule Phoenix.PubSub do
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
+  The default dispatcher will broadcast the message to all subscribers except for the
+  process that initiated the broadcast.
+  
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
