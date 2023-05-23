@@ -298,11 +298,22 @@ defmodule Phoenix.Tracker.Shard do
     Phoenix.PubSub.subscribe(pubsub_server, namespaced_topic, link: true)
   end
 
-  defp put_update(state, pid, topic, key, meta, %{phx_ref: ref} = prev_meta) do
-    state
-    |> put_presences(State.leave(state.presences, pid, topic, key))
-    |> put_presence(pid, topic, key, Map.put(meta, :phx_ref_prev, ref), prev_meta)
+  defp put_update(state, pid, topic, key, meta, %{phx_ref: prev_ref} = prev_meta) do
+    ref = random_ref()
+
+    meta =
+      meta
+      |> Map.put(:phx_ref, ref)
+      |> Map.put(:phx_ref_prev, prev_ref)
+
+    new_state =
+      state
+      |> report_diff_join(topic, key, meta, prev_meta)
+      |> put_presences(State.leave_join(state.presences, pid, topic, key, meta))
+
+    {new_state, ref}
   end
+
   defp put_presence(state, pid, topic, key, meta, prev_meta \\ nil) do
     Process.link(pid)
     ref = random_ref()
