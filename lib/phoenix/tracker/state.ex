@@ -84,6 +84,27 @@ defmodule Phoenix.Tracker.State do
   end
 
   @doc """
+  Updates an element via leave and join.
+
+  Atomically updates ETS local entry.
+  """
+  @spec leave_join(t, pid, topic, key, meta) :: t
+  def leave_join(%State{delta: delta} = state, pid, topic, key, meta) do
+    # Produce remove-like delta
+    [{{^topic, ^pid, ^key}, _meta, tag}] = :ets.lookup(state.values, {topic, pid, key})
+    pruned_clouds = delete_tag(state.clouds, tag)
+    new_delta = remove_delta_tag(state.delta, tag)
+    state = bump_clock(%State{state | clouds: pruned_clouds, delta: new_delta})
+
+    # Update ETS entry and produce add-like delta
+    state = bump_clock(state)
+    tag = tag(state)
+    true = :ets.insert(state.values, {{topic, pid, key}, meta, tag})
+    new_delta = %State{delta | values: Map.put(delta.values, tag, {pid, topic, key, meta})}
+    %State{state | delta: new_delta}
+  end
+
+  @doc """
   Removes an element from the set.
   """
   @spec leave(t, pid, topic, key) :: t
@@ -287,10 +308,31 @@ defmodule Phoenix.Tracker.State do
   end
 
   defp merge(local, remote, remote_map) do
-    {pids, joins} = accumulate_joins(local, remote_map)
-    {clouds, delta, leaves} = observe_removes(local, remote, remote_map)
+    {added_pids, joins} = accumulate_joins(local, remote_map)
+    {clouds, delta, leaves, removed_pids} = observe_removes(local, remote, remote_map)
+
+    # We diff ETS deletes and inserts, this way if there is an update
+    # operation (leave + join) we handle it atomically via insert into
+    # the :ordered_set table
+
+    added_value_keys = for {value_key, _meta, _tag} <- joins, do: value_key
+    removed_value_keys = for {value_key, _meta, _tag} <- leaves, do: value_key
+    value_keys_to_remove = removed_value_keys -- added_value_keys
+
+    pids_to_remove = removed_pids -- added_pids
+    pids_to_add = added_pids -- removed_pids
+
+    for value_key <- value_keys_to_remove do
+      :ets.delete(local.values, value_key)
+    end
+
+    for pid <- pids_to_remove do
+      :ets.match_delete(local.pids, pid)
+    end
+
     true = :ets.insert(local.values, joins)
-    true = :ets.insert(local.pids, pids)
+    true = :ets.insert(local.pids, pids_to_add)
+
     known_remote_context = Map.take(remote.context, Map.keys(local.context))
     ctx = Clock.upperbound(local.context, known_remote_context)
     new_state =
@@ -313,11 +355,11 @@ defmodule Phoenix.Tracker.State do
     end)
   end
 
-  @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
-  defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
+  @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value], removed_pids :: [pid_lookup]}
+  defp observe_removes(%State{values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
     %State{context: remote_context, clouds: remote_clouds} = remote
-    init = {unioned_clouds, delta, []}
+    init = {unioned_clouds, delta, [], []}
     local_replica = local.replica
     # fn {_, _, {replica, _}} = result when replica != local_replica -> result end
     ms = [{
@@ -326,13 +368,11 @@ defmodule Phoenix.Tracker.State do
       [:"$_"]
     }]
 
-    foldl(values, init, ms, fn {{topic, pid, key} = values_key, _, tag} = el, {clouds, delta, leaves} ->
+    foldl(values, init, ms, fn {{topic, pid, key}, _, tag} = el, {clouds, delta, leaves, removed_pids} ->
       if not match?(%{^tag => _}, remote_map) and in?(remote_context, remote_clouds, tag) do
-        :ets.delete(values, values_key)
-        :ets.match_delete(pids, {pid, topic, key})
-        {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves]}
+        {delete_tag(clouds, tag), remove_delta_tag(delta, tag), [el | leaves], [{pid, topic, key} | removed_pids]}
       else
-        {clouds, delta, leaves}
+        {clouds, delta, leaves, removed_pids}
       end
     end)
   end

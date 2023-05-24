@@ -87,6 +87,17 @@ defmodule Phoenix.Tracker.StateTest do
     assert {^a, [], []} = State.merge(a, State.extract(b, a.replica, a.context))
 
     assert (State.online_list(b) |> Enum.sort) == (State.online_list(a) |> Enum.sort)
+
+    # update
+    b = State.leave_join(b, carol, "lobby", :carol, %{updated: true})
+    pids_before = tab2list(a.pids)
+
+    assert {a, [{{_, _, :carol}, %{updated: true}, _}], [{{_, _, :carol}, _, _}]} =
+      State.merge(a, State.extract(b, a.replica, a.context))
+
+    assert {^a, [], []} = State.merge(a, State.extract(b, a.replica, a.context))
+
+    assert pids_before == tab2list(a.pids)
   end
 
   test "basic netsplit", config do
