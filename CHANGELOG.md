@@ -2,6 +2,11 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
+## 2.1.3 (2023-06-14)
+
+### Bug fixes
+  - Fix memory leak introduced in 2.1.2
+
 ## 2.1.2 (2023-05-24)
 
 ### Bug fixes
