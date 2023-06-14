@@ -89,7 +89,7 @@ defmodule Phoenix.Tracker.State do
   Atomically updates ETS local entry.
   """
   @spec leave_join(t, pid, topic, key, meta) :: t
-  def leave_join(%State{delta: delta} = state, pid, topic, key, meta) do
+  def leave_join(state, pid, topic, key, meta) do
     # Produce remove-like delta
     [{{^topic, ^pid, ^key}, _meta, tag}] = :ets.lookup(state.values, {topic, pid, key})
     pruned_clouds = delete_tag(state.clouds, tag)
@@ -100,7 +100,7 @@ defmodule Phoenix.Tracker.State do
     state = bump_clock(state)
     tag = tag(state)
     true = :ets.insert(state.values, {{topic, pid, key}, meta, tag})
-    new_delta = %State{delta | values: Map.put(delta.values, tag, {pid, topic, key, meta})}
+    new_delta = %State{state.delta | values: Map.put(state.delta.values, tag, {pid, topic, key, meta})}
     %State{state | delta: new_delta}
   end
 
