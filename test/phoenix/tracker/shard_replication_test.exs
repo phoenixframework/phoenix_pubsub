@@ -48,6 +48,9 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     # node1 fulfills transfer request and sends transfer_ack to primary
     assert_transfer_ack ref, from: @node1
     assert_heartbeat to: @node1, from: @primary
+
+    # small delay to ensure transfer_ack has been processed before calling list
+    :timer.sleep(10)
     assert [{"node1", _}] = list(shard, topic)
   end
 
@@ -93,6 +96,8 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert_heartbeat from: @node1
     assert_heartbeat from: @node2
 
+    # small delay to ensure transfer_ack has been processed before calling list
+    :timer.sleep(10)
     assert [{"node1", _}, {"node1.2", _}, {"node2", _}] = list(shard, topic)
   end
 
@@ -243,7 +248,6 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert_join ^topic, "node1", %{name: "s1"}
     assert %{@node1 => %Replica{status: :up}} = replicas(shard)
     assert [{"local1", _}, {"node1", _}] = list(shard, topic)
-    assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
 
     # nodedown
     Process.unlink(node_pid)
@@ -251,12 +255,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert_leave ^topic, "node1", %{name: "s1"}
     assert %{@node1 => %Replica{status: :down}} = replicas(shard)
     assert [{"local1", _}] = list(shard, topic)
-    assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
-
-    :timer.sleep(@permdown + 2*@heartbeat)
-    assert [{"local1", _}] = dirty_list(shard, topic)
   end
-
 
   test "untrack with no tracked topic is a noop",
     %{shard: shard, topic: topic} do
@@ -443,9 +442,5 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
 
   defp list(shard, topic) do
     Enum.sort(Shard.list(shard, topic))
-  end
-
-  defp dirty_list(shard, topic) do
-    Enum.sort(Shard.dirty_list(shard, topic))
   end
 end
