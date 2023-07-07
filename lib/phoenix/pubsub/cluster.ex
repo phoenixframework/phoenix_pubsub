@@ -8,28 +8,20 @@ defmodule Phoenix.PubSub.DNSCluster do
 
   ## Options
 
-    * `:name` - the required name of the cluster
-    * `:node` - the node name of the current node, for example: `myapp@127.0.0.1`.
-      Environment variable replacement is supported, for example: `myapp@${PRIVATE_IP}`.
+    * `:name` - the name of the cluster. Defaults to `DNSCluster`.
     * `:query` - the required DNS query for node discovery, for example: `myapp.internal`.
 
   ## Examples
 
-      iex> start_link(
-        name: MyApp.Cluster,
-        node: "${IMAGE_REF}@${PRIVATE_IP}",
-        query: "myapp.internal",
-      )
+      iex> start_link(name: MyApp.Cluster, query: "myapp.internal")
   """
   def start_link(opts) do
-    name = Keyword.fetch!(opts, :name)
-    GenServer.start_link(__MODULE__, opts, name: name)
+    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
   @impl true
   def init(opts) do
-    {basename, ip} = parse_node_name(Keyword.fetch!(opts, :node))
-    make_dist_node!(basename, ip)
+    [basename, _] = String.split(to_string(node()), "@")
 
     state = %{
       interval: Keyword.get(opts, :interval, 5_000),
@@ -40,27 +32,6 @@ defmodule Phoenix.PubSub.DNSCluster do
     }
 
     {:ok, state, {:continue, :discover_ips}}
-  end
-
-  defp make_dist_node!(basename, ip) do
-    node_name = :"#{basename}@#{ip}"
-
-    if node_name == node() do
-      :ok
-    else
-      case :net_kernel.start(node_name, %{name_domain: :longnames}) do
-        {:ok, _pid} -> :ok
-        {:error, reason} -> raise_invalid_dist(node_name, reason)
-      end
-    end
-  end
-
-  defp raise_invalid_dist(node_name, reason) do
-    raise """
-    Failed to put node #{node()} in distributed mode under name #{node_name}:
-
-        #{inspect(reason)}
-    """
   end
 
   @impl true
@@ -94,6 +65,8 @@ defmodule Phoenix.PubSub.DNSCluster do
         log(state, "#{node()} connected to #{new_name}")
       end
     end)
+
+    state
   end
 
   defp log(state, msg) do
@@ -102,18 +75,6 @@ defmodule Phoenix.PubSub.DNSCluster do
 
   defp schedule_next_poll(state) do
     %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
-  end
-
-  def parse_node_name(node_name) when is_binary(node_name) do
-    replaced =
-      Regex.replace(~r/\$\{([A-Za-z0-9_]+)\}/, node_name, fn _, var ->
-        System.fetch_env!(String.trim(var, "{}"))
-      end)
-
-    [basename, ip] = String.split(replaced, "@")
-    sanitized_base = String.replace(basename, ~r/[^a-zA-Z0-9-]/, "-")
-
-    {sanitized_base, ip}
   end
 
   def discover_ips(query) do
