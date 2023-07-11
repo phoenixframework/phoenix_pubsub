@@ -3,6 +3,18 @@ defmodule Phoenix.PubSub.PG2 do
   Phoenix PubSub adapter based on `:pg`/`:pg2`.
 
   It runs on Distributed Erlang and is the default adapter.
+
+  ## Clustering
+
+  When the environment variable `PHX_CLUSTER_DNS` is detected,
+  an instance of `Phoenix.PubSub.DNSCluster` is started alongside
+  the PG2 adapter. This allows for automatic cluster discovery via
+  DNS queries. See `Phoenix.PubSub.DNSCluster` for more information,
+  as well as examples for starting a cluster on your own if you
+  rerquire more advanced configuration.
+
+  For clustering strategies beyond DNS, see the the
+  [libcluster](https://hexdocs.pm/libcluster) library.
   """
 
   @behaviour Phoenix.PubSub.Adapter
@@ -62,7 +74,10 @@ defmodule Phoenix.PubSub.PG2 do
     name = Keyword.fetch!(opts, :name)
     pool_size = Keyword.get(opts, :pool_size, 1)
     adapter_name = Keyword.fetch!(opts, :adapter_name)
-    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size}, name: :"#{adapter_name}_supervisor")
+
+    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size},
+      name: :"#{adapter_name}_supervisor"
+    )
   end
 
   @impl true
@@ -81,6 +96,16 @@ defmodule Phoenix.PubSub.PG2 do
     children =
       for group <- groups do
         Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
+      end
+
+    children =
+      case System.get_env("PHX_CLUSTER_DNS") do
+        none when none in [nil, ""] ->
+          children
+
+        query when is_binary(query) ->
+          cluster_name = Module.concat(name, "DNSCluster")
+          [{Phoenix.PubSub.DNSCluster, name: cluster_name, query: query} | children]
       end
 
     Supervisor.init(children, strategy: :one_for_one)

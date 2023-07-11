@@ -8,7 +8,10 @@ Supervisor.start_link(
 )
 
 unless :clustered in exclude do
-  Phoenix.PubSub.Cluster.spawn([:"node1@127.0.0.1", :"node2@127.0.0.1"])
+  Phoenix.PubSub.Cluster.spawn([
+    :"node1@127.0.0.1",
+    :"node2@127.0.0.1",
+  ])
 end
 
 ExUnit.start()
