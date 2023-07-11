@@ -114,7 +114,7 @@ defmodule Phoenix.PubSub.DNSCluster do
         |> Enum.to_list()
       end)
 
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+    case Task.yield(task, timeout) || Task.shutdown(task) do
       {:ok, _result} -> :ok
       nil -> Logger.warn("Failed to connect new nodes in within #{timeout}ms")
     end
