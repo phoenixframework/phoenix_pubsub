@@ -244,6 +244,8 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert %{@node1 => %Replica{status: :up}} = replicas(shard)
     assert [{"local1", _}, {"node1", _}] = list(shard, topic)
     assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
+    assert [_] = Shard.dirty_get_by_key(shard, topic, "local1")
+    assert [_] = Shard.dirty_get_by_key(shard, topic, "node1")
 
     # nodedown
     Process.unlink(node_pid)
@@ -252,9 +254,13 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     assert %{@node1 => %Replica{status: :down}} = replicas(shard)
     assert [{"local1", _}] = list(shard, topic)
     assert [{"local1", _}, {"node1", _}] = dirty_list(shard, topic)
+    assert [_] = Shard.dirty_get_by_key(shard, topic, "local1")
+    assert [_] = Shard.dirty_get_by_key(shard, topic, "node1")
 
     :timer.sleep(@permdown + 2*@heartbeat)
     assert [{"local1", _}] = dirty_list(shard, topic)
+    assert [_] = Shard.dirty_get_by_key(shard, topic, "local1")
+    assert [] = Shard.dirty_get_by_key(shard, topic, "node1")
   end
 
 

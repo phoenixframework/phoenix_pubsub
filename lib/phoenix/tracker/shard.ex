@@ -86,6 +86,11 @@ defmodule Phoenix.Tracker.Shard do
     |> State.get_by_key(topic, key)
   end
 
+  @spec dirty_get_by_key(atom, topic, term) :: [presence]
+  def dirty_get_by_key(shard_name, topic, key) do
+    State.tracked_key(shard_name, topic, key, [])
+  end
+
   @spec graceful_permdown(pid) :: :ok
   def graceful_permdown(server_pid) do
     GenServer.call(server_pid, :graceful_permdown)
