@@ -79,7 +79,7 @@ defmodule Phoenix.Tracker.Shard do
     State.tracked_values(shard_name, topic, [])
   end
 
-  @spec get_by_key(pid | atom, topic, term) :: [presence]
+  @spec get_by_key(pid | atom, topic, term) :: [{pid, map}]
   def get_by_key(server_pid, topic, key) do
     server_pid
     |> GenServer.call({:list, topic})
