@@ -224,7 +224,7 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.get_by_key(MyTracker, "lobby", "user1")
       [{#PID<0.88.0>, %{name: "User 1"}, {#PID<0.89.0>, %{name: "User 1"}]
   """
-  @spec get_by_key(atom, topic, term) :: [presence]
+  @spec get_by_key(atom, topic, term) :: [{pid, map}]
   def get_by_key(tracker_name, topic, key) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
