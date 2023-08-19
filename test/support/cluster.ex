@@ -1,4 +1,9 @@
 defmodule Phoenix.PubSub.Cluster do
+  @moduledoc """
+  A helper module for testing distributed code.
+  Requires `epmd` to be running in order to work:
+  `$ epmd -daemon`
+  """
 
   def spawn(nodes) do
     # Turn node into a distributed node with the given long name
