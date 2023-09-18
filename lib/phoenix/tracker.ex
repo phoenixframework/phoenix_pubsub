@@ -242,7 +242,7 @@ defmodule Phoenix.Tracker do
   def dirty_get_by_key(tracker_name, topic, key) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
-    |> Phoenix.Tracker.Shard.get_by_key(topic, key)
+    |> Phoenix.Tracker.Shard.dirty_get_by_key(topic, key)
   end
 
   @doc """
