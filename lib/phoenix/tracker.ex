@@ -245,6 +245,16 @@ defmodule Phoenix.Tracker do
     |> Phoenix.Tracker.Shard.dirty_get_by_key(topic, key)
   end
 
+  @spec dirty_get_by_key(atom, term) :: [{topic, pid, meta :: map()}]
+  def dirty_get_by_key(tracker_name, key) do
+    0..(pool_size(tracker_name) - 1)
+    |> Enum.flat_map(fn n ->
+      shard_name = Shard.name_for_number(tracker_name, n)
+
+      Phoenix.Tracker.Shard.dirty_get_by_key(shard_name, key)
+    end)
+  end
+
   @doc """
   Gracefully shuts down by broadcasting permdown to all replicas.
 

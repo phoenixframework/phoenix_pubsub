@@ -57,7 +57,7 @@ defmodule Phoenix.Tracker.State do
       replica: replica,
       context: %{replica => 0},
       mode: :normal,
-      values: :ets.new(shard_name, [:named_table, :protected, :ordered_set]),
+      values: :ets.new(shard_name, [:named_table, :protected, :ordered_set, read_concurrency: true]),
       pids: :ets.new(:pids, [:duplicate_bag]),
       replicas: %{replica => :up}})
   end
@@ -159,6 +159,19 @@ defmodule Phoenix.Tracker.State do
       [{{{topic, :"$1", key}, :"$2", {:"$3", :_}},
         not_in(:"$3", down_replicas),
         [{{:"$1", :"$2"}}]}])
+  end
+
+  def tracked_key(table, key, down_replicas) do
+    :ets.select(
+      table,
+      [
+        {
+          {{:"$1", :"$2", key}, :"$3", {:"$4", :_}},
+          not_in(:"$4", down_replicas),
+          [{{:"$1", :"$2", :"$3"}}]
+        }
+      ]
+    )
   end
 
   defp not_in(_pos, []), do: []

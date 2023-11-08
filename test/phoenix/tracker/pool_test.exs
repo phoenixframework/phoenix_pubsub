@@ -35,9 +35,34 @@ defmodule Phoenix.Tracker.PoolTest do
     end
 
     @tag pool_size: pool_size
-    test "pool #{pool_size}: Untrack/4 results in all ids being untracked",
-      %{server: server} do
+    test "pool #{pool_size}: dirty_get_by_key/2 returns presences from all shards", %{server: server} do
+      topics = for i <- 1..100, do: "topic_#{i}"
 
+      refs =
+        for topic <- topics do
+          {:ok, ref} = Tracker.track(server, self(), topic, "me", %{name: "me"})
+          ref
+        end
+
+      for topic <- topics do
+        {:ok, _} = Tracker.track(server, self(), topic, "other", %{name: "me"})
+      end
+
+      by_key = Tracker.dirty_get_by_key(server, "me")
+      assert length(by_key) == 100
+
+      topics_and_refs =
+        for {topic, pid, %{name: "me", phx_ref: ref}} <- by_key do
+          assert pid == self()
+          {topic, ref}
+        end
+
+      assert Enum.sort(topics_and_refs) == Enum.sort(List.zip([topics, refs]))
+    end
+
+    @tag pool_size: pool_size
+    test "pool #{pool_size}: Untrack/4 results in all ids being untracked",
+         %{server: server} do
       topics = for i <- 1..100, do: "topic_#{i}"
       for t <- topics do
         {:ok, _ref} = Tracker.track(server, self(), t, "me", %{a: "b"})
