@@ -269,6 +269,17 @@ defmodule Phoenix.Tracker do
     Supervisor.stop(tracker_name)
   end
 
+  @doc false
+  @spec size(atom) :: non_neg_integer
+  def size(tracker_name) do
+    0..(pool_size(tracker_name) - 1)
+    |> Enum.reduce(0, fn n, acc ->
+      shard_name = Shard.name_for_number(tracker_name, n)
+
+      Phoenix.Tracker.Shard.size(shard_name) + acc
+    end)
+  end
+
   @doc """
   Starts a tracker pool.
 

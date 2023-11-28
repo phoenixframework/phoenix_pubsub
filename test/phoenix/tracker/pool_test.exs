@@ -168,5 +168,16 @@ defmodule Phoenix.Tracker.PoolTest do
 
       for t <- topics, do: assert Tracker.list(server, t) == []
     end
+
+    @tag pool_size: pool_size
+    test "pool #{pool_size}: count/1 returns number of entries across all shards",
+    %{server: server} do
+      topics = for i <- 1..100, do: "topic_#{i}"
+      for t <- topics do
+        {:ok, _ref} = Tracker.track(server, self(), t, "me", %{a: "b"})
+      end
+
+      assert Tracker.size(server) == 100
+    end
   end
 end

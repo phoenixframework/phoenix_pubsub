@@ -101,6 +101,11 @@ defmodule Phoenix.Tracker.Shard do
     GenServer.call(server_pid, :graceful_permdown)
   end
 
+  @spec size(atom) :: non_neg_integer
+  def size(shard_name) do
+    State.size(shard_name)
+  end
+
   ## Server
 
   def start_link(tracker, tracker_opts, pool_opts) do

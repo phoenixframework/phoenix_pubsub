@@ -409,4 +409,36 @@ defmodule Phoenix.Tracker.StateTest do
       end)
     end)
   end
+
+  describe "size/1" do
+    test "returns 0 for empty state" do
+      shard_name = :shard
+      State.new(:s1, shard_name)
+      assert State.size(shard_name) == 0
+    end
+
+    test "returns size of the values tables" do
+      shard_name = :shard
+      state = State.new(:s1, shard_name)
+
+      Enum.reduce(1..100, state, fn i, acc ->
+        State.join(acc, self(), "lobby", "user#{i}", %{})
+      end)
+
+      assert State.size(shard_name) == 100
+    end
+
+    test "leaves are accounted for in the returned size" do
+      shard_name = :shard
+      state = State.new(:s1, shard_name)
+
+      state = Enum.reduce(1..100, state, fn i, acc ->
+        State.join(acc, self(), "topic#{i}", "user#{i}", %{})
+      end)
+
+      State.leave(state, self(), "topic1", "user1")
+
+      assert State.size(shard_name) == 99
+    end
+  end
 end

@@ -62,6 +62,11 @@ defmodule Phoenix.Tracker.State do
       replicas: %{replica => :up}})
   end
 
+  @spec size(atom) :: non_neg_integer
+  def size(table) do
+    :ets.info(table, :size)
+  end
+
   @doc """
   Returns the causal context for the set.
   """
