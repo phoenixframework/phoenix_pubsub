@@ -61,6 +61,23 @@ defmodule Phoenix.Tracker.PoolTest do
     end
 
     @tag pool_size: pool_size
+    test "pool #{pool_size}: dirty_get_by_key_with_limit/2 returns results with (limit*pool_size)", %{server: server, pool_size: pool_size} do
+      limit = Enum.random([1,2,3])
+      topics = for i <- 1..2000, do: "topic_#{i}"
+
+      for topic <- topics do
+        {:ok, _} = Tracker.track(server, self(), topic, "me", %{name: "me"})
+      end
+
+      for topic <- topics do
+        {:ok, _} = Tracker.track(server, self(), topic, "other", %{name: "me"})
+      end
+
+      res = Tracker.dirty_get_by_key_with_limit(server, "me", limit)
+      assert length(res) <= (limit*pool_size)
+    end
+
+    @tag pool_size: pool_size
     test "pool #{pool_size}: Untrack/4 results in all ids being untracked",
          %{server: server} do
       topics = for i <- 1..100, do: "topic_#{i}"

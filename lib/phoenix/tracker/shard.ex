@@ -96,9 +96,9 @@ defmodule Phoenix.Tracker.Shard do
     State.tracked_key(shard_name, key, [])
   end
 
-  @spec dirty_get_by_key(atom, term, integer()) :: [presence]
-  def dirty_get_by_key(shard_name, key, limit) do
-    State.tracked_key(shard_name, key, [], limit)
+  @spec dirty_get_by_key_with_limit(atom, term, integer()) :: [presence]
+  def dirty_get_by_key_with_limit(shard_name, key, limit) do
+    State.tracked_key_with_limit(shard_name, key, [], limit)
   end
 
   @spec graceful_permdown(pid) :: :ok

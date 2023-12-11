@@ -179,7 +179,7 @@ defmodule Phoenix.Tracker.State do
     )
   end
 
-  def tracked_key(table, key, down_replicas, limit) do
+  def tracked_key_with_limit(table, key, down_replicas, limit) do
     :ets.select(
       table,
       [
