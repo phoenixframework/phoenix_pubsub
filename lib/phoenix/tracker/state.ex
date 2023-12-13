@@ -57,7 +57,7 @@ defmodule Phoenix.Tracker.State do
       replica: replica,
       context: %{replica => 0},
       mode: :normal,
-      values: :ets.new(shard_name, [:named_table, :protected, :ordered_set, read_concurrency: true, write_concurrency: :auto]),
+      values: :ets.new(shard_name, [:named_table, :protected, :ordered_set, read_concurrency: true, write_concurrency: :true]),
       pids: :ets.new(:pids, [:duplicate_bag]),
       replicas: %{replica => :up}})
   end
