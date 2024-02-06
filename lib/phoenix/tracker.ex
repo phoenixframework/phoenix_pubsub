@@ -128,11 +128,11 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.track(MyTracker, self(), "lobby", u.id, %{stat: "away"})
       {:error, {:already_tracked, #PID<0.56.0>, "lobby", "123"}}
   """
-  @spec track(atom, pid, topic, term, map) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def track(tracker_name, pid, topic, key, meta) when is_pid(pid) and is_map(meta) do
+  @spec track(atom, pid, topic, term, map, timeout) :: {:ok, ref :: binary} | {:error, reason :: term}
+  def track(tracker_name, pid, topic, key, meta, timeout \\ 5000) when is_pid(pid) and is_map(meta) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
-    |> GenServer.call({:track, pid, topic, key, meta})
+    |> GenServer.call({:track, pid, topic, key, meta}, timeout)
   end
 
   @doc """
@@ -153,14 +153,14 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.untrack(MyTracker, self())
       :ok
   """
-  @spec untrack(atom, pid, topic, term) :: :ok
-  def untrack(tracker_name, pid, topic, key) when is_pid(pid) do
+  @spec untrack(atom, pid, topic, term, timeout) :: :ok
+  def untrack(tracker_name, pid, topic, key, timeout \\ 5000) when is_pid(pid) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
-    |> GenServer.call({:untrack, pid, topic, key})
+    |> GenServer.call({:untrack, pid, topic, key}, timeout)
   end
-  def untrack(tracker_name, pid) when is_pid(pid) do
-    shard_multicall(tracker_name, {:untrack, pid})
+  def untrack(tracker_name, pid, timeout \\ 5000) when is_pid(pid) do
+    shard_multicall(tracker_name, {:untrack, pid}, timeout)
     :ok
   end
 
@@ -183,11 +183,11 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, map | (map -> map)) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def update(tracker_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
+  @spec update(atom, pid, topic, term, map | (map -> map), timeout) :: {:ok, ref :: binary} | {:error, reason :: term}
+  def update(tracker_name, pid, topic, key, meta, timeout \\ 5000) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
-    |> GenServer.call({:update, pid, topic, key, meta})
+    |> GenServer.call({:update, pid, topic, key, meta}, timeout)
   end
 
   @doc """
@@ -350,11 +350,11 @@ defmodule Phoenix.Tracker do
     size
   end
 
-  defp shard_multicall(tracker_name, message) do
+  defp shard_multicall(tracker_name, message, timeout \\ 5000) do
     for shard_number <- 0..(pool_size(tracker_name) - 1) do
       tracker_name
       |> Shard.name_for_number(shard_number)
-      |> GenServer.call(message)
+      |> GenServer.call(message, timeout)
     end
   end
 end
