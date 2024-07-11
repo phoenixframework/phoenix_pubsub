@@ -1,0 +1,53 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+env:
+  ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
+  ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node16
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+jobs:
+  tests:
+    name: Run tests (${{ matrix.image }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: 1.7.4-erlang-21.3.8.24-debian-stretch-20210902-slim
+          - image: 1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim
+
+    runs-on: ubuntu-latest
+    container:
+      image: hexpm/elixir:${{ matrix.image }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Hex and Rebar setup
+      run: |
+        mix local.hex --force
+        mix local.rebar --force
+
+    - name: Restore deps and _build cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
+    - name: Install dependencies
+      run: mix deps.get --only test
+
+    - name: Run tests
+      run: |
+        epmd -daemon
+        mix test
