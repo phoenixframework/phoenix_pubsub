@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: 1.7.4-erlang-21.3.8.24-debian-stretch-20210902-slim
+          - image: 1.6.6-erlang-21.3.8.24-debian-buster-20210902-slim
           - image: 1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim
 
     runs-on: ubuntu-latest
