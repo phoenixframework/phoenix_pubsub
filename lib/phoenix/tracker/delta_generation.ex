@@ -10,7 +10,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
   """
   @spec extract(State.t, [State.delta], State.name, State.context) :: State.delta | State.t
   def extract(%State{mode: :normal} = state, generations, remote_ref, remote_context) do
-    case delta_fullfilling_clock(generations, remote_context) do
+    case delta_fulfilling_clock(generations, remote_context) do
       {delta, index} ->
         if index, do: Logger.debug "#{inspect state.replica}: sending delta generation #{index + 1}"
         State.extract(delta, remote_ref, remote_context)
@@ -54,7 +54,7 @@ defmodule Phoenix.Tracker.DeltaGeneration do
     end)
   end
 
-  defp delta_fullfilling_clock(generations, remote_context) do
+  defp delta_fulfilling_clock(generations, remote_context) do
     generations
     |> Enum.with_index()
     |> Enum.find(fn {%State{range: {local_start, local_end}}, _} ->

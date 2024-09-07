@@ -127,7 +127,7 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
     refute {@node1, node1_node} in get_values(@node2, node2_shard)
   end
 
-  # TODO split into multiple testscases
+  # TODO split into multiple test cases
   test "tempdowns with nodeups of new vsn, and permdowns",
     %{shard: shard, topic: topic, tracker: tracker} do
 
