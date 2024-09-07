@@ -196,7 +196,7 @@ defmodule Phoenix.Tracker do
     * `server_name` - The registered name of the tracker server
     * `topic` - The `Phoenix.PubSub` topic
 
-  Returns a lists of presences in key/metadata tuple pairs.
+  Returns a list of presences in key/metadata tuple pairs.
 
   ## Examples
 
@@ -217,12 +217,12 @@ defmodule Phoenix.Tracker do
     * `topic` - The `Phoenix.PubSub` topic
     * `key` - The key of the presence
 
-  Returns a lists of presence metadata.
+  Returns a list of presence metadata.
 
   ## Examples
 
       iex> Phoenix.Tracker.get_by_key(MyTracker, "lobby", "user1")
-      [{#PID<0.88.0>, %{name: "User 1"}, {#PID<0.89.0>, %{name: "User 1"}]
+      [{#PID<0.88.0>, %{name: "User 1"}}, {#PID<0.89.0>, %{name: "User 1"}}]
   """
   @spec get_by_key(atom, topic, term) :: [{pid, map}]
   def get_by_key(tracker_name, topic, key) do

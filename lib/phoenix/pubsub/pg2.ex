@@ -72,7 +72,7 @@ defmodule Phoenix.PubSub.PG2 do
         :"#{adapter_name}_#{number}"
       end
 
-    # Use `adapter_name` for the first in the pool for backwards compatability
+    # Use `adapter_name` for the first in the pool for backwards compatibility
     # with v2.0 when the pool_size is 1.
     groups = [adapter_name | groups]
 
