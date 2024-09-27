@@ -292,7 +292,9 @@ defmodule Phoenix.Tracker do
       (30s down detection). Note: This must be at least 2x the `broadcast_period`.
     * `permdown_on_shutdown` - boolean; whether to immediately call
       `graceful_permdown/1` on the tracker during a graceful shutdown. See
-      'Application Shutdown' section. Default `false`.
+      'Application Shutdown' section. You can only safely set this point if `Phoenix.Tracker`
+      is mounted at the root of your supervision tree and the strategy is `:one_for_one`.
+      Default `false`.
     * `:permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
       Note: This must be at least greater than the `down_period`.
