@@ -334,7 +334,7 @@ defmodule Phoenix.Tracker do
       shards ++ [
         %{
           id: :shutdown_handler,
-          start: {Phoenix.Tracker.ShutdownHandler, :start_link, [[tracker: tracker]]}
+          start: {Phoenix.Tracker.ShutdownHandler, :start_link, [tracker]}
         }
       ]
     else
