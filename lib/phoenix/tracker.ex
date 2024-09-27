@@ -62,13 +62,36 @@ defmodule Phoenix.Tracker do
   An optional `handle_info/2` callback may also be invoked to handle
   application specific messages within your tracker.
 
-  ## Special Considerations
+  ## Stability and Performance Considerations
 
   Operations within `handle_diff/2` happen *in the tracker server's context*.
   Therefore, blocking operations should be avoided when possible, and offloaded
   to a supervised task when required. Also, a crash in the `handle_diff/2` will
   crash the tracker server, so operations that may crash the server should be
   offloaded with a `Task.Supervisor` spawned process.
+
+  ## Application Shutdown
+
+  When a tracker shuts down, the other nodes do not assume it is gone
+  for good. After all, in a distributed system, it is impossible to know if something
+  is just temporarily unavailable or if it has crashed.
+
+  For this reason, when you call `System.stop()` or the Erlang VM receives a
+  `SIGTERM`, any presences that the local tracker instance has will continue to
+  be seen as present by other trackers in the cluster until the `:down_period`
+  for the instance has passed.
+
+  If you want a normal shutdown to immediately cause other nodes to see that
+  tracker's presences as leaving, pass `permdown_on_shutdown: true`. On the
+  other hand, if you are using `Phoenix.Presence` for clients which will
+  immediately attempt to connect to a new node, it may be preferable to use
+  `permdown_on_shutdown: false`, allowing the disconnected clients time to
+  reconnect before removing their old presences, to avoid overwhelming clients
+  with notifications that many users left and immediately rejoined.
+
+  If the application crashes or is halted non-gracefully (for instance, with a
+  `SIGKILL` or a `Ctrl+C` in `iex`), other nodes will still have to wait the
+  `:down_period` to notice that the tracker's presences are gone.
   """
   use Supervisor
   require Logger
@@ -267,6 +290,11 @@ defmodule Phoenix.Tracker do
     * `:down_period` - The interval in milliseconds to flag a replica
       as temporarily down. Default `broadcast_period * max_silent_periods * 2`
       (30s down detection). Note: This must be at least 2x the `broadcast_period`.
+    * `permdown_on_shutdown` - boolean; whether to immediately call
+      `graceful_permdown/1` on the tracker during a graceful shutdown. See
+      'Application Shutdown' section. You can only safely set this if `Phoenix.Tracker`
+      is mounted at the root of your supervision tree and the strategy is `:one_for_one`.
+      Default `false`.
     * `:permdown_period` - The interval in milliseconds to flag a replica
       as permanently down, and discard its state.
       Note: This must be at least greater than the `down_period`.
@@ -287,6 +315,7 @@ defmodule Phoenix.Tracker do
   @impl true
   def init([tracker, tracker_opts, opts, name]) do
     pool_size = Keyword.get(opts, :pool_size, 1)
+    permdown_on_shutdown = Keyword.get(opts, :permdown_on_shutdown, false)
     ^name = :ets.new(name, [:set, :named_table, read_concurrency: true])
     true = :ets.insert(name, {:pool_size, pool_size})
 
@@ -301,13 +330,24 @@ defmodule Phoenix.Tracker do
         }
       end
 
+    children = if permdown_on_shutdown do
+      shards ++ [
+        %{
+          id: :shutdown_handler,
+          start: {Phoenix.Tracker.ShutdownHandler, :start_link, [tracker]}
+        }
+      ]
+    else
+      shards
+    end
+
     opts = [
       strategy: :one_for_one,
       max_restarts: pool_size * 2,
       max_seconds: 1
     ]
 
-    Supervisor.init(shards, opts)
+    Supervisor.init(children, opts)
   end
 
   defp pool_size(tracker_name) do
