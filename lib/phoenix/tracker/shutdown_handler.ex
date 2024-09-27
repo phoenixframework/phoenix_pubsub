@@ -2,20 +2,19 @@ defmodule Phoenix.Tracker.ShutdownHandler do
   @moduledoc false
   use GenServer
 
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(tracker) do
+    GenServer.start_link(__MODULE__, tracker, name: __MODULE__)
   end
 
   @impl GenServer
-  def init(opts) do
-    tracker = Keyword.fetch!(opts, :tracker)
+  def init(tracker) do
     Process.flag(:trap_exit, true)
-    {:ok, %{tracker: tracker}}
+    {:ok, tracker}
   end
 
   @impl GenServer
-  def terminate(_reason, state) do
-    Phoenix.Tracker.graceful_permdown(state.tracker)
+  def terminate(_reason, tracker) do
+    Phoenix.Tracker.graceful_permdown(tracker)
     :ok
   end
 end
