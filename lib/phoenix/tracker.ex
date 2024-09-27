@@ -72,12 +72,14 @@ defmodule Phoenix.Tracker do
 
   ## Application Shutdown
 
-  A tracker does not automatically replicate its state across the cluster as it
-  shuts down. This means that your supervision tree shuts down normally - as it
-  does when you call `System.stop()` or the BEAM receives a `SIGTERM` - any
-  presences that the local tracker instance has will continue to be seen as
-  present by other trackers in the cluster until the `:down_period` for the
-  instance has passed.
+  When a tracker shuts down, the other nodes do not assume it has been gone
+  for good. After all, in a distributed system, it is impossible to know if something
+  is just temporarily unavailable or if it has crashed.
+
+  For this reason, when you call `System.stop()` or the Erlang VM receives a
+  `SIGTERM` - any presences that the local tracker instance has will continue to
+  be seen as present by other trackers in the cluster until the `:down_period`
+  for the instance has passed.
 
   If you want a normal shutdown to immediately cause other nodes to see that
   tracker's presences as leaving, pass `permdown_on_shutdown: true`. On the
