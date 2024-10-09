@@ -134,7 +134,7 @@ defmodule Phoenix.Tracker do
   @doc """
   Tracks a presence.
 
-    * `server_name` - The registered name of the tracker server
+    * `tracker_name` - The registered name of the tracker server
     * `pid` - The Pid to track
     * `topic` - The `Phoenix.PubSub` topic for this presence
     * `key` - The key identifying this presence
@@ -161,7 +161,7 @@ defmodule Phoenix.Tracker do
   @doc """
   Untracks a presence.
 
-    * `server_name` - The registered name of the tracker server
+    * `tracker_name` - The registered name of the tracker server
     * `pid` - The Pid to untrack
     * `topic` - The `Phoenix.PubSub` topic to untrack for this presence
     * `key` - The key identifying this presence
@@ -182,6 +182,7 @@ defmodule Phoenix.Tracker do
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
     |> GenServer.call({:untrack, pid, topic, key})
   end
+
   def untrack(tracker_name, pid) when is_pid(pid) do
     shard_multicall(tracker_name, {:untrack, pid})
     :ok
@@ -190,7 +191,7 @@ defmodule Phoenix.Tracker do
   @doc """
   Updates a presence's metadata.
 
-    * `server_name` - The registered name of the tracker server
+    * `tracker_name` - The registered name of the tracker server
     * `pid` - The Pid being tracked
     * `topic` - The `Phoenix.PubSub` topic to update for this presence
     * `key` - The key identifying this presence
@@ -216,7 +217,7 @@ defmodule Phoenix.Tracker do
   @doc """
   Lists all presences tracked under a given topic.
 
-    * `server_name` - The registered name of the tracker server
+    * `tracker_name` - The registered name of the tracker server
     * `topic` - The `Phoenix.PubSub` topic
 
   Returns a list of presences in key/metadata tuple pairs.
@@ -236,7 +237,7 @@ defmodule Phoenix.Tracker do
   @doc """
   Gets presences tracked under a given topic and key pair.
 
-    * `server_name` - The registered name of the tracker server
+    * `tracker_name` - The registered name of the tracker server
     * `topic` - The `Phoenix.PubSub` topic
     * `key` - The key of the presence
 
