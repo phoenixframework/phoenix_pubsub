@@ -133,6 +133,17 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
+  Unsubscribes the caller from the PubSub adapter's topic taking the metadata into consideration
+  Unlike `unsubscribe/2` this function match on the metadata provided as option when subscribed
+
+  This is usually needed if you have multiple subscriptions for the same topic with different metadata
+  """
+  @spec unsubscribe(t, topic, metadata) :: :ok
+  def unsubscribe(pubsub, topic, metadata) when is_atom(pubsub) and is_binary(topic) do
+    Registry.unregister_match(pubsub, topic, metadata)
+  end
+
+  @doc """
   Broadcasts message on given topic across the whole cluster.
 
     * `pubsub` - The name of the pubsub system
