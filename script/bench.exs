@@ -18,12 +18,12 @@ defmodule Bench do
     topic_size = trunc(size / 10)
 
     {s1, s2} = time "Creating 2 #{size} element sets", fn ->
-      s1 = Enum.reduce(1..size, State.new(:s1), fn i, acc ->
+      s1 = Enum.reduce(1..size, State.new(node(), :s1), fn i, acc ->
 
         State.join(acc, make_ref(), "topic#{:erlang.phash2(i, topic_size)}", "user#{i}", %{name: i})
       end)
 
-      s2 = Enum.reduce(1..size, State.new(:s2), fn i, acc ->
+      s2 = Enum.reduce(1..size, State.new(node(), :s2), fn i, acc ->
         State.join(acc, make_ref(), "topic#{i}", "user#{i}", %{name: i})
       end)
 
