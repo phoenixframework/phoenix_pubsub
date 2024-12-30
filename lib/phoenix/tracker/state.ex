@@ -47,7 +47,7 @@ defmodule Phoenix.Tracker.State do
 
   ## Examples
 
-      iex> Phoenix.Tracker.State.new(:replica1)
+      iex> Phoenix.Tracker.State.new(:replica1, :shard_name)
       %Phoenix.Tracker.State{...}
 
   """
