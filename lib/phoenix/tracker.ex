@@ -97,11 +97,12 @@ defmodule Phoenix.Tracker do
   require Logger
   alias Phoenix.Tracker.Shard
 
-  @type presence :: {key :: String.t, meta :: map}
-  @type topic :: String.t
+  @type presence :: {key :: String.t(), meta :: map}
+  @type topic :: String.t()
 
-  @callback init(Keyword.t) :: {:ok, state :: term} | {:error, reason :: term}
-  @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) :: {:ok, state :: term}
+  @callback init(Keyword.t()) :: {:ok, state :: term} | {:error, reason :: term}
+  @callback handle_diff(%{topic => {joins :: [presence], leaves :: [presence]}}, state :: term) ::
+              {:ok, state :: term}
   @callback handle_info(message :: term, state :: term) :: {:noreply, state :: term}
   @optional_callbacks handle_info: 2
 
@@ -207,8 +208,10 @@ defmodule Phoenix.Tracker do
       iex> Phoenix.Tracker.update(MyTracker, self(), "lobby", u.id, fn meta -> Map.put(meta, :away, true) end)
       {:ok, "1WpAofWYIAA="}
   """
-  @spec update(atom, pid, topic, term, map | (map -> map)) :: {:ok, ref :: binary} | {:error, reason :: term}
-  def update(tracker_name, pid, topic, key, meta) when is_pid(pid) and (is_map(meta) or is_function(meta)) do
+  @spec update(atom, pid, topic, term, map | (map -> map)) ::
+          {:ok, ref :: binary} | {:error, reason :: term}
+  def update(tracker_name, pid, topic, key, meta)
+      when is_pid(pid) and (is_map(meta) or is_function(meta)) do
     tracker_name
     |> Shard.name_for_topic(topic, pool_size(tracker_name))
     |> GenServer.call({:update, pid, topic, key, meta})
@@ -332,16 +335,18 @@ defmodule Phoenix.Tracker do
         }
       end
 
-    children = if permdown_on_shutdown do
-      shards ++ [
-        %{
-          id: :shutdown_handler,
-          start: {Phoenix.Tracker.ShutdownHandler, :start_link, [tracker]}
-        }
-      ]
-    else
-      shards
-    end
+    children =
+      if permdown_on_shutdown do
+        shards ++
+          [
+            %{
+              id: :shutdown_handler,
+              start: {Phoenix.Tracker.ShutdownHandler, :start_link, [tracker]}
+            }
+          ]
+      else
+        shards
+      end
 
     opts = [
       strategy: :one_for_one,

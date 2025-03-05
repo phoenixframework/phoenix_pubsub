@@ -162,7 +162,7 @@ defmodule Phoenix.PubSub do
 
   The default dispatcher will broadcast the message to all subscribers except for the
   process that initiated the broadcast.
-  
+
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
@@ -202,7 +202,7 @@ defmodule Phoenix.PubSub do
 
   The default dispatcher will broadcast the message to all subscribers except for the
   process that initiated the broadcast.
-  
+
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
