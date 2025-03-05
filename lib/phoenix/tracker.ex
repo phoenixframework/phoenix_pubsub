@@ -327,7 +327,8 @@ defmodule Phoenix.Tracker do
 
         %{
           id: shard_name,
-          start: {Phoenix.Tracker.Shard, :start_link, [tracker, tracker_opts, shard_opts]}
+          start: {Phoenix.Tracker.Shard, :start_link, [tracker, tracker_opts, shard_opts]},
+          restart: :transient
         }
       end
 
