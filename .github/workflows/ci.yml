@@ -28,7 +28,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Hex and Rebar setup
       run: |
@@ -36,7 +36,7 @@ jobs:
         mix local.rebar --force
 
     - name: Restore deps and _build cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           deps
