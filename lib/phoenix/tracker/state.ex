@@ -17,6 +17,7 @@ defmodule Phoenix.Tracker.State do
   @type key_meta   :: {key, meta}
   @type delta      :: %State{mode: :delta}
   @type pid_lookup :: {pid, topic, key}
+  @type tag_lookup :: {tag, {topic, pid, key}}
 
   @type t :: %State{
     replica:  name,
@@ -24,6 +25,7 @@ defmodule Phoenix.Tracker.State do
     clouds:   clouds,
     values:   values,
     pids:     ets_id,
+    tags:     ets_id,
     mode:     :unset | :delta | :normal,
     delta:    :unset | delta,
     replicas: %{name => :up | :down},
@@ -35,6 +37,7 @@ defmodule Phoenix.Tracker.State do
             clouds: %{},
             values: nil,
             pids: nil,
+            tags: nil,
             mode: :unset,
             delta: :unset,
             replicas: %{},
@@ -59,6 +62,7 @@ defmodule Phoenix.Tracker.State do
       mode: :normal,
       values: :ets.new(shard_name, [:named_table, :protected, :ordered_set, read_concurrency: true]),
       pids: :ets.new(:pids, [:duplicate_bag]),
+      tags: :ets.new(:tags, [:set]),
       replicas: %{replica => :up}})
   end
 
@@ -280,6 +284,7 @@ defmodule Phoenix.Tracker.State do
         clouds: pruned_clouds,
         context: pruned_context,
         pids: nil,
+        tags: nil,
         values: nil,
         delta: :unset}, Map.new(data)}
   end
@@ -305,10 +310,11 @@ defmodule Phoenix.Tracker.State do
   end
 
   defp merge(local, remote, remote_map) do
-    {pids, joins} = accumulate_joins(local, remote_map)
+    {pids, joins, tags} = accumulate_joins(local, remote_map)
     {clouds, delta, leaves} = observe_removes(local, remote, remote_map)
     true = :ets.insert(local.values, joins)
     true = :ets.insert(local.pids, pids)
+    true = :ets.insert(local.tags, tags)
     known_remote_context = Map.take(remote.context, Map.keys(local.context))
     ctx = Clock.upperbound(local.context, known_remote_context)
     new_state =
@@ -319,18 +325,26 @@ defmodule Phoenix.Tracker.State do
     {new_state, joins, leaves}
   end
 
-  @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
+  @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values], [tag_lookup]}
   defp accumulate_joins(local, remote_map) do
     %State{context: context, clouds: clouds} = local
-    Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds} ->
+    Enum.reduce(remote_map, {[], [], []}, fn {{replica, _} = tag, {pid, topic, key, meta}}, {pids, adds, tags} ->
       if not match?(%{^replica => _}, context) or in?(context, clouds, tag) do
-        {pids, adds}
+        {pids, adds, tags}
       else
-        {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
+        {
+          [{pid, topic, key} | pids],
+          [{{topic, pid, key}, meta, tag} | adds],
+          [{tag, {topic, pid, key}} | tags]
+        }
       end
     end)
   end
 
+  # This method is used only when remote context is empty (which it is when
+  # merging local state and a remote delta). This is an optimized method that
+  # uses pid lookup ets table to fetch and delete only values that need to be
+  # deleted.
   @spec observe_removes(t, t, map) :: {clouds, delta, leaves :: [value]}
   defp observe_removes(%State{pids: pids, values: values, delta: delta} = local, remote, remote_map) do
     unioned_clouds = union_clouds(local, remote)
