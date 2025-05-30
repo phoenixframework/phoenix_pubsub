@@ -18,13 +18,16 @@ defmodule Phoenix.PubSub.Cluster do
     |> Enum.map(&Task.await(&1, 30_000))
   end
 
-  defp spawn_node(node_host) do
+  defp spawn_node({node_host, opts}) do
     {:ok, node} = :slave.start(to_charlist("127.0.0.1"), node_name(node_host), inet_loader_args())
     add_code_paths(node)
     transfer_configuration(node)
     ensure_applications_started(node)
-    start_pubsub(node)
+    start_pubsub(node, opts)
     {:ok, node}
+  end
+  defp spawn_node(node_host) do
+    spawn_node({node_host, []})
   end
 
   defp rpc(node, module, function, args) do
@@ -60,9 +63,10 @@ defmodule Phoenix.PubSub.Cluster do
     end
   end
 
-  defp start_pubsub(node) do
+  defp start_pubsub(node, opts) do
+    opts = [name: Phoenix.PubSubTest, pool_size: 4] |> Keyword.merge(opts)
     args = [
-      [{Phoenix.PubSub, name: Phoenix.PubSubTest, pool_size: 1}],
+      [{Phoenix.PubSub, opts}],
       [strategy: :one_for_one]
     ]
 
