@@ -74,13 +74,13 @@ defmodule Phoenix.PubSub.PG2 do
   @impl true
   def init({name, adapter_name, pool_size, broadcast_pool_size}) do
 
-    receiving_groups = groups(adapter_name, pool_size)
+    listener_groups = groups(adapter_name, pool_size)
     broadcast_groups = groups(adapter_name, broadcast_pool_size)
 
     :persistent_term.put(adapter_name, List.to_tuple(broadcast_groups))
 
     children =
-      for group <- receiving_groups do
+      for group <- listener_groups do
         Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
       end
 
