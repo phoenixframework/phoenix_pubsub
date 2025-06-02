@@ -61,22 +61,26 @@ defmodule Phoenix.PubSub.PG2 do
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     pool_size = Keyword.get(opts, :pool_size, 1)
-    running_pool_size = Keyword.get(opts, :running_pool_size, pool_size)
     broadcast_pool_size = Keyword.get(opts, :broadcast_pool_size, pool_size)
-    adapter_name = Keyword.fetch!(opts, :adapter_name)
-    Supervisor.start_link(__MODULE__, {name, adapter_name, running_pool_size, broadcast_pool_size}, name: :"#{adapter_name}_supervisor")
+
+    if pool_size < broadcast_pool_size do
+      {:error, "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"}
+    else
+      adapter_name = Keyword.fetch!(opts, :adapter_name)
+      Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size, broadcast_pool_size}, name: :"#{adapter_name}_supervisor")
+    end
   end
 
   @impl true
-  def init({name, adapter_name, running_pool_size, broadcast_pool_size}) do
+  def init({name, adapter_name, pool_size, broadcast_pool_size}) do
 
-    running_groups = groups(adapter_name, running_pool_size)
+    receiving_groups = groups(adapter_name, pool_size)
     broadcast_groups = groups(adapter_name, broadcast_pool_size)
 
     :persistent_term.put(adapter_name, List.to_tuple(broadcast_groups))
 
     children =
-      for group <- running_groups do
+      for group <- receiving_groups do
         Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
       end
 
