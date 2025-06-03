@@ -60,9 +60,12 @@ defmodule Phoenix.PubSub do
   to thousands or even millions of users to be encoded once and written
   directly to sockets instead of being encoded per channel.
 
-  ## Safe Pool Size Migration (when using `Phoenix.PubSub.PG2` adapter)
+  ## Safe pool size migration (when using `Phoenix.PubSub.PG2` adapter)
 
-  When you need to change the pool size in a running cluster, you can use the `broadcast_pool_size` option to ensure no messages are lost during deployment. This is particularly important when increasing the pool size.
+  When you need to change the pool size in a running cluster,
+  you can use the `broadcast_pool_size` option to ensure no
+  messages are lost during deployment. This is particularly
+  important when increasing the pool size.
 
   Here's how to safely increase the pool size from 1 to 2:
 
