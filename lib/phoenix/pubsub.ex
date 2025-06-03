@@ -42,6 +42,25 @@ defmodule Phoenix.PubSub do
 
   See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 
+  ### Safe Pool Size Migration
+
+  When you need to change the pool size in a running cluster, you can use the `broadcast_pool_size` option to ensure no messages are lost during deployment. This is particularly important when increasing the pool size.
+
+  Here's how to safely increase the pool size from 1 to 2:
+
+  1. First deployment - Set the new pool size but keep broadcasting on the old size:
+      {Phoenix.PubSub, name: :my_pubsub, pool_size: 2, broadcast_pool_size: 1}
+
+  2. Second deployment - Once all nodes are running the first version, deploy with the new pool size:
+      {Phoenix.PubSub, name: :my_pubsub, pool_size: 2}
+
+  This two-step process ensures that:
+  - All nodes can receive messages from both old and new pool sizes
+  - No messages are lost during the transition
+  - The cluster remains fully functional throughout the deployment
+
+  To decrease the pool size, follow the same process in reverse order.
+
   ## Custom dispatching
 
   Phoenix.PubSub allows developers to perform custom dispatching
@@ -87,6 +106,9 @@ defmodule Phoenix.PubSub do
     * `:adapter` - the adapter to use (defaults to `Phoenix.PubSub.PG2`)
     * `:pool_size` - number of pubsub partitions to launch
       (defaults to one partition for every 4 cores)
+    * `:broadcast_pool_size` - number of pubsub partitions used for broadcasting messages
+      (defaults to `:pool_size`). This option is used during pool size migrations to ensure
+      no messages are lost. See the "Safe Pool Size Migration" section in the module documentation.
 
   """
   @spec child_spec(keyword) :: Supervisor.child_spec()
