@@ -42,25 +42,6 @@ defmodule Phoenix.PubSub do
 
   See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 
-  ### Safe Pool Size Migration
-
-  When you need to change the pool size in a running cluster, you can use the `broadcast_pool_size` option to ensure no messages are lost during deployment. This is particularly important when increasing the pool size.
-
-  Here's how to safely increase the pool size from 1 to 2:
-
-  1. First deployment - Set the new pool size but keep broadcasting on the old size:
-      {Phoenix.PubSub, name: :my_pubsub, pool_size: 2, broadcast_pool_size: 1}
-
-  2. Second deployment - Once all nodes are running the first version, deploy with the new pool size:
-      {Phoenix.PubSub, name: :my_pubsub, pool_size: 2}
-
-  This two-step process ensures that:
-  - All nodes can receive messages from both old and new pool sizes
-  - No messages are lost during the transition
-  - The cluster remains fully functional throughout the deployment
-
-  To decrease the pool size, follow the same process in reverse order.
-
   ## Custom dispatching
 
   Phoenix.PubSub allows developers to perform custom dispatching
@@ -78,6 +59,35 @@ defmodule Phoenix.PubSub do
   custom `value` to provide "fastlaning", allowing messages broadcast
   to thousands or even millions of users to be encoded once and written
   directly to sockets instead of being encoded per channel.
+
+  ## Safe Pool Size Migration (when using `Phoenix.PubSub.PG2` adapter)
+
+  When you need to change the pool size in a running cluster, you can use the `broadcast_pool_size` option to ensure no messages are lost during deployment. This is particularly important when increasing the pool size.
+
+  Here's how to safely increase the pool size from 1 to 2:
+
+  1. Initial state - Current configuration with `pool_size: 1`:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 1}
+  ```
+
+  2. First deployment - Set the new pool size but keep broadcasting on the old size:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 2, broadcast_pool_size: 1}
+  ```
+
+  3. Second deployment - Once all nodes are running the first version, deploy with the new pool size:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 2}
+  ```
+
+  This two-step process ensures that:
+  - All nodes can receive messages from both old and new pool sizes
+  - No messages are lost during the transition
+  - The cluster remains fully functional throughout the deployment
+
+  To decrease the pool size, follow the same process in reverse order.
+
   """
 
   @type node_name :: atom | binary
