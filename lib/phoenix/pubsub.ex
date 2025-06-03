@@ -34,7 +34,7 @@ defmodule Phoenix.PubSub do
       It supports a `:pool_size` option to be given alongside
       the name, defaults to `1`. Note the `:pool_size` must
       be the same throughout the cluster, therefore don't
-      configure the pool size based on `System.schedulers_online/1`, 
+      configure the pool size based on `System.schedulers_online/0`,
       especially if you are using machines with different specs.
 
     * `Phoenix.PubSub.Redis` - uses Redis to exchange data between
@@ -71,14 +71,59 @@ defmodule Phoenix.PubSub do
   {Phoenix.PubSub, name: :my_pubsub, pool_size: 1}
   ```
 
+  ```mermaid
+  graph TD
+      subgraph "Initial State"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+          end
+          A1 <--> B1
+      end
+  ```
+
   2. First deployment - Set the new pool size but keep broadcasting on the old size:
   ```
   {Phoenix.PubSub, name: :my_pubsub, pool_size: 2, broadcast_pool_size: 1}
   ```
 
-  3. Second deployment - Once all nodes are running the first version, deploy with the new pool size:
+  ```mermaid
+  graph TD
+      subgraph "First Deployment"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+              A2[Shard 2<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+              B2[Shard 2<br/>Receive Only]
+          end
+          A1 <--> B1
+          A2 --> B2
+      end
+  ```
+
+  3. Final deployment - All nodes running with new pool size:
   ```
   {Phoenix.PubSub, name: :my_pubsub, pool_size: 2}
+  ```
+
+  ```mermaid
+  graph TD
+      subgraph "Final State"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+              A2[Shard 2<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+              B2[Shard 2<br/>Broadcast & Receive]
+          end
+          A1 <--> B1
+          A2 <--> B2
+      end
   ```
 
   This two-step process ensures that:
