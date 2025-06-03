@@ -61,12 +61,33 @@ defmodule Phoenix.PubSub.PG2 do
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     pool_size = Keyword.get(opts, :pool_size, 1)
-    adapter_name = Keyword.fetch!(opts, :adapter_name)
-    Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size}, name: :"#{adapter_name}_supervisor")
+    broadcast_pool_size = Keyword.get(opts, :broadcast_pool_size, pool_size)
+
+    if pool_size < broadcast_pool_size do
+      {:error, "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"}
+    else
+      adapter_name = Keyword.fetch!(opts, :adapter_name)
+      Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size, broadcast_pool_size}, name: :"#{adapter_name}_supervisor")
+    end
   end
 
   @impl true
-  def init({name, adapter_name, pool_size}) do
+  def init({name, adapter_name, pool_size, broadcast_pool_size}) do
+
+    listener_groups = groups(adapter_name, pool_size)
+    broadcast_groups = groups(adapter_name, broadcast_pool_size)
+
+    :persistent_term.put(adapter_name, List.to_tuple(broadcast_groups))
+
+    children =
+      for group <- listener_groups do
+        Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
+      end
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp groups(adapter_name, pool_size) do
     [_ | groups] =
       for number <- 1..pool_size do
         :"#{adapter_name}_#{number}"
@@ -74,16 +95,7 @@ defmodule Phoenix.PubSub.PG2 do
 
     # Use `adapter_name` for the first in the pool for backwards compatibility
     # with v2.0 when the pool_size is 1.
-    groups = [adapter_name | groups]
-
-    :persistent_term.put(adapter_name, List.to_tuple(groups))
-
-    children =
-      for group <- groups do
-        Supervisor.child_spec({Phoenix.PubSub.PG2Worker, {name, group}}, id: group)
-      end
-
-    Supervisor.init(children, strategy: :one_for_one)
+    [adapter_name | groups]
   end
 end
 

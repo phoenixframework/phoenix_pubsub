@@ -34,7 +34,7 @@ defmodule Phoenix.PubSub do
       It supports a `:pool_size` option to be given alongside
       the name, defaults to `1`. Note the `:pool_size` must
       be the same throughout the cluster, therefore don't
-      configure the pool size based on `System.schedulers_online/1`, 
+      configure the pool size based on `System.schedulers_online/0`,
       especially if you are using machines with different specs.
 
     * `Phoenix.PubSub.Redis` - uses Redis to exchange data between
@@ -59,6 +59,83 @@ defmodule Phoenix.PubSub do
   custom `value` to provide "fastlaning", allowing messages broadcast
   to thousands or even millions of users to be encoded once and written
   directly to sockets instead of being encoded per channel.
+
+  ## Safe pool size migration (when using `Phoenix.PubSub.PG2` adapter)
+
+  When you need to change the pool size in a running cluster,
+  you can use the `broadcast_pool_size` option to ensure no
+  messages are lost during deployment. This is particularly
+  important when increasing the pool size.
+
+  Here's how to safely increase the pool size from 1 to 2:
+
+  1. Initial state - Current configuration with `pool_size: 1`:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 1}
+  ```
+
+  ```mermaid
+  graph TD
+      subgraph "Initial State"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+          end
+          A1 <--> B1
+      end
+  ```
+
+  2. First deployment - Set the new pool size but keep broadcasting on the old size:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 2, broadcast_pool_size: 1}
+  ```
+
+  ```mermaid
+  graph TD
+      subgraph "First Deployment"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+              A2[Shard 2<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+              B2[Shard 2<br/>Receive Only]
+          end
+          A1 <--> B1
+          A2 --> B2
+      end
+  ```
+
+  3. Final deployment - All nodes running with new pool size:
+  ```
+  {Phoenix.PubSub, name: :my_pubsub, pool_size: 2}
+  ```
+
+  ```mermaid
+  graph TD
+      subgraph "Final State"
+          subgraph "Node 1"
+              A1[Shard 1<br/>Broadcast & Receive]
+              A2[Shard 2<br/>Broadcast & Receive]
+          end
+          subgraph "Node 2"
+              B1[Shard 1<br/>Broadcast & Receive]
+              B2[Shard 2<br/>Broadcast & Receive]
+          end
+          A1 <--> B1
+          A2 <--> B2
+      end
+  ```
+
+  This two-step process ensures that:
+  - All nodes can receive messages from both old and new pool sizes
+  - No messages are lost during the transition
+  - The cluster remains fully functional throughout the deployment
+
+  To decrease the pool size, follow the same process in reverse order.
+
   """
 
   @type node_name :: atom | binary
@@ -87,6 +164,9 @@ defmodule Phoenix.PubSub do
     * `:adapter` - the adapter to use (defaults to `Phoenix.PubSub.PG2`)
     * `:pool_size` - number of pubsub partitions to launch
       (defaults to one partition for every 4 cores)
+    * `:broadcast_pool_size` - number of pubsub partitions used for broadcasting messages
+      (defaults to `:pool_size`). This option is used during pool size migrations to ensure
+      no messages are lost. See the "Safe Pool Size Migration" section in the module documentation.
 
   """
   @spec child_spec(keyword) :: Supervisor.child_spec()

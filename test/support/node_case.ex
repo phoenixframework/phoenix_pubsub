@@ -187,4 +187,10 @@ defmodule Phoenix.PubSub.NodeCase do
       @timeout -> {pid, {:error, :timeout}}
     end
   end
+
+  def broadcast_from_node(node, pubsub, topic, message) do
+    call_node(node, fn ->
+      Phoenix.PubSub.broadcast(pubsub, topic, message)
+    end)
+  end
 end
