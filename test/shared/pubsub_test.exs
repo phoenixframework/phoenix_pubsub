@@ -41,15 +41,17 @@ defmodule Phoenix.PubSubTest do
 
   setup config do
     size = config[:pool_size] || 1
+    registry_size = config[:registry_pool_size] || config[:pool_size] ||  1
     {adapter, adapter_opts} = Application.get_env(:phoenix_pubsub, :test_adapter)
-    adapter_opts = [adapter: adapter, name: config.test, pool_size: size] ++ adapter_opts
+    adapter_opts = [adapter: adapter, name: config.test, pool_size: size, registry_pool_size: registry_size] ++ adapter_opts
     start_supervised!({Phoenix.PubSub, adapter_opts})
 
     opts = %{
       pubsub: config.test,
       topic: to_string(config.test),
       pool_size: size,
-      node: Phoenix.PubSub.node_name(config.test)
+      node: Phoenix.PubSub.node_name(config.test),
+      adapter_name: Module.concat(config.test, "Adapter")
     }
 
     {:ok, opts}
@@ -173,5 +175,17 @@ defmodule Phoenix.PubSubTest do
       assert_receive {:custom, nil, :none, :direct}
       assert_receive {:custom, :special, :none, :direct}
     end
+  end
+
+  @tag pool_size: 4
+  @tag registry_pool_size: 2
+  test "PubSub pool size can be configured separately from the Registry partitions",
+       config do
+      # This is looking into Registry and PubSub internal implementation, but
+      # i don't know how to test this better.
+      assert {:duplicate, 2, _} = :ets.lookup_element(config.pubsub, -2, 2)
+
+      assert :persistent_term.get(config.adapter_name) ==
+        {config.adapter_name, :"#{config.adapter_name}_2", :"#{config.adapter_name}_3", :"#{config.adapter_name}_4"}
   end
 end
