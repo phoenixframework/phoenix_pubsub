@@ -164,6 +164,10 @@ defmodule Phoenix.PubSub do
     * `:adapter` - the adapter to use (defaults to `Phoenix.PubSub.PG2`)
     * `:pool_size` - number of pubsub partitions to launch
       (defaults to one partition for every 4 cores)
+    * `:registry_size` - number of `Registry` partitions to launch
+      (defaults to `:pool_size`). This controls the number of Registry partitions
+      used for storing subscriptions and can be tuned independently from `:pool_size`
+      for better performance characteristics.
     * `:broadcast_pool_size` - number of pubsub partitions used for broadcasting messages
       (defaults to `:pool_size`). This option is used during pool size migrations to ensure
       no messages are lost. See the "Safe Pool Size Migration" section in the module documentation.
