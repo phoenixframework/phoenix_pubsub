@@ -22,7 +22,7 @@ defmodule Phoenix.PubSub.Supervisor do
     adapter_name = Module.concat(name, "Adapter")
 
     partitions =
-      opts[:registry_pool_size] || opts[:pool_size] ||
+      opts[:registry_size] || opts[:pool_size] ||
         System.schedulers_online() |> Kernel./(4) |> Float.ceil() |> trunc()
 
     registry = [
