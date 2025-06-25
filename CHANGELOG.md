@@ -2,10 +2,11 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
-## 2.1.4 (2024-09-27)
+## 2.1.4 (unreleased)
 
 ### Enhancements
   - Add `:permdown_on_shutdown` option.
+  - Add `Phoenix.PubSub.subscribe_once/3`.
 
 ## 2.1.3 (2023-06-14)
 
