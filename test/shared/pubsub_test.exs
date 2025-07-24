@@ -175,6 +175,27 @@ defmodule Phoenix.PubSubTest do
       assert_receive {:custom, nil, :none, :direct}
       assert_receive {:custom, :special, :none, :direct}
     end
+
+    @tag pool_size: size
+    test "pool #{size}: subscribe_once/2 prevents duplicate subscriptions",
+         config do
+      # Subscribe twice
+      PubSub.subscribe(config.pubsub, config.topic)
+      PubSub.subscribe(config.pubsub, config.topic)
+      :ok = PubSub.broadcast(config.pubsub, config.topic, :ping)
+      {:messages, messages} = Process.info(self(), :messages)
+      # duplicate message
+      assert messages == [:ping, :ping]
+      PubSub.unsubscribe(config.pubsub, config.topic)
+
+      # Duplicate calls do nothing
+      :ok = PubSub.subscribe_once(config.pubsub, config.topic)
+      {:error, :already_subscribed} = PubSub.subscribe_once(config.pubsub, config.topic)
+      :ok = PubSub.broadcast(config.pubsub, config.topic, :pong)
+      {:messages, messages} = Process.info(self(), :messages)
+      # no duplicate message
+      assert messages == [:ping, :ping, :pong]
+    end
   end
 
   @tag pool_size: 4

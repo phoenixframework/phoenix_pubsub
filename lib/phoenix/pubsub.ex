@@ -191,6 +191,8 @@ defmodule Phoenix.PubSub do
   `Phoenix.PubSub.unsubscribe/2`, all duplicate subscriptions
   will be dropped.
 
+  See `subscribe_once/3` to avoid duplicate subscriptions.
+
   ## Options
 
     * `:metadata` - provides metadata to be attached to this
@@ -205,6 +207,22 @@ defmodule Phoenix.PubSub do
     case Registry.register(pubsub, topic, opts[:metadata]) do
       {:ok, _} -> :ok
       {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Subscribes the caller to the PubSub adapter's topic like `subscribe/3` unless
+  the calling process is already subscribed, in which case it returns `{:error,
+  :already_subscribed}`.
+  """
+  @spec subscribe_once(t, topic, keyword) :: :ok | {:error, term}
+  def subscribe_once(pubsub, topic, opts \\ [])
+      when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
+    subscriptions = Registry.lookup(pubsub, topic)
+    if Enum.any?(subscriptions, fn {pid, _} -> pid == self() end) do
+      {:error, :already_subscribed}
+    else
+      subscribe(pubsub, topic, opts)
     end
   end
 
