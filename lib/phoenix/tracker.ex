@@ -93,8 +93,8 @@ defmodule Phoenix.Tracker do
   `SIGKILL` or a `Ctrl+C` in `iex`), other nodes will still have to wait the
   `:down_period` to notice that the tracker's presences are gone.
   """
+
   use Supervisor
-  require Logger
   alias Phoenix.Tracker.Shard
 
   @type presence :: {key :: String.t(), meta :: map}
