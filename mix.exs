@@ -1,7 +1,7 @@
 defmodule Phoenix.PubSub.Mixfile do
   use Mix.Project
 
-  @version "2.1.3"
+  @version "2.2.0"
 
   def project do
     [
@@ -24,7 +24,7 @@ defmodule Phoenix.PubSub.Mixfile do
   def application do
     [
       mod: {Phoenix.PubSub.Application, []},
-      extra_applications: [:logger, :crypto],
+      extra_applications: [:logger, :crypto]
     ]
   end
 
@@ -48,7 +48,6 @@ defmodule Phoenix.PubSub.Mixfile do
       main: "Phoenix.PubSub",
       source_ref: "v#{@version}",
       source_url: "https://github.com/phoenixframework/phoenix_pubsub",
-
       before_closing_body_tag: %{
         html: """
         <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>

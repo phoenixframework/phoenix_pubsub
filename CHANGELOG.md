@@ -2,10 +2,19 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
+## 2.2.0 (2025-10-22)
+
+### Enhancements
+  - Allow the registry size to be set separate from pool size
+  - Introduce `:broadcast_pool_size` option to allow safe pool size migration
+
+### Bug fixes
+  - Only restart shards if they terminate unexpectedly
+
 ## 2.1.4 (2024-09-27)
 
 ### Enhancements
-  - Add `:permdown_on_shutdown` option.
+  - Add `:permdown_on_shutdown` option
 
 ## 2.1.3 (2023-06-14)
 
