@@ -1,10 +1,8 @@
 name: Tests
 
 on:
-  push:
   pull_request:
-    branches:
-      - main
+  push:
 
 env:
   ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
@@ -14,13 +12,18 @@ env:
 jobs:
   tests:
     name: Run tests (${{ matrix.image }})
+    # Run the job ONLY IF:
+    # 1. It is a pull_request event OR
+    # 2. It is a push event AND the repository is not a fork
+    # The push event for a non-fork PR branch will typically be a duplicate, so we exclude it.
+    if: github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.pull_request.head.ref)
 
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: 1.6.6-erlang-21.3.8.24-debian-buster-20210902-slim
-          - image: 1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim
+          - image: 1.19.3-erlang-28.1.1-debian-bullseye-20251103-slim
 
     runs-on: ubuntu-latest
     container:
@@ -28,7 +31,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Hex and Rebar setup
       run: |
@@ -44,6 +47,7 @@ jobs:
         key: deps-${{ runner.os }}-${{ matrix.image }}-${{ hashFiles('**/mix.lock') }}
         restore-keys: |
           deps-${{ runner.os }}-${{ matrix.image }}
+
     - name: Install dependencies
       run: mix deps.get --only test
 
