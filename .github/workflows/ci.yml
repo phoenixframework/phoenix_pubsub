@@ -1,10 +1,8 @@
 name: Tests
 
 on:
-  push:
   pull_request:
-    branches:
-      - main
+  push:
 
 env:
   ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
@@ -15,12 +13,16 @@ jobs:
   tests:
     name: Run tests (${{ matrix.image }})
 
+    # prevent workflow jobs run twice on push and pull_request event
+    # see https://github.com/orgs/community/discussions/57827
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: 1.6.6-erlang-21.3.8.24-debian-buster-20210902-slim
-          - image: 1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim
+          - image: 1.19.3-erlang-28.1.1-debian-bullseye-20251103-slim
 
     runs-on: ubuntu-latest
     container:
@@ -28,7 +30,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Hex and Rebar setup
       run: |
@@ -44,6 +46,7 @@ jobs:
         key: deps-${{ runner.os }}-${{ matrix.image }}-${{ hashFiles('**/mix.lock') }}
         restore-keys: |
           deps-${{ runner.os }}-${{ matrix.image }}
+
     - name: Install dependencies
       run: mix deps.get --only test
 
