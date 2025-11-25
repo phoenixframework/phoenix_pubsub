@@ -12,11 +12,10 @@ env:
 jobs:
   tests:
     name: Run tests (${{ matrix.image }})
-    # Run the job ONLY IF:
-    # 1. It is a pull_request event OR
-    # 2. It is a push event AND the repository is not a fork
-    # The push event for a non-fork PR branch will typically be a duplicate, so we exclude it.
-    if: github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.pull_request.head.ref)
+
+    # prevent workflow jobs run twice on push and pull_request event
+    # see https://github.com/orgs/community/discussions/57827
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
 
     strategy:
       fail-fast: false
