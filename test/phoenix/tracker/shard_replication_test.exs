@@ -318,6 +318,23 @@ defmodule Phoenix.Tracker.ShardReplicationTest do
   test "updating with no prior presence", %{shard: shard, topic: topic} do
     assert {:error, :nopresence} = Shard.update(shard, self(), topic, "u1", %{})
   end
+  
+  test "updating a presence on a different node", %{topic: topic, tracker: tracker} do
+    pid = self()
+    subscribe(topic)
+    
+    # Track presence on node1
+    {_node1_pid, {:ok, node1_server}} = start_shard(@node1, name: tracker)
+    track_presence(@node1, node1_server, pid, topic, "u1", %{name: "s1"})
+    
+    # Bring up node2 and wait for replication
+    {_node2_pid, {:ok, node2_server}} = start_shard(@node2, name: tracker)
+    assert_join ^topic, "u1", %{name: "s1"}
+    assert %{@node1 => %Replica{status: :up}} = replicas(node2_server)
+    
+    # Attempt to update presence on node2
+    assert {:error, :not_owner} = Shard.update(node2_server, pid, topic, "u1", %{name: "s2"})
+  end
 
   test "duplicate tracking", %{shard: shard, topic: topic} do
     pid = self()
