@@ -199,11 +199,10 @@ defmodule Phoenix.PubSubTest do
   defp assert_ets_duplicate_count(pubsub, count) do
     result = :ets.lookup_element(pubsub, -2, 2)
 
-    case System.otp_release() do
-      otp when otp >= "28" ->
-        assert {{:duplicate, :pid}, ^count, _} = result
-      _ ->
-        assert {:duplicate, ^count, _} = result
+    if Version.match?(System.version(), ">= 1.19.0") do
+      assert {{:duplicate, :pid}, ^count, _} = result
+    else
+      assert {:duplicate, ^count, _} = result
     end
   end
 end
