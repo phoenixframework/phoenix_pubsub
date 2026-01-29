@@ -64,16 +64,19 @@ defmodule Phoenix.PubSub.PG2 do
     broadcast_pool_size = Keyword.get(opts, :broadcast_pool_size, pool_size)
 
     if pool_size < broadcast_pool_size do
-      {:error, "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"}
+      {:error,
+       "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"}
     else
       adapter_name = Keyword.fetch!(opts, :adapter_name)
-      Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size, broadcast_pool_size}, name: :"#{adapter_name}_supervisor")
+
+      Supervisor.start_link(__MODULE__, {name, adapter_name, pool_size, broadcast_pool_size},
+        name: :"#{adapter_name}_supervisor"
+      )
     end
   end
 
   @impl true
   def init({name, adapter_name, pool_size, broadcast_pool_size}) do
-
     listener_groups = groups(adapter_name, pool_size)
     broadcast_groups = groups(adapter_name, broadcast_pool_size)
 

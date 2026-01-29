@@ -11,7 +11,7 @@ defmodule Phoenix.PubSub.Cluster do
 
     # Allow spawned nodes to fetch all code from this node
     :erl_boot_server.start([])
-    allow_boot to_charlist("127.0.0.1")
+    allow_boot(to_charlist("127.0.0.1"))
 
     nodes
     |> Enum.map(&Task.async(fn -> spawn_node(&1) end))
@@ -26,6 +26,7 @@ defmodule Phoenix.PubSub.Cluster do
     start_pubsub(node, opts)
     {:ok, node}
   end
+
   defp spawn_node(node_host) do
     spawn_node({node_host, []})
   end
@@ -58,6 +59,7 @@ defmodule Phoenix.PubSub.Cluster do
   defp ensure_applications_started(node) do
     rpc(node, Application, :ensure_all_started, [:mix])
     rpc(node, Mix, :env, [Mix.env()])
+
     for {app_name, _, _} <- Application.loaded_applications() do
       rpc(node, Application, :ensure_all_started, [app_name])
     end
@@ -65,6 +67,7 @@ defmodule Phoenix.PubSub.Cluster do
 
   defp start_pubsub(node, opts) do
     opts = [name: Phoenix.PubSubTest, pool_size: 4] |> Keyword.merge(opts)
+
     args = [
       [{Phoenix.PubSub, opts}],
       [strategy: :one_for_one]
@@ -78,6 +81,6 @@ defmodule Phoenix.PubSub.Cluster do
     |> to_string
     |> String.split("@")
     |> Enum.at(0)
-    |> String.to_atom
+    |> String.to_atom()
   end
 end

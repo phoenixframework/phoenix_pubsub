@@ -16,20 +16,22 @@ defmodule Phoenix.TrackerClockTest do
     clock1 = {:a, %{a: 1, b: 2, c: 3}}
     clock2 = {:b, %{b: 2, c: 3, d: 1}}
     clock3 = {:c, %{a: 1, b: 2}}
-    assert [clock2, clock3] == Clock.append_clock([clock2, clock3], clock1) |> Enum.sort
-    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock3) |> Enum.sort
-    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock1) |> Enum.sort
-    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock2) |> Enum.sort
-    assert [clock1, clock2, clock3] == Clock.append_clock([clock1, clock3], clock2) |> Enum.sort
-    assert [:b, :c] == [clock2, clock3]
-                       |> Clock.append_clock(clock1)
-                       |> Clock.clockset_replicas()
-                       |> Enum.sort()
+    assert [clock2, clock3] == Clock.append_clock([clock2, clock3], clock1) |> Enum.sort()
+    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock3) |> Enum.sort()
+    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock1) |> Enum.sort()
+    assert [clock1, clock2] == Clock.append_clock([clock1, clock2], clock2) |> Enum.sort()
+    assert [clock1, clock2, clock3] == Clock.append_clock([clock1, clock3], clock2) |> Enum.sort()
+
+    assert [:b, :c] ==
+             [clock2, clock3]
+             |> Clock.append_clock(clock1)
+             |> Clock.clockset_replicas()
+             |> Enum.sort()
   end
 
   test "upperbound" do
     assert Clock.upperbound(%{a: 1, b: 2, c: 2}, %{a: 3, b: 1, d: 2}) ==
-      %{a: 3, b: 2, c: 2, d: 2}
+             %{a: 3, b: 2, c: 2, d: 2}
 
     assert Clock.upperbound(%{}, %{a: 3, b: 1, d: 2}) == %{a: 3, b: 1, d: 2}
     assert Clock.upperbound(%{a: 3, b: 1, d: 2}, %{}) == %{a: 3, b: 1, d: 2}
@@ -37,7 +39,7 @@ defmodule Phoenix.TrackerClockTest do
 
   test "lowerbound" do
     assert Clock.lowerbound(%{a: 1, b: 2, c: 2}, %{a: 3, b: 1, d: 2}) ==
-      %{a: 1, b: 1, c: 2, d: 2}
+             %{a: 1, b: 1, c: 2, d: 2}
 
     assert Clock.lowerbound(%{}, %{a: 3, b: 1, d: 2}) == %{a: 3, b: 1, d: 2}
     assert Clock.lowerbound(%{a: 3, b: 1, d: 2}, %{}) == %{a: 3, b: 1, d: 2}

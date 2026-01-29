@@ -15,7 +15,8 @@ defmodule Phoenix.PubSub.UnitTest do
       {:error, {{:shutdown, {:failed_to_start_child, Phoenix.PubSub.PG2, message}}, _}} =
         start_supervised({Phoenix.PubSub, opts})
 
-      assert ^message = "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"
+      assert ^message =
+               "the :pool_size option must be greater than or equal to the :broadcast_pool_size option"
     end
 
     defp name do
