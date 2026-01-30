@@ -57,7 +57,8 @@ defmodule Phoenix.PubSub.DistributedTest do
     assert_receive {@node3, :ping}
   end
 
-  test "broadcast is received by other node that was broadcast from node that has broadcast_pool_size < pool_size", config do
+  test "broadcast is received by other node that was broadcast from node that has broadcast_pool_size < pool_size",
+       config do
     # node4 has pool_size = 1, message is sent from node3 that has pool_size = 4, broadcast_pool_size = 1
     spy_on_pubsub(@node1, config.pubsub, self(), config.topic)
     spy_on_pubsub(@node2, config.pubsub, self(), config.topic)

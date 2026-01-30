@@ -29,28 +29,31 @@ jobs:
       image: hexpm/elixir:${{ matrix.image }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-    - name: Hex and Rebar setup
-      run: |
-        mix local.hex --force
-        mix local.rebar --force
+      - name: Hex and Rebar setup
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
 
-    - name: Restore deps and _build cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: deps-${{ runner.os }}-${{ matrix.image }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          deps-${{ runner.os }}-${{ matrix.image }}
+      - name: Restore deps and _build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: deps-${{ runner.os }}-${{ matrix.image }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ matrix.image }}
 
-    - name: Install dependencies
-      run: mix deps.get --only test
+      - name: Install dependencies
+        run: mix deps.get --only test
 
-    - name: Run tests
-      run: |
-        epmd -daemon
-        mix test
+      - name: Check formatted
+        run: mix format --check-formatted
+
+      - name: Run tests
+        run: |
+          epmd -daemon
+          mix test

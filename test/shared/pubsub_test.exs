@@ -41,9 +41,16 @@ defmodule Phoenix.PubSubTest do
 
   setup config do
     size = config[:pool_size] || 1
-    registry_size = config[:registry_size] || config[:registry_pool_size] || config[:pool_size] ||  1
+
+    registry_size =
+      config[:registry_size] || config[:registry_pool_size] || config[:pool_size] || 1
+
     {adapter, adapter_opts} = Application.get_env(:phoenix_pubsub, :test_adapter)
-    adapter_opts = [adapter: adapter, name: config.test, pool_size: size, registry_size: registry_size] ++ adapter_opts
+
+    adapter_opts =
+      [adapter: adapter, name: config.test, pool_size: size, registry_size: registry_size] ++
+        adapter_opts
+
     start_supervised!({Phoenix.PubSub, adapter_opts})
 
     opts = %{
@@ -184,7 +191,8 @@ defmodule Phoenix.PubSubTest do
     assert_ets_duplicate_count(config.pubsub, 2)
 
     assert :persistent_term.get(config.adapter_name) ==
-      {config.adapter_name, :"#{config.adapter_name}_2", :"#{config.adapter_name}_3", :"#{config.adapter_name}_4"}
+             {config.adapter_name, :"#{config.adapter_name}_2", :"#{config.adapter_name}_3",
+              :"#{config.adapter_name}_4"}
   end
 
   @tag pool_size: 3
@@ -193,7 +201,7 @@ defmodule Phoenix.PubSubTest do
     assert_ets_duplicate_count(config.pubsub, 3)
 
     assert :persistent_term.get(config.adapter_name) ==
-      {config.adapter_name, :"#{config.adapter_name}_2", :"#{config.adapter_name}_3"}
+             {config.adapter_name, :"#{config.adapter_name}_2", :"#{config.adapter_name}_3"}
   end
 
   defp assert_ets_duplicate_count(pubsub, count) do
