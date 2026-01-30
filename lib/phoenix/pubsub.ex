@@ -133,12 +133,23 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
-  Unsubscribes the caller from the PubSub adapter's topic taking the metadata into consideration
-  Unlike `unsubscribe/2` this function match on the metadata provided as option when subscribed
+  Unsubscribes the caller from the PubSub adapter's topic taking the metadata into consideration.
 
-  This is usually needed if you have multiple subscriptions for the same topic with different metadata
+  Unlike `unsubscribe/2`, this function matches on the metadata provided as an option when subscribed.
+  This is useful when you have multiple subscriptions for the same topic with different metadata.
+
+  ## Example
+
+      iex> PubSub.subscribe(:my_pubsub, "users:123", metadata: :fast)
+      :ok
+      iex> PubSub.subscribe(:my_pubsub, "users:123", metadata: :slow)
+      :ok
+      iex> PubSub.unsubscribe(:my_pubsub, "users:123", :fast)
+      :ok
+      # Only the :fast subscription is removed, :slow remains active
+
   """
-  @spec unsubscribe(t, topic, metadata) :: :ok
+  @spec unsubscribe(t, topic, term) :: :ok
   def unsubscribe(pubsub, topic, metadata) when is_atom(pubsub) and is_binary(topic) do
     Registry.unregister_match(pubsub, topic, metadata)
   end

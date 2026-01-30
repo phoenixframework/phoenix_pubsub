@@ -71,6 +71,33 @@ defmodule Phoenix.PubSubTest do
     end
 
     @tag pool_size: size
+    test "pool #{size}: subscribe and unsubscribe with metadata", config do
+      pid = spawn_pid()
+      pid2 = spawn_pid()
+      assert subscribers(config, config.topic) |> length == 0
+
+      # Subscribe with different metadata variants
+      assert rpc(pid, fn -> PubSub.subscribe(config.pubsub, config.topic, metadata: :custom) end)
+      assert rpc(pid, fn -> PubSub.subscribe(config.pubsub, config.topic, metadata: :other) end)
+      assert rpc(pid2, fn -> PubSub.subscribe(config.pubsub, config.topic) end)
+
+      # Verify all subscriptions exist
+      assert length(subscribers(config, config.topic)) == 3
+      assert {pid, :custom} in subscribers(config, config.topic)
+      assert {pid, :other} in subscribers(config, config.topic)
+      assert {pid2, nil} in subscribers(config, config.topic)
+
+      # Unsubscribe only the :custom metadata subscription
+      assert rpc(pid, fn -> PubSub.unsubscribe(config.pubsub, config.topic, :custom) end)
+
+      # Verify only :custom was removed, others remain
+      assert length(subscribers(config, config.topic)) == 2
+      assert {pid, :other} in subscribers(config, config.topic)
+      assert {pid2, nil} in subscribers(config, config.topic)
+      refute {pid, :custom} in subscribers(config, config.topic)
+    end
+
+    @tag pool_size: size
     test "pool #{size}: broadcast/3 and broadcast!/3 publishes message to each subscriber",
          config do
       PubSub.subscribe(config.pubsub, config.topic)
