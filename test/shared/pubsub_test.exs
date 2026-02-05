@@ -77,8 +77,14 @@ defmodule Phoenix.PubSubTest do
       assert subscribers(config, config.topic) |> length == 0
 
       # Subscribe with different metadata variants
-      assert rpc(pid, fn -> PubSub.subscribe(config.pubsub, config.topic, metadata: :custom) end)
-      assert rpc(pid, fn -> PubSub.subscribe(config.pubsub, config.topic, metadata: :other) end)
+      assert rpc(pid, fn ->
+               PubSub.subscribe(config.pubsub, config.topic, metadata: :custom)
+             end)
+
+      assert rpc(pid, fn ->
+               PubSub.subscribe(config.pubsub, config.topic, metadata: :other)
+             end)
+
       assert rpc(pid2, fn -> PubSub.subscribe(config.pubsub, config.topic) end)
 
       # Verify all subscriptions exist
@@ -88,7 +94,7 @@ defmodule Phoenix.PubSubTest do
       assert {pid2, nil} in subscribers(config, config.topic)
 
       # Unsubscribe only the :custom metadata subscription
-      assert rpc(pid, fn -> PubSub.unsubscribe(config.pubsub, config.topic, :custom) end)
+      assert rpc(pid, fn -> PubSub.unsubscribe_match(config.pubsub, config.topic, :custom) end)
 
       # Verify only :custom was removed, others remain
       assert length(subscribers(config, config.topic)) == 2

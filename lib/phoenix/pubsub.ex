@@ -140,17 +140,17 @@ defmodule Phoenix.PubSub do
 
   ## Example
 
-      iex> PubSub.subscribe(:my_pubsub, "users:123", metadata: :fast)
+      iex> PubSub.subscribe_match(:my_pubsub, "users:123", metadata: :fast)
       :ok
-      iex> PubSub.subscribe(:my_pubsub, "users:123", metadata: :slow)
+      iex> PubSub.subscribe_match(:my_pubsub, "users:123", metadata: :slow)
       :ok
-      iex> PubSub.unsubscribe(:my_pubsub, "users:123", :fast)
+      iex> PubSub.unsubscribe_match(:my_pubsub, "users:123", :fast)
       :ok
       # Only the :fast subscription is removed, :slow remains active
 
   """
-  @spec unsubscribe(t, topic, term) :: :ok
-  def unsubscribe(pubsub, topic, metadata) when is_atom(pubsub) and is_binary(topic) do
+  @spec unsubscribe_match(t, topic, term) :: :ok
+  def unsubscribe_match(pubsub, topic, metadata) when is_atom(pubsub) and is_binary(topic) do
     Registry.unregister_match(pubsub, topic, metadata)
   end
 
@@ -184,7 +184,7 @@ defmodule Phoenix.PubSub do
 
   The default dispatcher will broadcast the message to all subscribers except for the
   process that initiated the broadcast.
-  
+
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
@@ -224,7 +224,7 @@ defmodule Phoenix.PubSub do
 
   The default dispatcher will broadcast the message to all subscribers except for the
   process that initiated the broadcast.
-  
+
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
