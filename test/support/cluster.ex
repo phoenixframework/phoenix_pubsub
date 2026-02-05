@@ -9,17 +9,23 @@ defmodule Phoenix.PubSub.Cluster do
     # Turn node into a distributed node with the given long name
     :net_kernel.start([:"primary@127.0.0.1"])
 
-    # Allow spawned nodes to fetch all code from this node
-    :erl_boot_server.start([])
-    allow_boot to_charlist("127.0.0.1")
-
     nodes
     |> Enum.map(&Task.async(fn -> spawn_node(&1) end))
     |> Enum.map(&Task.await(&1, 30_000))
   end
 
   defp spawn_node({node_host, opts}) do
-    {:ok, node} = :slave.start(to_charlist("127.0.0.1"), node_name(node_host), inet_loader_args())
+    cookie = :erlang.get_cookie()
+
+    {:ok, _peer, node} =
+      :peer.start(%{
+        name: node_name(node_host),
+        host: ~c"127.0.0.1",
+        env: [{~c"ERL_AFLAGS", ~c"-setcookie #{cookie}"}]
+      })
+
+    # Ensure bidirectional connection
+    true = Node.connect(node)
     add_code_paths(node)
     transfer_configuration(node)
     ensure_applications_started(node)
@@ -32,15 +38,6 @@ defmodule Phoenix.PubSub.Cluster do
 
   defp rpc(node, module, function, args) do
     :rpc.block_call(node, module, function, args)
-  end
-
-  defp inet_loader_args do
-    to_charlist("-loader inet -hosts 127.0.0.1 -setcookie #{:erlang.get_cookie()}")
-  end
-
-  defp allow_boot(host) do
-    {:ok, ipv4} = :inet.parse_ipv4_address(host)
-    :erl_boot_server.add_slave(ipv4)
   end
 
   defp add_code_paths(node) do
