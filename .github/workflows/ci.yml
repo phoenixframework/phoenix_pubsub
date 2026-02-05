@@ -1,56 +1,83 @@
-name: Tests
+name: CI
 
 on:
-  pull_request:
   push:
-
-env:
-  ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
-  ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node16
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  tests:
-    name: Run tests (${{ matrix.image }})
-
-    # prevent workflow jobs run twice on push and pull_request event
-    # see https://github.com/orgs/community/discussions/57827
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+  mix_test:
+    name: mix test (OTP ${{matrix.otp}} | Elixir ${{matrix.elixir}})
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - image: 1.6.6-erlang-21.3.8.24-debian-buster-20210902-slim
-          - image: 1.19.3-erlang-28.1.1-debian-bullseye-20251103-slim
+          - elixir: 1.15.4
+            otp: 25.3
+
+          - elixir: 1.16.3
+            otp: 26.2
+
+          - elixir: 1.18.4
+            otp: 27.3
+
+          - elixir: 1.19.4
+            otp: 28.1
+            lint: lint
+
+          # run against latest Elixir to catch warnings early
+          - elixir: main-otp-28
+            otp: maint-28
 
     runs-on: ubuntu-latest
-    container:
-      image: hexpm/elixir:${{ matrix.image }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Hex and Rebar setup
-      run: |
-        mix local.hex --force
-        mix local.rebar --force
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
 
-    - name: Restore deps and _build cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: deps-${{ runner.os }}-${{ matrix.image }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          deps-${{ runner.os }}-${{ matrix.image }}
+      - name: Restore deps and _build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
 
-    - name: Install dependencies
-      run: mix deps.get --only test
+      - name: Install dependencies
+        run: mix deps.get
 
-    - name: Run tests
-      run: |
-        epmd -daemon
-        mix test
+      - name: Remove compiled application files
+        run: mix clean
+
+      - name: Compile dependencies
+        run: mix compile
+        if: ${{ !matrix.lint }}
+        env:
+          MIX_ENV: test
+
+      - name: Compile & lint dependencies
+        run: mix compile --warnings-as-errors
+        if: ${{ matrix.lint }}
+        env:
+          MIX_ENV: test
+
+      - name: Check if formatted
+        run: mix format --check-formatted
+        if: ${{ matrix.lint }}
+        env:
+          MIX_ENV: test
+
+      - name: Run tests
+        run: |
+          epmd -daemon
+          mix test
