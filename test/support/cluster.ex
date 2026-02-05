@@ -24,7 +24,6 @@ defmodule Phoenix.PubSub.Cluster do
         env: [{~c"ERL_AFLAGS", ~c"-setcookie #{cookie}"}]
       })
 
-    # Ensure bidirectional connection
     true = Node.connect(node)
     add_code_paths(node)
     transfer_configuration(node)
