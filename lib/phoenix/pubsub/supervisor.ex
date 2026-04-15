@@ -25,8 +25,10 @@ defmodule Phoenix.PubSub.Supervisor do
       opts[:registry_size] || opts[:pool_size] ||
         System.schedulers_online() |> Kernel./(4) |> Float.ceil() |> trunc()
 
+    dispatcher = Keyword.get(opts, :dispatcher, Phoenix.PubSub)
+
     registry = [
-      meta: [pubsub: {adapter, adapter_name}],
+      meta: [pubsub: {adapter, adapter_name, dispatcher}],
       partitions: partitions,
       keys: :duplicate,
       name: name
