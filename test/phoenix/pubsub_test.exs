@@ -102,4 +102,57 @@ defmodule Phoenix.PubSub.UnitTest do
       assert_receive {:custom_dispatched, :hello}
     end
   end
+
+  describe "group_by" do
+    test "defaults to :pid, delivering one message per subscription" do
+      name = :"ps_default_group_#{:erlang.unique_integer([:positive])}"
+      start_supervised!({PubSub, name: name})
+
+      assert :ok = PubSub.subscribe(name, "topic")
+      assert :ok = PubSub.subscribe(name, "topic")
+
+      PubSub.broadcast(name, "topic", :hello)
+
+      assert_receive :hello
+      assert_receive :hello
+    end
+
+    test ":pid delivers one message per subscription" do
+      name = :"ps_pid_#{:erlang.unique_integer([:positive])}"
+      start_supervised!({PubSub, name: name, group_by: :pid})
+
+      assert :ok = PubSub.subscribe(name, "topic")
+      assert :ok = PubSub.subscribe(name, "topic")
+
+      PubSub.broadcast(name, "topic", :hello)
+
+      assert_receive :hello
+      assert_receive :hello
+    end
+
+    test "raises ArgumentError on an invalid value" do
+      name = :"ps_bad_#{:erlang.unique_integer([:positive])}"
+
+      {:error, {{%ArgumentError{} = exception, _stacktrace}, _child_info}} =
+        start_supervised({PubSub, name: name, group_by: :bogus})
+
+      assert Exception.message(exception) =~ "invalid :group_by option"
+      assert Exception.message(exception) =~ ":bogus"
+    end
+
+    if Version.match?(System.version(), ">= 1.19.0") do
+      test ":key delivers one message per subscription (Elixir 1.19+)" do
+        name = :"ps_key_#{:erlang.unique_integer([:positive])}"
+        start_supervised!({PubSub, name: name, group_by: :key})
+
+        assert :ok = PubSub.subscribe(name, "topic")
+        assert :ok = PubSub.subscribe(name, "topic")
+
+        PubSub.broadcast(name, "topic", :hello)
+
+        assert_receive :hello
+        assert_receive :hello
+      end
+    end
+  end
 end
