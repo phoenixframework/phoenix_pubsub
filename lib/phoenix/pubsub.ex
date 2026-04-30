@@ -174,6 +174,14 @@ defmodule Phoenix.PubSub do
     * `:dispatcher` - the default dispatcher module for broadcasts
       (defaults to `Phoenix.PubSub`). Can be overridden per-call by
       passing a dispatcher to `broadcast/4` and friends.
+    * `:group_by` - controls how the underlying `Registry` partitions
+      subscriptions, either `:pid` or `:key` (defaults to `:pid`). With
+      `:pid`, entries are grouped by subscriber pid — best when topics
+      have many subscribers each. With `:key`, entries are grouped by
+      topic so key-based lookups touch a single partition — best when
+      there are many topics with few subscribers each. `:key` requires
+      Elixir v1.19 or later. See `Registry.start_link/1` for the
+      underlying trade-offs.
 
   """
   @spec child_spec(keyword) :: Supervisor.child_spec()

@@ -26,11 +26,12 @@ defmodule Phoenix.PubSub.Supervisor do
         System.schedulers_online() |> Kernel./(4) |> Float.ceil() |> trunc()
 
     dispatcher = Keyword.get(opts, :dispatcher, Phoenix.PubSub)
+    keys = registry_keys(Keyword.get(opts, :group_by, :pid))
 
     registry = [
       meta: [pubsub: {adapter, adapter_name, dispatcher}],
       partitions: partitions,
-      keys: :duplicate,
+      keys: keys,
       name: name
     ]
 
@@ -40,5 +41,13 @@ defmodule Phoenix.PubSub.Supervisor do
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  defp registry_keys(:pid), do: :duplicate
+  defp registry_keys(:key), do: {:duplicate, :key}
+
+  defp registry_keys(other) do
+    raise ArgumentError,
+          "invalid :group_by option (got #{inspect(other)}), must be :pid or :key"
   end
 end
