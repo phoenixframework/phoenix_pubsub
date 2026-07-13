@@ -129,11 +129,21 @@ defmodule Phoenix.Tracker.ShardRaceTest do
 
     hb = {:pub, :heartbeat, a_ref, a_delta, {a_ref, %{a_ref => alice_clock}}}
     :rpc.call(@node2, :erlang, :send, [node2_shard, hb])
-    Process.sleep(2 * @heartbeat)
 
-    # C now sees alice = "second" but with a compaction gap in its context.
-    assert remote_meta(@node2, node2_shard, topic, "alice") == "second",
-           "node2 (C) did not observe alice = \"second\" from A's incremental delta"
+    # C now holds alice = "second" but with a compaction gap in its context.
+    # Assert on the raw CRDT row: C is cut off from gossip, so A can go
+    # tempdown on C at any point, which hides alice from the online list
+    # without touching the row.
+    assert eventually(fn ->
+             match?(
+               [{{^topic, ^alice, "alice"}, %{v: "second"}, ^alice_tag}],
+               :rpc.call(@node2, :ets, :lookup, [
+                 node2_presences0.values,
+                 {topic, alice, "alice"}
+               ])
+             )
+           end),
+           "node2 (C) did not merge alice = \"second\" from A's incremental delta"
 
     node2_presences = :rpc.call(@node2, GenServer, :call, [node2_shard, {:list, topic}])
     node2_ctx = node2_presences.context
@@ -149,15 +159,22 @@ defmodule Phoenix.Tracker.ShardRaceTest do
     assert MapSet.member?(Map.get(node2_presences.clouds, a_ref, MapSet.new()), alice_tag),
            "expected alice's live dot to be parked in C's cloud (the compaction gap)"
 
-    # Confirm B is still frozen at "initial" (the stale source we will use).
-    assert remote_meta(@node1, node1_shard, topic, "alice") == "initial"
-
     # --- Phase 5: build a full-state transfer_ack from the STALE B and deliver
     # it to C. This is exactly what C's shard would receive if it requested a
     # transfer from B. We extract B's presences for C's ref/context on B (so B's
     # local ETS is used), then inject on C.
     node1_presences = :rpc.call(@node1, GenServer, :call, [node1_shard, {:list, topic}])
     node1_ref = node1_presences.replica
+
+    # Confirm B is still frozen at "initial" (the stale source we will use).
+    # Assert on the raw CRDT row: B is cut off from gossip, so A can be
+    # tempdown on B by now, which hides alice from the online list without
+    # touching the row (extract also operates on the raw rows).
+    b_row =
+      :rpc.call(@node1, :ets, :lookup, [node1_presences.values, {topic, alice, "alice"}])
+
+    assert match?([{{^topic, ^alice, "alice"}, %{v: "initial"}, {^a_ref, _}}], b_row),
+           "node1 (B) is not frozen at \"initial\": #{inspect(b_row)}"
 
     stale_extract =
       :rpc.call(@node1, State, :extract, [node1_presences, node2_ref, node2_ctx])
