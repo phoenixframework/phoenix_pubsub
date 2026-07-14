@@ -580,6 +580,101 @@ defmodule Phoenix.Tracker.StateTest do
              "(the production {:badmatch, N} shard crash)"
   end
 
+  test "concurrent cross-replica add-add on same key converges regardless of merge order (issue #214)",
+       config do
+    # Reproduces phoenixframework/phoenix_pubsub#214. Two different replicas
+    # concurrently add the SAME {topic, pid, key} with different meta (neither
+    # has observed the other's dot). Because `values` is an ordered_set keyed on
+    # {topic, pid, key}, a plain :ets.insert would resolve the conflict by merge
+    # order (last write wins), so two observers merging the adds in opposite
+    # orders would converge to *different* meta -- a non-convergent CRDT.
+    #
+    # The deterministic max-dot tie-break must make the winner independent of
+    # merge order: both observers land on the same element everywhere.
+    pid = new_pid()
+
+    a = new(:a, config)
+    b = new(:b, config)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    a = State.join(a, pid, "lobby", :user, %{from: :a})
+    b = State.join(b, pid, "lobby", :user, %{from: :b})
+
+    {_, a_map} = State.extract(a, :ignore, a.context)
+    {_, b_map} = State.extract(b, :ignore, b.context)
+
+    observer = fn node ->
+      o = new(node, config)
+      {o, _, _} = State.replica_up(o, a.replica)
+      {o, _, _} = State.replica_up(o, b.replica)
+      o
+    end
+
+    # Observer C merges A then B; observer D merges B then A.
+    c = observer.(:c)
+    {c, _, _} = State.merge(c, {a, a_map})
+    {c, _, _} = State.merge(c, {b, b_map})
+
+    d = observer.(:d)
+    {d, _, _} = State.merge(d, {b, b_map})
+    {d, _, _} = State.merge(d, {a, a_map})
+
+    c_row = State.get_by_pid(c, pid, "lobby", :user)
+    d_row = State.get_by_pid(d, pid, "lobby", :user)
+
+    # (a) both observers converge to the SAME element
+    assert c_row == d_row,
+           "cross-replica add-add diverged by merge order: #{inspect(c_row)} vs #{inspect(d_row)}"
+
+    # (b) the winner is the canonically-max dot (equal clocks -> greater replica
+    # name wins), independent of insert order
+    assert {{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}} = c_row
+
+    # (c) no duplicate pid rows accumulate, so a later local leave cannot crash
+    assert length(:ets.lookup(c.pids, pid)) == 1,
+           "concurrent add-add left a duplicate pid row"
+
+    assert %State{} = State.leave(c, pid, "lobby", :user)
+    assert %State{} = State.leave(c, pid)
+  end
+
+  test "concurrent add-add merged via a combined delta converges deterministically (issue #214)",
+       config do
+    # Exercises the merge_deltas path: a delta map is keyed by tag, so a single
+    # delta can legitimately carry TWO tags for the same {topic, pid, key}. When
+    # that delta is merged, both adds are present in one :ets.insert batch, so
+    # the tie-break must happen while building the join list (not rely on the
+    # pre-existing ETS row). The winner must still be the canonical max dot.
+    pid = new_pid()
+
+    a = new(:a, config)
+    b = new(:b, config)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    a = State.join(a, pid, "lobby", :user, %{from: :a})
+    b = State.join(b, pid, "lobby", :user, %{from: :b})
+
+    {:ok, combined} = State.merge_deltas(a.delta, b.delta)
+
+    # The combined delta carries both concurrent dots for the same logical key.
+    assert map_size(combined.values) == 2
+
+    c = new(:c, config)
+    {c, _, _} = State.replica_up(c, a.replica)
+    {c, _, _} = State.replica_up(c, b.replica)
+    {c, joins, _} = State.merge(c, combined)
+
+    # Exactly one join event and one live row survive the batch insert.
+    assert [{{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}}] = joins
+
+    assert {{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}} =
+             State.get_by_pid(c, pid, "lobby", :user)
+
+    assert length(:ets.lookup(c.pids, pid)) == 1
+  end
+
   defp given_connected_cluster(nodes, config) do
     states = Enum.map(nodes, fn n -> new(n, config) end)
     replicas = Enum.map(states, fn s -> s.replica end)

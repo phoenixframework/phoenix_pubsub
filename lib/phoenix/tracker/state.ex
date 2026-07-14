@@ -336,15 +336,21 @@ defmodule Phoenix.Tracker.State do
   end
 
   defp merge(%State{} = local, remote, remote_map) do
-    {added_pids, joins} = accumulate_joins(local, remote_map)
+    # Observe removes first so we know which value keys are leaving in this
+    # merge. accumulate_joins uses that set to avoid suppressing an incoming
+    # add against a local row that is simultaneously being removed. The two
+    # computations are independent (neither mutates state), so ordering is
+    # purely to thread `removed_value_keys` into the join reconciliation.
     {clouds, delta, leaves, removed_pids} = observe_removes(local, remote, remote_map)
+    removed_value_keys = for {value_key, _meta, _tag} <- leaves, do: value_key
+
+    {added_pids, joins} = accumulate_joins(local, remote_map, MapSet.new(removed_value_keys))
 
     # We diff ETS deletes and inserts, this way if there is an update
     # operation (leave + join) we handle it atomically via insert into
     # the :ordered_set table
 
     added_value_keys = for {value_key, _meta, _tag} <- joins, do: value_key
-    removed_value_keys = for {value_key, _meta, _tag} <- leaves, do: value_key
     value_keys_to_remove = removed_value_keys -- added_value_keys
 
     pids_to_remove = removed_pids -- added_pids
@@ -380,43 +386,106 @@ defmodule Phoenix.Tracker.State do
     {new_state, joins, leaves}
   end
 
-  @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
-  defp accumulate_joins(local, remote_map) do
+  @spec accumulate_joins(t, values, MapSet.t()) :: {[pid_lookup], [value]}
+  defp accumulate_joins(local, remote_map, removed_value_keys) do
     %State{context: context, clouds: clouds, values: values} = local
 
-    Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}},
-                                         {pids, adds} ->
-      cond do
-        not match?(%{^replica => _}, context) or in?(context, clouds, tag) ->
-          {pids, adds}
+    {pids, joins} =
+      Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}},
+                                           {pids, adds} ->
+        value_key = {topic, pid, key}
 
-        superseded_locally?(values, pid, topic, key, tag) ->
-          {pids, adds}
+        cond do
+          not match?(%{^replica => _}, context) or in?(context, clouds, tag) ->
+            {pids, adds}
 
-        true ->
-          {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
-      end
-    end)
+          superseded_locally?(values, removed_value_keys, value_key, tag) ->
+            {pids, adds}
+
+          true ->
+            {[{pid, topic, key} | pids], [{value_key, meta, tag} | adds]}
+        end
+      end)
+
+    {pids, dedupe_joins(joins)}
   end
 
-  # A remote element is stale if we already hold the same {topic, pid, key}
-  # with a newer dot from the same origin replica. This happens when a
-  # replica's full-state transfer races a delta we already applied: our
-  # context has a gap below our dot, so the old dot is not covered by
-  # `in?/3`, but it must not overwrite the newer element we hold.
-  #
-  # This is sound because we only compare dots from the *same* origin replica
-  # for the *same* {topic, pid, key}. Tracker's invariant is one live element
-  # per key per replica with monotonically increasing dots, so a lower
-  # same-replica dot is provably a superseded add; skipping it cannot drop a
-  # genuinely concurrent add (a different replica, or a higher dot, both fall
-  # through to the `true` branch). This is a deliberate deviation from a
-  # textbook ORSWOT merge, which has no per-replica dominance shortcut.
-  defp superseded_locally?(values, pid, topic, key, {replica, clock}) do
-    case :ets.lookup(values, {topic, pid, key}) do
-      [{_, _meta, {^replica, local_clock}}] -> local_clock >= clock
-      _ -> false
+  # Collapse a genuinely concurrent add-add on the same {topic, pid, key} to a
+  # single element chosen by `tag_dominates?/2`. Without this, two tags for the
+  # same key can share one `:ets.insert` batch (reachable via merge_deltas,
+  # whose delta map is keyed by tag) and the surviving ordered_set row would be
+  # decided by insert order — non-convergent across nodes. Order-preserving,
+  # with a fast path for the common case where the keys are already distinct.
+  defp dedupe_joins(joins) do
+    winners =
+      Enum.reduce(joins, %{}, fn {value_key, meta, tag}, winners ->
+        case winners do
+          %{^value_key => {_meta, best_tag}} ->
+            if tag_dominates?(best_tag, tag),
+              do: winners,
+              else: %{winners | value_key => {meta, tag}}
+
+          _ ->
+            Map.put(winners, value_key, {meta, tag})
+        end
+      end)
+
+    if map_size(winners) == length(joins) do
+      joins
+    else
+      {deduped, _seen} =
+        Enum.reduce(joins, {[], %{}}, fn {value_key, _meta, _tag}, {acc, seen} ->
+          case seen do
+            %{^value_key => _} ->
+              {acc, seen}
+
+            _ ->
+              {meta, tag} = Map.fetch!(winners, value_key)
+              {[{value_key, meta, tag} | acc], Map.put(seen, value_key, true)}
+          end
+        end)
+
+      Enum.reverse(deduped)
     end
+  end
+
+  # A remote add is superseded by what we already hold locally when a surviving
+  # local row for the same {topic, pid, key} carries a dominating dot.
+  #
+  # Same origin replica: this is the stale full-state transfer case. A replica's
+  # transfer can race a delta we already applied, leaving a gap in our context
+  # below our dot, so the old dot is not covered by `in?/3` — but it must not
+  # overwrite the newer element we hold. Tracker's invariant is one live element
+  # per key per replica with monotonically increasing dots, so a lower
+  # same-replica dot is provably a superseded add.
+  #
+  # Different origin replica: this is a genuinely concurrent add-add on the same
+  # key (issue #214). Left to `:ets.insert` the winner would be whichever add
+  # was merged last, which differs across nodes and diverges. We instead break
+  # the tie with `tag_dominates?/2`, a total deterministic order, so every node
+  # converges on the same winner regardless of merge order.
+  #
+  # A local row that is itself leaving in this merge (`removed_value_keys`) is
+  # not a valid comparison target: the incoming add must be free to replace it,
+  # so we treat the key as if unheld. This is a deliberate deviation from a
+  # textbook ORSWOT merge, which has no dominance shortcut.
+  defp superseded_locally?(values, removed_value_keys, value_key, tag) do
+    case :ets.lookup(values, value_key) do
+      [{_, _meta, local_tag}] ->
+        not MapSet.member?(removed_value_keys, value_key) and tag_dominates?(local_tag, tag)
+
+      _ ->
+        false
+    end
+  end
+
+  # Total, deterministic order on dots. A dot is `{replica, clock}`; we compare
+  # as `{clock, replica}` so a higher Lamport clock wins, with the replica name
+  # as a stable tiebreaker. This is Erlang term ordering, identical on every
+  # node, so same-key conflicts resolve to the same winner everywhere. For the
+  # same origin replica it reduces to `local_clock >= clock`.
+  defp tag_dominates?({local_replica, local_clock}, {replica, clock}) do
+    {local_clock, local_replica} >= {clock, replica}
   end
 
   @spec observe_removes(t, t, map) ::
