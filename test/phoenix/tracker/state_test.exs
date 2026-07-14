@@ -542,6 +542,9 @@ defmodule Phoenix.Tracker.StateTest do
          | mode: :normal,
            context: %{{:a, 1} => 0, {:b, 1} => 0, {:c, 1} => 0},
            clouds: %{},
+           # Safe to blank the tables here: merge/3 -> observe_removes reads
+           # only the remote's context and clouds, never remote.values or
+           # remote.pids. If that ever changes, this fabrication must too.
            values: nil,
            pids: nil,
            delta: :unset

@@ -404,6 +404,14 @@ defmodule Phoenix.Tracker.State do
   # replica's full-state transfer races a delta we already applied: our
   # context has a gap below our dot, so the old dot is not covered by
   # `in?/3`, but it must not overwrite the newer element we hold.
+  #
+  # This is sound because we only compare dots from the *same* origin replica
+  # for the *same* {topic, pid, key}. Tracker's invariant is one live element
+  # per key per replica with monotonically increasing dots, so a lower
+  # same-replica dot is provably a superseded add; skipping it cannot drop a
+  # genuinely concurrent add (a different replica, or a higher dot, both fall
+  # through to the `true` branch). This is a deliberate deviation from a
+  # textbook ORSWOT merge, which has no per-replica dominance shortcut.
   defp superseded_locally?(values, pid, topic, key, {replica, clock}) do
     case :ets.lookup(values, {topic, pid, key}) do
       [{_, _meta, {^replica, local_clock}}] -> local_clock >= clock

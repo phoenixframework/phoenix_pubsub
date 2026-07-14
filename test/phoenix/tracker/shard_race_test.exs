@@ -190,9 +190,6 @@ defmodule Phoenix.Tracker.ShardRaceTest do
     ack = {:pub, :transfer_ack, make_ref(), node1_ref, stale_extract}
     :rpc.call(@node2, :erlang, :send, [node2_shard, ack])
 
-    # Give C a few heartbeats to process the injected message.
-    Process.sleep(3 * @heartbeat)
-
     # --- Assertion (a): alice's raw CRDT row on C must keep the newer meta and
     # tag. We assert on the values table directly because A is legitimately
     # tempdown on C by now (C is cut off from gossip, so A goes silent past
