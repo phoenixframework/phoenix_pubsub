@@ -58,6 +58,10 @@ defmodule Phoenix.Tracker.ShardRaceTest do
   test "stale full-state transfer_ack from a partitioned node does not corrupt or crash a fresh node (issue #148)",
        %{shard: shard, topic: topic, tracker: tracker} do
     alice = spawn_pid()
+    # Kill alice unconditionally so an early assertion failure does not leak a
+    # sleeping process into the rest of the suite (the happy path kills her at
+    # the end; Process.exit on an already-dead pid is a no-op).
+    on_exit(fn -> Process.exit(alice, :kill) end)
 
     # --- Phase 1: A (primary) and B (@node1) connect; alice joins A; replicate.
     {_n1, {:ok, node1_shard}} = start_shard(@node1, name: tracker)
@@ -196,14 +200,19 @@ defmodule Phoenix.Tracker.ShardRaceTest do
     # touching the CRDT row -- the row itself is what the stale ack corrupts.
     node2_presences_after = :rpc.call(@node2, GenServer, :call, [node2_shard, {:list, topic}])
 
-    alice_row =
+    alice_row = fn ->
       :rpc.call(@node2, :ets, :lookup, [
         node2_presences_after.values,
         {topic, alice, "alice"}
       ])
+    end
 
-    assert match?([{{^topic, ^alice, "alice"}, %{v: "second"}, ^alice_tag}], alice_row),
-           "stale transfer_ack corrupted alice's CRDT row on node2 (C): #{inspect(alice_row)}"
+    # Retry rather than a one-shot read: under full-suite load an interleaved
+    # tempdown/heartbeat handler can delay C draining the injected ack.
+    assert eventually(fn ->
+             match?([{{^topic, ^alice, "alice"}, %{v: "second"}, ^alice_tag}], alice_row.())
+           end),
+           "stale transfer_ack corrupted alice's CRDT row on node2 (C): #{inspect(alice_row.())}"
 
     # --- Assertion (b): exactly one presence row for alice on C (no duplicates).
     assert remote_pid_row_count(@node2, node2_shard, alice) == 1,
