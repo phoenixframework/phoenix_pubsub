@@ -60,6 +60,43 @@ defmodule Phoenix.PubSub do
   to thousands or even millions of users to be encoded once and written
   directly to sockets instead of being encoded per channel.
 
+  ## Tagged subscriptions
+
+  A process may subscribe to the same topic more than once. By default
+  every subscription delivers the same message, which leaves the
+  subscriber unable to tell them apart.
+
+  Passing a `:tag` makes each subscription self-describing. Messages for
+  a tagged subscription are delivered wrapped as `{tag, message}`:
+
+      tag = make_ref()
+      Phoenix.PubSub.subscribe(:my_pubsub, "user:123", tag: tag)
+      Phoenix.PubSub.broadcast(:my_pubsub, "user:123", :ping)
+      #=> receives {tag, :ping}
+
+  Tagged and untagged subscriptions coexist on the same topic, each
+  receiving its own message:
+
+      Phoenix.PubSub.subscribe(:my_pubsub, "user:123")
+      Phoenix.PubSub.subscribe(:my_pubsub, "user:123", tag: tag)
+      Phoenix.PubSub.broadcast(:my_pubsub, "user:123", :ping)
+      #=> receives both :ping and {tag, :ping}
+
+  Any term may be used as a tag, but it must be unique within the
+  subscribing process for `unsubscribe/3` to remove the right
+  subscription, so `make_ref/0` is usually the best choice.
+  `unsubscribe/3` drops a single tagged subscription, while
+  `unsubscribe/2` drops every subscription the caller holds on the
+  topic, tagged or not.
+
+  Tags are stored as subscription metadata and are therefore local to
+  the subscribing node. They are never sent across the cluster.
+
+  Tags are applied by the default dispatcher. A custom dispatcher must
+  call `tag_message/2` in its ordinary delivery branch to honor them,
+  otherwise messages reach tagged subscribers unwrapped. See
+  `tag_message/2` for an example.
+
   ## Safe pool size migration (when using `Phoenix.PubSub.PG2` adapter)
 
   When you need to change the pool size in a running cluster,
@@ -143,6 +180,7 @@ defmodule Phoenix.PubSub do
   @type topic :: binary
   @type message :: term
   @type dispatcher :: module
+  @type tag :: term
 
   defmodule BroadcastError do
     defexception [:message]
@@ -202,7 +240,15 @@ defmodule Phoenix.PubSub do
   `Phoenix.PubSub.unsubscribe/2`, all duplicate subscriptions
   will be dropped.
 
+  If you do want several independent subscriptions to the same
+  topic within one process, give each of them a `:tag` so that
+  they can be told apart and unsubscribed individually.
+
   ## Options
+
+    * `:tag` - delivers messages for this subscription wrapped as
+      `{tag, message}` instead of `message`. See the "Tagged
+      subscriptions" section in the module documentation
 
     * `:metadata` - provides metadata to be attached to this
       subscription. The metadata can be used by custom
@@ -213,18 +259,73 @@ defmodule Phoenix.PubSub do
   @spec subscribe(t, topic, keyword) :: :ok | {:error, term}
   def subscribe(pubsub, topic, opts \\ [])
       when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
-    case Registry.register(pubsub, topic, opts[:metadata]) do
+    case Registry.register(pubsub, topic, subscription_value(opts)) do
       {:ok, _} -> :ok
       {:error, _} = error -> error
     end
   end
 
+  defp subscription_value(opts) do
+    case {Keyword.fetch(opts, :tag), Keyword.fetch(opts, :metadata)} do
+      {:error, :error} ->
+        nil
+
+      {:error, {:ok, metadata}} ->
+        metadata
+
+      {{:ok, tag}, :error} ->
+        {__MODULE__, tag}
+
+      {{:ok, _}, {:ok, _}} ->
+        raise ArgumentError, """
+        cannot pass both :tag and :metadata to Phoenix.PubSub.subscribe/3
+
+        :tag is applied by the default dispatcher, while :metadata is meant \
+        for custom dispatchers. If you need both, pass :metadata and have \
+        your dispatcher call Phoenix.PubSub.tag_message/2.
+        """
+    end
+  end
+
   @doc """
   Unsubscribes the caller from the PubSub adapter's topic.
+
+  Without options, every subscription the caller holds on `topic` is
+  dropped, including tagged ones.
+
+  ## Options
+
+    * `:tag` - drops only the subscription made with the given tag,
+      leaving the caller's other subscriptions to `topic` in place.
+      See the "Tagged subscriptions" section in the module documentation
+
+  ## Examples
+
+      iex> tag = make_ref()
+      iex> PubSub.subscribe(:my_pubsub, "user:123", tag: tag)
+      :ok
+      iex> PubSub.subscribe(:my_pubsub, "user:123")
+      :ok
+      iex> PubSub.unsubscribe(:my_pubsub, "user:123", tag: tag)
+      :ok
+      # Only the tagged subscription is removed, the untagged one remains
+
   """
-  @spec unsubscribe(t, topic) :: :ok
-  def unsubscribe(pubsub, topic) when is_atom(pubsub) and is_binary(topic) do
-    Registry.unregister(pubsub, topic)
+  @spec unsubscribe(t, topic, keyword) :: :ok
+  def unsubscribe(pubsub, topic, opts \\ [])
+      when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
+    case Keyword.fetch(opts, :tag) do
+      {:ok, tag} ->
+        # The tag is compared in a guard rather than being placed in the match
+        # pattern directly, so that tags which happen to be match spec atoms,
+        # such as :_ or :"$1", are treated as ordinary terms.
+        Registry.unregister_match(pubsub, topic, {__MODULE__, :"$1"}, [
+          {:==, :"$1", {:const, tag}}
+        ])
+
+      :error ->
+        Registry.unregister(pubsub, topic)
+    end
   end
 
   @doc """
@@ -396,20 +497,63 @@ defmodule Phoenix.PubSub do
     adapter.node_name(name)
   end
 
+  @doc """
+  Applies a subscription's tag to `message`.
+
+  Returns `{tag, message}` when the subscription was made with a `:tag`
+  and `message` unchanged otherwise.
+
+  The default dispatcher calls this for every entry. A custom dispatcher
+  should call it wherever it would otherwise have written
+  `send(pid, message)`, which is the branch tagged subscriptions always
+  take: because `:tag` and `:metadata` are mutually exclusive, a tagged
+  subscription carries no custom metadata and therefore never matches a
+  dispatcher's own metadata shapes.
+
+  ## Examples
+
+  A dispatcher with its own metadata protocol, here writing directly to a
+  transport process, plus the ordinary delivery branch where tags apply:
+
+      defmodule MyApp.Dispatcher do
+        def dispatch(entries, from, message) do
+          for {pid, metadata} <- entries, pid != from do
+            case metadata do
+              {:fastlane, transport_pid, serializer} ->
+                send(transport_pid, serializer.encode!(message))
+
+              metadata ->
+                send(pid, Phoenix.PubSub.tag_message(metadata, message))
+            end
+          end
+
+          :ok
+        end
+      end
+
+  A custom dispatcher that never calls this function still delivers to
+  tagged subscribers, but the messages arrive unwrapped. See the "Tagged
+  subscriptions" section in the module documentation.
+  """
+  @spec tag_message(term, message) :: message
+  def tag_message(metadata, message)
+  def tag_message({__MODULE__, tag}, message), do: {tag, message}
+  def tag_message(_metadata, message), do: message
+
   ## Dispatch callback
 
   @doc false
   def dispatch(entries, :none, message) do
-    for {pid, _} <- entries do
-      send(pid, message)
+    for {pid, metadata} <- entries do
+      send(pid, tag_message(metadata, message))
     end
 
     :ok
   end
 
   def dispatch(entries, from, message) do
-    for {pid, _} <- entries, pid != from do
-      send(pid, message)
+    for {pid, metadata} <- entries, pid != from do
+      send(pid, tag_message(metadata, message))
     end
 
     :ok
