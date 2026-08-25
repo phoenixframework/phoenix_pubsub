@@ -25,6 +25,25 @@ defmodule Phoenix.PubSub.DistributedTest do
     assert_receive {@node2, :ping}
   end
 
+  test "tagged subscriptions are applied on the subscriber's node", config do
+    tag = make_ref()
+    PubSub.subscribe(config.pubsub, config.topic, tag: tag)
+
+    # The broadcast originates on a remote node. The tag lives only in this
+    # node's registry and is never sent across the cluster, so it is applied
+    # here, on delivery.
+    :ok = :rpc.call(@node1, PubSub, :broadcast, [config.pubsub, config.topic, :ping])
+    assert_receive {^tag, :ping}
+
+    :ok = :rpc.call(@node1, PubSub, :unsubscribe, [config.pubsub, config.topic])
+    :ok = :rpc.call(@node2, PubSub, :broadcast, [config.pubsub, config.topic, :pong])
+    assert_receive {^tag, :pong}
+
+    PubSub.unsubscribe(config.pubsub, config.topic, tag: tag)
+    :ok = :rpc.call(@node1, PubSub, :broadcast, [config.pubsub, config.topic, :gone])
+    refute_receive {^tag, :gone}
+  end
+
   test "local_broadcast targets current nodes", config do
     spy_on_pubsub(@node1, config.pubsub, self(), config.topic)
     spy_on_pubsub(@node2, config.pubsub, self(), config.topic)

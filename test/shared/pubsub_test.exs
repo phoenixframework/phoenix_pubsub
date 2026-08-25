@@ -39,6 +39,21 @@ defmodule Phoenix.PubSubTest do
     end
   end
 
+  # Models a dispatcher with its own metadata protocol alongside an ordinary
+  # delivery branch, which is where tagged subscriptions are applied.
+  defmodule TagAwareDispatcher do
+    def dispatch(entries, from, message) do
+      for {pid, metadata} <- entries, pid != from do
+        case metadata do
+          {:fastlane, target} -> send(target, {:fastlaned, message})
+          metadata -> send(pid, {:custom, PubSub.tag_message(metadata, message)})
+        end
+      end
+
+      :ok
+    end
+  end
+
   setup config do
     size = config[:pool_size] || 1
     registry_size = config[:registry_size] || config[:registry_pool_size] || config[:pool_size] ||  1
@@ -103,6 +118,136 @@ defmodule Phoenix.PubSubTest do
       assert {pid, :other} in subscribers(config, config.topic)
       assert {pid2, nil} in subscribers(config, config.topic)
       refute {pid, :custom} in subscribers(config, config.topic)
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: subscribe with :tag delivers {tag, message}", config do
+      tag = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag) == :ok
+
+      PubSub.broadcast(config.pubsub, config.topic, :ping)
+      assert_receive {^tag, :ping}
+
+      PubSub.local_broadcast(config.pubsub, config.topic, :local)
+      assert_receive {^tag, :local}
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: tagged and untagged subscriptions each receive their own message",
+         config do
+      tag1 = make_ref()
+      tag2 = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag1) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag2) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic) == :ok
+
+      PubSub.broadcast(config.pubsub, config.topic, :ping)
+      assert_receive {^tag1, :ping}
+      assert_receive {^tag2, :ping}
+      assert_receive :ping
+      refute_received _
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: broadcast_from/4 skips the sender's tagged subscriptions", config do
+      tag = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag) == :ok
+
+      # broadcast from another process: we are not the sender, so we get it tagged
+      PubSub.broadcast_from(config.pubsub, spawn_pid(), config.topic, :ping)
+      assert_receive {^tag, :ping}
+
+      # broadcast from ourselves: our tagged subscription is skipped
+      PubSub.broadcast_from(config.pubsub, self(), config.topic, :skipped)
+      refute_receive {^tag, :skipped}
+
+      PubSub.local_broadcast_from(config.pubsub, self(), config.topic, :skipped)
+      refute_receive {^tag, :skipped}
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: unsubscribe/3 with :tag drops only that subscription", config do
+      tag1 = make_ref()
+      tag2 = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag1) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag2) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic) == :ok
+      assert length(subscribers(config, config.topic)) == 3
+
+      assert PubSub.unsubscribe(config.pubsub, config.topic, tag: tag1) == :ok
+      assert length(subscribers(config, config.topic)) == 2
+
+      PubSub.broadcast(config.pubsub, config.topic, :ping)
+      refute_receive {^tag1, :ping}
+      assert_receive {^tag2, :ping}
+      assert_receive :ping
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: unsubscribe/2 drops tagged and untagged subscriptions alike", config do
+      tag = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic) == :ok
+      assert length(subscribers(config, config.topic)) == 2
+
+      assert PubSub.unsubscribe(config.pubsub, config.topic) == :ok
+      assert subscribers(config, config.topic) == []
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: unsubscribe/3 with an unknown tag noops", config do
+      tag = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag) == :ok
+      assert PubSub.unsubscribe(config.pubsub, config.topic, tag: make_ref()) == :ok
+      assert length(subscribers(config, config.topic)) == 1
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: unsubscribe/3 treats match spec atoms as ordinary tags", config do
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: :normal) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: {:comp, 1}) == :ok
+      assert length(subscribers(config, config.topic)) == 2
+
+      # :_ and :"$1" are wildcards in a match spec and must not match anything
+      # other than a subscription tagged with that exact term
+      assert PubSub.unsubscribe(config.pubsub, config.topic, tag: :_) == :ok
+      assert PubSub.unsubscribe(config.pubsub, config.topic, tag: :"$1") == :ok
+      assert length(subscribers(config, config.topic)) == 2
+
+      assert PubSub.unsubscribe(config.pubsub, config.topic, tag: {:comp, 1}) == :ok
+      assert length(subscribers(config, config.topic)) == 1
+
+      PubSub.broadcast(config.pubsub, config.topic, :ping)
+      assert_receive {:normal, :ping}
+      refute_received _
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: tags survive a custom dispatcher calling tag_message/2", config do
+      tag = make_ref()
+      assert PubSub.subscribe(config.pubsub, config.topic, tag: tag) == :ok
+      assert PubSub.subscribe(config.pubsub, config.topic) == :ok
+
+      # a subscription using the dispatcher's own metadata protocol takes the
+      # custom branch and is unaffected by tagging
+      assert PubSub.subscribe(config.pubsub, config.topic,
+               metadata: {:fastlane, self()}
+             ) == :ok
+
+      PubSub.broadcast(config.pubsub, config.topic, :ping, TagAwareDispatcher)
+      assert_receive {:custom, {^tag, :ping}}
+      assert_receive {:custom, :ping}
+      assert_receive {:fastlaned, :ping}
+      refute_received _
+    end
+
+    @tag pool_size: size
+    test "pool #{size}: subscribe raises when given both :tag and :metadata", config do
+      assert_raise ArgumentError, ~r/cannot pass both :tag and :metadata/, fn ->
+        PubSub.subscribe(config.pubsub, config.topic, tag: make_ref(), metadata: :custom)
+      end
+
+      assert subscribers(config, config.topic) == []
     end
 
     @tag pool_size: size

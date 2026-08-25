@@ -2,6 +2,14 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
+## Unreleased
+
+### Enhancements
+  - Add `:tag` option to `subscribe/3`, delivering messages as `{tag, message}`
+    so that several independent subscriptions in one process can be told apart
+  - Add `unsubscribe/3` to drop a single tagged subscription
+  - Add `tag_message/2` so custom dispatchers can honor tagged subscriptions
+
 ## 2.3.0 (2026-08-25)
 
 ### Enhancements
