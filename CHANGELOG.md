@@ -2,6 +2,16 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
+## 2.3.0 (2026-08-25)
+
+### Enhancements
+  - Add :group_by option to choose Registry sharding strategy
+  - Add configurable default dispatcher
+  - Add unsubscribe function that matches on metadata
+
+### Bug fixes
+  - Properly delete objects in tracker state
+
 ## 2.2.0 (2025-10-22)
 
 ### Enhancements
