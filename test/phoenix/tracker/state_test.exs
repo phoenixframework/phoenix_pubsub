@@ -431,6 +431,250 @@ defmodule Phoenix.Tracker.StateTest do
              [{{:s1, 1}, 1}, {{:s1, 1}, 2}, {{:s2, 1}, 1}, {{:s2, 1}, 2}, {{:s2, 1}, 3}]
   end
 
+  test "stale full-state transfer does not overwrite newer values from delta (issue #148)",
+       config do
+    # Reproduces phoenixframework/phoenix_pubsub#148.
+    #
+    # A and B are connected. alice joins A as "initial" and A's state is
+    # replicated to B. alice then leaves+joins on A ("update1") but that delta
+    # never reaches B, so B's copy of alice is stuck at "initial". A third
+    # replica C comes up and first merges A's delta (learning alice="second"),
+    # then merges a full-state transfer_ack extracted from the *stale* B.
+    #
+    # Because A's context for alice was compacted away on C (the local :a clock
+    # sits at 0 with the live dots parked in the cloud), the stale tag
+    # {{:a,1},1} is not recognised as already-observed, so merge/3 admits it:
+    # the newer row is downgraded ("second" -> "initial") and a duplicate pid
+    # row is appended.
+    a = new(:a, config)
+    b = new(:b, config)
+    c = new(:c, config)
+
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    alice = new_pid()
+
+    # alice joins A as "initial"; replicate the full state to B
+    a = State.join(a, alice, "lobby", :alice, %{v: "initial"})
+
+    {b, [{{_, _, :alice}, %{v: "initial"}, _}], []} =
+      State.merge(b, State.extract(a, b.replica, b.context))
+
+    a = State.reset_delta(a)
+
+    # alice leave+joins on A ("update1"); this delta never reaches B
+    a = State.leave_join(a, alice, "lobby", :alice, %{v: "update1"})
+    a = State.reset_delta(a)
+
+    # C comes up and everyone learns about everyone
+    {a, _, _} = State.replica_up(a, c.replica)
+    {c, _, _} = State.replica_up(c, a.replica)
+    {c, _, _} = State.replica_up(c, b.replica)
+    {b, _, _} = State.replica_up(b, c.replica)
+
+    # alice leave+joins on A a final time ("second")
+    a = State.leave_join(a, alice, "lobby", :alice, %{v: "second"})
+
+    # C merges A's delta and correctly observes alice = "second"
+    {c, [{{_, _, :alice}, %{v: "second"}, _}], []} = State.merge(c, a.delta)
+    assert [{^alice, %{v: "second"}}] = State.get_by_key(c, "lobby", :alice)
+    # a-context has been compacted to 0 with the live dots parked in the cloud
+    assert %{{:a, 1} => 0} = c.context
+
+    # C now merges a full-state transfer_ack from the *stale* B replica.
+    {c, _joins, _leaves} = State.merge(c, State.extract(b, c.replica, c.context))
+
+    # (a) alice's meta must NOT be downgraded back to "initial"
+    assert [{^alice, %{v: "second"}}] = State.get_by_key(c, "lobby", :alice),
+           "stale full-state transfer downgraded alice from \"second\" to a prior meta"
+
+    # (b) no duplicate rows may accumulate in the pids duplicate_bag
+    assert length(:ets.lookup(c.pids, alice)) == 1,
+           "stale full-state transfer appended a duplicate pid row"
+
+    # (c) after subsequently merging A's full extract, alice remains online
+    {c, _joins, _leaves} = State.merge(c, State.extract(a, c.replica, c.context))
+
+    assert [{^alice, %{v: "second"}}] = State.get_by_key(c, "lobby", :alice),
+           "alice disappeared after merging A's full extract"
+  end
+
+  test "duplicate pid rows from stale transfers crash leave/2 with {:badmatch, N} (issue #148)",
+       config do
+    # Documents the production crash: repeated stale full-state transfers build
+    # up N > 1 duplicate rows in the pids duplicate_bag for a single
+    # {topic, pid, key}. A later local leave calls remove/4, whose
+    # `1 = :ets.select_delete(pids, ...)` guard then raises
+    # `{:badmatch, N}`, taking down the shard. Production Sentry shows
+    # {:badmatch, 3}.
+    a = new(:a, config)
+    b = new(:b, config)
+    c = new(:c, config)
+
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    alice = new_pid()
+
+    a = State.join(a, alice, "lobby", :alice, %{v: "initial"})
+    {b, _, _} = State.merge(b, State.extract(a, b.replica, b.context))
+    a = State.reset_delta(a)
+
+    a = State.leave_join(a, alice, "lobby", :alice, %{v: "update1"})
+    a = State.reset_delta(a)
+
+    {a, _, _} = State.replica_up(a, c.replica)
+    {c, _, _} = State.replica_up(c, a.replica)
+    {c, _, _} = State.replica_up(c, b.replica)
+    {_b, _, _} = State.replica_up(b, c.replica)
+
+    a = State.leave_join(a, alice, "lobby", :alice, %{v: "second"})
+    {c, _, _} = State.merge(c, a.delta)
+
+    # C's a-clock is 0 with the live dots {3,4,5} parked in the cloud, leaving
+    # a gap at dots 1 and 2. Two *independent* stale full-state transfers (from
+    # two replicas that never observed each other's dot) each fill a gap dot
+    # and each appends an orphan duplicate pid row, without cancelling.
+    stale = fn tag, meta ->
+      {%Phoenix.Tracker.State{
+         c
+         | mode: :normal,
+           context: %{{:a, 1} => 0, {:b, 1} => 0, {:c, 1} => 0},
+           clouds: %{},
+           # Safe to blank the tables here: merge/3 -> observe_removes reads
+           # only the remote's context and clouds, never remote.values or
+           # remote.pids. If that ever changes, this fabrication must too.
+           values: nil,
+           pids: nil,
+           delta: :unset
+       }, %{tag => {alice, "lobby", :alice, meta}}}
+    end
+
+    {c, _, _} = State.merge(c, stale.({{:a, 1}, 1}, %{v: "initial"}))
+    {c, _, _} = State.merge(c, stale.({{:a, 1}, 2}, %{v: "gap"}))
+
+    # After the fix, stale transfers must not accumulate duplicate pid rows:
+    # alice must have exactly one row. On buggy main there are 3, which is what
+    # drives the crash below.
+    #
+    # This assertion FAILS on buggy main (finds 3), documenting the corruption.
+    assert length(:ets.lookup(c.pids, alice)) == 1,
+           "stale full-state transfers accumulated duplicate pid rows for alice"
+
+    # And the follow-on symptom: a subsequent local leave must not crash. On
+    # buggy main, remove/4's `1 = :ets.select_delete(pids, ...)` guard sees 3
+    # rows and raises a MatchError with term 3 -- the {:badmatch, 3} shard
+    # crash seen in production Sentry (issue #148). We capture that here so it
+    # is unmistakable which failure mode this reproduces.
+    crash =
+      try do
+        State.leave(c, alice)
+        nil
+      rescue
+        e in MatchError -> e
+      end
+
+    assert crash == nil,
+           "State.leave/2 crashed after stale transfers: #{inspect(crash)} " <>
+             "(the production {:badmatch, N} shard crash)"
+  end
+
+  test "concurrent cross-replica add-add on same key converges regardless of merge order (issue #214)",
+       config do
+    # Reproduces phoenixframework/phoenix_pubsub#214. Two different replicas
+    # concurrently add the SAME {topic, pid, key} with different meta (neither
+    # has observed the other's dot). Because `values` is an ordered_set keyed on
+    # {topic, pid, key}, a plain :ets.insert would resolve the conflict by merge
+    # order (last write wins), so two observers merging the adds in opposite
+    # orders would converge to *different* meta -- a non-convergent CRDT.
+    #
+    # The deterministic max-dot tie-break must make the winner independent of
+    # merge order: both observers land on the same element everywhere.
+    pid = new_pid()
+
+    a = new(:a, config)
+    b = new(:b, config)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    a = State.join(a, pid, "lobby", :user, %{from: :a})
+    b = State.join(b, pid, "lobby", :user, %{from: :b})
+
+    {_, a_map} = State.extract(a, :ignore, a.context)
+    {_, b_map} = State.extract(b, :ignore, b.context)
+
+    observer = fn node ->
+      o = new(node, config)
+      {o, _, _} = State.replica_up(o, a.replica)
+      {o, _, _} = State.replica_up(o, b.replica)
+      o
+    end
+
+    # Observer C merges A then B; observer D merges B then A.
+    c = observer.(:c)
+    {c, _, _} = State.merge(c, {a, a_map})
+    {c, _, _} = State.merge(c, {b, b_map})
+
+    d = observer.(:d)
+    {d, _, _} = State.merge(d, {b, b_map})
+    {d, _, _} = State.merge(d, {a, a_map})
+
+    c_row = State.get_by_pid(c, pid, "lobby", :user)
+    d_row = State.get_by_pid(d, pid, "lobby", :user)
+
+    # (a) both observers converge to the SAME element
+    assert c_row == d_row,
+           "cross-replica add-add diverged by merge order: #{inspect(c_row)} vs #{inspect(d_row)}"
+
+    # (b) the winner is the canonically-max dot (equal clocks -> greater replica
+    # name wins), independent of insert order
+    assert {{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}} = c_row
+
+    # (c) no duplicate pid rows accumulate, so a later local leave cannot crash
+    assert length(:ets.lookup(c.pids, pid)) == 1,
+           "concurrent add-add left a duplicate pid row"
+
+    assert %State{} = State.leave(c, pid, "lobby", :user)
+    assert %State{} = State.leave(c, pid)
+  end
+
+  test "concurrent add-add merged via a combined delta converges deterministically (issue #214)",
+       config do
+    # Exercises the merge_deltas path: a delta map is keyed by tag, so a single
+    # delta can legitimately carry TWO tags for the same {topic, pid, key}. When
+    # that delta is merged, both adds are present in one :ets.insert batch, so
+    # the tie-break must happen while building the join list (not rely on the
+    # pre-existing ETS row). The winner must still be the canonical max dot.
+    pid = new_pid()
+
+    a = new(:a, config)
+    b = new(:b, config)
+    {a, _, _} = State.replica_up(a, b.replica)
+    {b, _, _} = State.replica_up(b, a.replica)
+
+    a = State.join(a, pid, "lobby", :user, %{from: :a})
+    b = State.join(b, pid, "lobby", :user, %{from: :b})
+
+    {:ok, combined} = State.merge_deltas(a.delta, b.delta)
+
+    # The combined delta carries both concurrent dots for the same logical key.
+    assert map_size(combined.values) == 2
+
+    c = new(:c, config)
+    {c, _, _} = State.replica_up(c, a.replica)
+    {c, _, _} = State.replica_up(c, b.replica)
+    {c, joins, _} = State.merge(c, combined)
+
+    # Exactly one join event and one live row survive the batch insert.
+    assert [{{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}}] = joins
+
+    assert {{"lobby", ^pid, :user}, %{from: :b}, {{:b, 1}, 1}} =
+             State.get_by_pid(c, pid, "lobby", :user)
+
+    assert length(:ets.lookup(c.pids, pid)) == 1
+  end
+
   defp given_connected_cluster(nodes, config) do
     states = Enum.map(nodes, fn n -> new(n, config) end)
     replicas = Enum.map(states, fn s -> s.replica end)
