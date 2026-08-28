@@ -348,7 +348,15 @@ defmodule Phoenix.Tracker.State do
     value_keys_to_remove = removed_value_keys -- added_value_keys
 
     pids_to_remove = removed_pids -- added_pids
-    pids_to_add = added_pids -- removed_pids
+
+    # A join whose value key is already present is an in-place update:
+    # the values insert below overwrites the row, so the pids entry
+    # must not be inserted again or the duplicate_bag accumulates
+    # duplicates that crash a later remove/4.
+    pids_to_add =
+      for {pid, topic, key} <- Enum.uniq(added_pids -- removed_pids),
+          not :ets.member(local.values, {topic, pid, key}),
+          do: {pid, topic, key}
 
     for value_key <- value_keys_to_remove do
       :ets.delete(local.values, value_key)
@@ -374,16 +382,41 @@ defmodule Phoenix.Tracker.State do
 
   @spec accumulate_joins(t, values) :: joins :: {[pid_lookup], [values]}
   defp accumulate_joins(local, remote_map) do
-    %State{context: context, clouds: clouds} = local
+    %State{context: context, clouds: clouds, values: values} = local
 
     Enum.reduce(remote_map, {[], []}, fn {{replica, _} = tag, {pid, topic, key, meta}},
                                          {pids, adds} ->
-      if not match?(%{^replica => _}, context) or in?(context, clouds, tag) do
-        {pids, adds}
-      else
-        {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
+      cond do
+        not match?(%{^replica => _}, context) or in?(context, clouds, tag) ->
+          {pids, adds}
+
+        superseded_locally?(values, pid, topic, key, tag) ->
+          {pids, adds}
+
+        true ->
+          {[{pid, topic, key} | pids], [{{topic, pid, key}, meta, tag} | adds]}
       end
     end)
+  end
+
+  # A remote element is stale if we already hold the same {topic, pid, key}
+  # with a newer dot from the same origin replica. This happens when a
+  # replica's full-state transfer races a delta we already applied: our
+  # context has a gap below our dot, so the old dot is not covered by
+  # `in?/3`, but it must not overwrite the newer element we hold.
+  #
+  # This is sound because we only compare dots from the *same* origin replica
+  # for the *same* {topic, pid, key}. Tracker's invariant is one live element
+  # per key per replica with monotonically increasing dots, so a lower
+  # same-replica dot is provably a superseded add; skipping it cannot drop a
+  # genuinely concurrent add (a different replica, or a higher dot, both fall
+  # through to the `true` branch). This is a deliberate deviation from a
+  # textbook ORSWOT merge, which has no per-replica dominance shortcut.
+  defp superseded_locally?(values, pid, topic, key, {replica, clock}) do
+    case :ets.lookup(values, {topic, pid, key}) do
+      [{_, _meta, {^replica, local_clock}}] -> local_clock >= clock
+      _ -> false
+    end
   end
 
   @spec observe_removes(t, t, map) ::
