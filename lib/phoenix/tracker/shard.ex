@@ -531,6 +531,9 @@ defmodule Phoenix.Tracker.Shard do
     """
   end
 
+  defp handle_update({pid, _topic, _key, _meta_updater}, state) when node(pid) != node(), 
+    do: {:reply, {:error, :not_owner}, state}
+  
   defp handle_update({pid, topic, key, meta_updater}, state) do
     case State.get_by_pid(state.presences, pid, topic, key) do
       nil ->
