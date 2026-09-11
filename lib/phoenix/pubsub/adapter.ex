@@ -22,16 +22,6 @@ defmodule Phoenix.PubSub.Adapter do
   @callback child_spec(keyword) :: Supervisor.child_spec()
 
   @doc """
-  Broadcasts the given topic and message to
-  all nodes in the cluster (except the current node itself).
-  """
-  @callback broadcast(
-              adapter_name,
-              topic :: Phoenix.PubSub.topic(),
-              message :: Phoenix.PubSub.message()
-            ) :: :ok | {:error, term}
-
-  @doc """
   Broadcasts the given topic, message, and dispatcher to
   all nodes in the cluster (except the current node itself).
   """
@@ -40,17 +30,6 @@ defmodule Phoenix.PubSub.Adapter do
               topic :: Phoenix.PubSub.topic(),
               message :: Phoenix.PubSub.message(),
               dispatcher :: Phoenix.PubSub.dispatcher()
-            ) :: :ok | {:error, term}
-
-  @doc """
-  Broadcasts the given topic andmessage to
-  given node in the cluster (it may point to itself).
-  """
-  @callback direct_broadcast(
-              adapter_name,
-              node_name :: Phoenix.PubSub.node_name(),
-              topic :: Phoenix.PubSub.topic(),
-              message :: Phoenix.PubSub.message()
             ) :: :ok | {:error, term}
 
   @doc """

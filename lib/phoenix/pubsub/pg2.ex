@@ -14,7 +14,7 @@ defmodule Phoenix.PubSub.PG2 do
   def node_name(_), do: node()
 
   @impl true
-  def broadcast(adapter_name, topic, message, dispatcher \\ nil) do
+  def broadcast(adapter_name, topic, message, dispatcher) do
     case pg_members(group(adapter_name)) do
       {:error, {:no_such_group, _}} ->
         {:error, :no_such_group}
@@ -31,7 +31,7 @@ defmodule Phoenix.PubSub.PG2 do
   end
 
   @impl true
-  def direct_broadcast(adapter_name, node_name, topic, message, dispatcher \\ nil) do
+  def direct_broadcast(adapter_name, node_name, topic, message, dispatcher) do
     send({group(adapter_name), node_name}, {:forward_to_local, topic, message, dispatcher})
     :ok
   end
@@ -115,13 +115,8 @@ defmodule Phoenix.PubSub.PG2Worker do
   end
 
   @impl true
-  def handle_info({:forward_to_local, topic, message, nil}, pubsub) do
-    Phoenix.PubSub.local_broadcast(pubsub, topic, message)
-    {:noreply, pubsub}
-  end
-
   def handle_info({:forward_to_local, topic, message, dispatcher}, pubsub) do
-    Phoenix.PubSub.local_broadcast(pubsub, topic, message, dispatcher)
+    Phoenix.PubSub.local_dispatch(pubsub, topic, message, dispatcher)
     {:noreply, pubsub}
   end
 

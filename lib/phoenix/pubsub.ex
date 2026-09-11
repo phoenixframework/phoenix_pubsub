@@ -273,7 +273,7 @@ defmodule Phoenix.PubSub do
       when is_atom(pubsub) and is_binary(topic) do
     {:ok, {adapter, name, dispatcher}} = Registry.meta(pubsub, :pubsub)
 
-    with :ok <- adapter.broadcast(name, topic, message) do
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
       dispatch(pubsub, :none, topic, message, dispatcher)
     end
   end
@@ -285,9 +285,10 @@ defmodule Phoenix.PubSub do
   @spec broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
   def broadcast(pubsub, topic, message, dispatcher) do
     {:ok, {adapter, name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
+    dispatcher = dispatcher || default_dispatcher
 
-    with :ok <- adapter.broadcast(name, topic, message) do
-      dispatch(pubsub, :none, topic, message, dispatcher || default_dispatcher)
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
+      dispatch(pubsub, :none, topic, message, dispatcher)
     end
   end
 
@@ -505,22 +506,9 @@ defmodule Phoenix.PubSub do
 
   @doc false
   def dispatch(entries, :none, message) do
-    for {pid, _} <- entries do
-      send(pid, message)
-    end
-
     for {pid, metadata} <- entries, reduce: %{} do
       acc ->
-        case metadata do
-          {__MODULE__, :__sender__, {module, meta}} ->
-            state = Map.get(acc, module, nil)
-            new_state = module.send(pid, meta, message, state)
-            Map.put(acc, module, new_state)
-
-          _metadata ->
-            send(pid, message)
-            acc
-        end
+        dispatch_with_optional_sender(pid, metadata, message, acc)
     end
 
     :ok
@@ -533,6 +521,14 @@ defmodule Phoenix.PubSub do
     end
 
     :ok
+  end
+
+  @doc false
+  # Entry point for adapters delivering a message forwarded from a remote node.
+  # Applies the dispatcher that travelled with the message, as callers of the
+  # deprecated custom-dispatcher API expect their dispatcher to run cluster-wide.
+  def local_dispatch(pubsub, topic, message, dispatcher) do
+    dispatch(pubsub, :none, topic, message, dispatcher)
   end
 
   defp dispatch(pubsub, from, topic, message, dispatcher) do
