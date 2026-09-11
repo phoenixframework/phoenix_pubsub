@@ -2,6 +2,7 @@ defmodule Phoenix.PubSub.DistributedTest do
   use Phoenix.PubSub.NodeCase
 
   alias Phoenix.PubSub
+  alias Phoenix.PubSub.{RemoteDispatcher, RemoteSender}
 
   @node1 :"node1@127.0.0.1"
   @node2 :"node2@127.0.0.1"
@@ -47,6 +48,32 @@ defmodule Phoenix.PubSub.DistributedTest do
     refute_received {@node1, :ping}
     :ok = PubSub.direct_broadcast!(@node2, config.pubsub, config.topic, :ping)
     refute_received {@node1, :ping}
+  end
+
+  test "custom dispatcher travels to remote nodes", config do
+    spy_on_pubsub(@node1, config.pubsub, self(), config.topic)
+
+    # the dispatcher API must keep its v2.3 behaviour of running cluster-wide
+    :ok = PubSub.broadcast(config.pubsub, config.topic, :ping, RemoteDispatcher)
+    assert_receive {@node1, {:dispatched, @node1, nil, :none, :ping}}
+
+    :ok = PubSub.direct_broadcast(@node1, config.pubsub, config.topic, :ping, RemoteDispatcher)
+    assert_receive {@node1, {:dispatched, @node1, nil, :none, :ping}}
+  end
+
+  test ":sender is honoured for remote subscribers", config do
+    topic = config.topic
+
+    spy_on_pubsub_with_sender(
+      @node1,
+      config.pubsub,
+      self(),
+      topic,
+      {RemoteSender, {:custom, topic}}
+    )
+
+    :ok = PubSub.broadcast(config.pubsub, config.topic, :ping)
+    assert_receive {@node1, {:sent, @node1, {:custom, ^topic}, :ping, nil}}
   end
 
   test "broadcast is received by other node that has pool_size > broadcast_pool_size", config do

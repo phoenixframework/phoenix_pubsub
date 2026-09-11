@@ -124,6 +124,19 @@ defmodule Phoenix.PubSub.NodeCase do
     end)
   end
 
+  def spy_on_pubsub_with_sender(node_name, server \\ @pubsub, target_pid, topic, sender) do
+    call_node(node_name, fn ->
+      Phoenix.PubSub.subscribe(server, topic, sender: sender)
+      loop = fn next ->
+        receive do
+          msg -> send target_pid, {node_name, msg}
+        end
+        next.(next)
+      end
+      loop.(loop)
+    end)
+  end
+
   defmacro assert_join(topic, key, meta, timeout \\ @timeout) do
     quote do
       assert_receive %{
