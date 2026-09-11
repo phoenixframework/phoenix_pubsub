@@ -25,7 +25,19 @@ defmodule Phoenix.PubSub.Supervisor do
       opts[:registry_size] || opts[:pool_size] ||
         System.schedulers_online() |> Kernel./(4) |> Float.ceil() |> trunc()
 
-    dispatcher = Keyword.get(opts, :dispatcher, Phoenix.PubSub)
+    dispatcher =
+      case Keyword.fetch(opts, :dispatcher) do
+        {:ok, dispatcher} ->
+          IO.warn(
+            "Using custom dispatchers in Phoenix.PubSub is deprecated. Use the `:sender` option when subscribing instead."
+          )
+
+          dispatcher
+
+        :error ->
+          Phoenix.PubSub
+      end
+
     keys = registry_keys(Keyword.get(opts, :group_by, :pid))
 
     registry = [
