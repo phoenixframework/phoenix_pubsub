@@ -219,9 +219,19 @@ defmodule Phoenix.PubSub do
   def subscribe(pubsub, topic, opts \\ [])
       when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
     meta =
-      cond do
-        opts[:sender] -> {__MODULE__, :__sender__, opts[:sender]}
-        true -> opts[:metadata]
+      case opts[:sender] do
+        {mod, term} when is_atom(mod) ->
+          {mod, term}
+
+        _ ->
+          # TODO: Deprecate me
+          case opts[:metadata] do
+            {mod, _} when is_atom(mod) ->
+              raise "passing metadata in the shape of {module, term} to subscribe is unsupported"
+
+            other ->
+              other
+          end
       end
 
     case Registry.register(pubsub, topic, meta) do
@@ -352,7 +362,6 @@ defmodule Phoenix.PubSub do
   Broadcasts message on given topic only for the current node
   with a custom dispatcher.
   """
-  @deprecated "Use the `Phoenix.PubSub.Sender` behaviour instead of a custom dispatcher."
   @spec local_broadcast(t, topic, message, dispatcher) :: :ok
   def local_broadcast(pubsub, topic, message, dispatcher)
       when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
@@ -523,20 +532,12 @@ defmodule Phoenix.PubSub do
     :ok
   end
 
-  @doc false
-  # Entry point for adapters delivering a message forwarded from a remote node.
-  # Applies the dispatcher that travelled with the message, as callers of the
-  # deprecated custom-dispatcher API expect their dispatcher to run cluster-wide.
-  def local_dispatch(pubsub, topic, message, dispatcher) do
-    dispatch(pubsub, :none, topic, message, dispatcher)
-  end
-
   defp dispatch(pubsub, from, topic, message, dispatcher) do
     Registry.dispatch(pubsub, topic, {dispatcher, :dispatch, [from, message]})
     :ok
   end
 
-  defp dispatch_with_optional_sender(pid, {__MODULE__, :__sender__, {module, meta}}, message, acc) do
+  defp dispatch_with_optional_sender(pid, {module, meta}, message, acc) when is_atom(module) do
     state = Map.get(acc, module, nil)
     new_state = module.send(pid, meta, message, state)
     Map.put(acc, module, new_state)

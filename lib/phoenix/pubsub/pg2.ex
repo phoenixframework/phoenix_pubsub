@@ -116,7 +116,7 @@ defmodule Phoenix.PubSub.PG2Worker do
 
   @impl true
   def handle_info({:forward_to_local, topic, message, dispatcher}, pubsub) do
-    Phoenix.PubSub.local_dispatch(pubsub, topic, message, dispatcher)
+    Phoenix.PubSub.local_broadcast(pubsub, topic, message, dispatcher)
     {:noreply, pubsub}
   end
 
