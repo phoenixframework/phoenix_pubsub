@@ -226,9 +226,6 @@ defmodule Phoenix.PubSub do
         _ ->
           # TODO: Deprecate me
           case opts[:metadata] do
-            {mod, _} when is_atom(mod) ->
-              raise "passing metadata in the shape of {module, term} to subscribe is unsupported"
-
             [mod | _] when is_atom(mod) ->
               raise "passing metadata in the shape of [module | term] to subscribe is unsupported"
 
