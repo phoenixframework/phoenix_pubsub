@@ -221,13 +221,16 @@ defmodule Phoenix.PubSub do
     meta =
       case opts[:sender] do
         {mod, term} when is_atom(mod) ->
-          {mod, term}
+          [mod | term]
 
         _ ->
           # TODO: Deprecate me
           case opts[:metadata] do
             {mod, _} when is_atom(mod) ->
               raise "passing metadata in the shape of {module, term} to subscribe is unsupported"
+
+            [mod | _] when is_atom(mod) ->
+              raise "passing metadata in the shape of [module | term] to subscribe is unsupported"
 
             other ->
               other
@@ -537,7 +540,7 @@ defmodule Phoenix.PubSub do
     :ok
   end
 
-  defp dispatch_with_optional_sender(pid, {module, meta}, message, acc) when is_atom(module) do
+  defp dispatch_with_optional_sender(pid, [module | meta], message, acc) when is_atom(module) do
     state = Map.get(acc, module, nil)
     new_state = module.send(pid, meta, message, state)
     Map.put(acc, module, new_state)
