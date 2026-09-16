@@ -204,7 +204,12 @@ defmodule Phoenix.PubSub do
 
   ## Options
 
-    * `:metadata` - provides metadata to be attached to this
+    * `:sender` - sets a custom `{module, metadata}` tuple that
+      is called when broadcasting a message. See "Custom senders"
+      section in the module documentation
+
+    * `:metadata` - DEPRECATED. Use `:sender` instead.
+      provides metadata to be attached to this
       subscription. The metadata can be used by custom
       dispatching mechanisms. See the "Custom dispatching"
       section in the module documentation
@@ -213,7 +218,23 @@ defmodule Phoenix.PubSub do
   @spec subscribe(t, topic, keyword) :: :ok | {:error, term}
   def subscribe(pubsub, topic, opts \\ [])
       when is_atom(pubsub) and is_binary(topic) and is_list(opts) do
-    case Registry.register(pubsub, topic, opts[:metadata]) do
+    meta =
+      case opts[:sender] do
+        {mod, term} when is_atom(mod) ->
+          [mod | term]
+
+        _ ->
+          # TODO: Deprecate me
+          case opts[:metadata] do
+            [mod | _] when is_atom(mod) ->
+              raise "passing metadata in the shape of [module | term] to subscribe is unsupported"
+
+            other ->
+              other
+          end
+      end
+
+    case Registry.register(pubsub, topic, meta) do
       {:ok, _} -> :ok
       {:error, _} = error -> error
     end
@@ -256,12 +277,25 @@ defmodule Phoenix.PubSub do
     * `topic` - The topic to broadcast to, ie: `"users:123"`
     * `message` - The payload of the broadcast
 
-  A custom dispatcher may also be given as a fourth, optional argument.
-  See the "Custom dispatching" section in the module documentation.
+  """
+  @spec broadcast(t, topic, message) :: :ok | {:error, term}
+  def broadcast(pubsub, topic, message)
+      when is_atom(pubsub) and is_binary(topic) do
+    {:ok, {adapter, name, dispatcher}} = Registry.meta(pubsub, :pubsub)
+
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
+      dispatch(pubsub, :none, topic, message, dispatcher)
+    end
+  end
+
+  @doc """
+  Broadcasts message on given topic across the whole cluster using a custom dispatcher.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
   """
   @spec broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
-  def broadcast(pubsub, topic, message, dispatcher \\ nil)
-      when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
+  def broadcast(pubsub, topic, message, dispatcher) do
     {:ok, {adapter, name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     dispatcher = dispatcher || default_dispatcher
 
@@ -284,8 +318,25 @@ defmodule Phoenix.PubSub do
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
+  @spec broadcast_from(t, pid, topic, message) :: :ok | {:error, term}
+  def broadcast_from(pubsub, from, topic, message)
+      when is_atom(pubsub) and is_pid(from) and is_binary(topic) do
+    {:ok, {adapter, name, dispatcher}} = Registry.meta(pubsub, :pubsub)
+
+    with :ok <- adapter.broadcast(name, topic, message, dispatcher) do
+      dispatch(pubsub, from, topic, message, dispatcher)
+    end
+  end
+
+  @doc """
+  Broadcasts message on given topic from the given process across the whole cluster
+  using a custom dispatcher.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
+  """
   @spec broadcast_from(t, pid, topic, message, dispatcher) :: :ok | {:error, term}
-  def broadcast_from(pubsub, from, topic, message, dispatcher \\ nil)
+  def broadcast_from(pubsub, from, topic, message, dispatcher)
       when is_atom(pubsub) and is_pid(from) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {adapter, name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     dispatcher = dispatcher || default_dispatcher
@@ -305,8 +356,22 @@ defmodule Phoenix.PubSub do
   A custom dispatcher may also be given as a fourth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
+  @spec local_broadcast(t, topic, message) :: :ok
+  def local_broadcast(pubsub, topic, message)
+      when is_atom(pubsub) and is_binary(topic) do
+    {:ok, {_adapter, _name, dispatcher}} = Registry.meta(pubsub, :pubsub)
+    dispatch(pubsub, :none, topic, message, dispatcher)
+  end
+
+  @doc """
+  Broadcasts message on given topic only for the current node
+  with a custom dispatcher.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
+  """
   @spec local_broadcast(t, topic, message, dispatcher) :: :ok
-  def local_broadcast(pubsub, topic, message, dispatcher \\ nil)
+  def local_broadcast(pubsub, topic, message, dispatcher)
       when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {_adapter, _name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     dispatch(pubsub, :none, topic, message, dispatcher || default_dispatcher)
@@ -326,8 +391,22 @@ defmodule Phoenix.PubSub do
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
+  @spec local_broadcast_from(t, pid, topic, message) :: :ok
+  def local_broadcast_from(pubsub, from, topic, message)
+      when is_atom(pubsub) and is_pid(from) and is_binary(topic) do
+    {:ok, {_adapter, _name, dispatcher}} = Registry.meta(pubsub, :pubsub)
+    dispatch(pubsub, from, topic, message, dispatcher)
+  end
+
+  @doc """
+  Broadcasts message on given topic from a given process only for the current node
+  using a custom dispatcher.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
+  """
   @spec local_broadcast_from(t, pid, topic, message, dispatcher) :: :ok
-  def local_broadcast_from(pubsub, from, topic, message, dispatcher \\ nil)
+  def local_broadcast_from(pubsub, from, topic, message, dispatcher)
       when is_atom(pubsub) and is_pid(from) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {_adapter, _name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     dispatch(pubsub, from, topic, message, dispatcher || default_dispatcher)
@@ -342,23 +421,50 @@ defmodule Phoenix.PubSub do
     * `message` - The payload of the broadcast
 
   **DO NOT** use this function if you wish to broadcast to the current
-  node, as it is always serialized, use `local_broadcast/4` instead.
+  node, as it is always serialized, use `local_broadcast/3` instead.
 
   A custom dispatcher may also be given as a fifth, optional argument.
   See the "Custom dispatching" section in the module documentation.
   """
+  @spec direct_broadcast(node_name, t, topic, message) :: :ok | {:error, term}
+  def direct_broadcast(node_name, pubsub, topic, message)
+      when is_atom(pubsub) and is_binary(topic) do
+    {:ok, {adapter, name, dispatcher}} = Registry.meta(pubsub, :pubsub)
+    adapter.direct_broadcast(name, node_name, topic, message, dispatcher)
+  end
+
+  @doc """
+  Broadcasts message on given topic to a given node using a custom dispatcher.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
+  """
   @spec direct_broadcast(node_name, t, topic, message, dispatcher) :: :ok | {:error, term}
-  def direct_broadcast(node_name, pubsub, topic, message, dispatcher \\ nil)
+  def direct_broadcast(node_name, pubsub, topic, message, dispatcher)
       when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {adapter, name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     adapter.direct_broadcast(name, node_name, topic, message, dispatcher || default_dispatcher)
   end
 
   @doc """
+  Raising version of `broadcast/3`.
+  """
+  @spec broadcast!(t, topic, message) :: :ok
+  def broadcast!(pubsub, topic, message) do
+    case broadcast(pubsub, topic, message) do
+      :ok -> :ok
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
+    end
+  end
+
+  @doc """
   Raising version of `broadcast/4`.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
   """
   @spec broadcast!(t, topic, message, dispatcher) :: :ok
-  def broadcast!(pubsub, topic, message, dispatcher \\ nil) do
+  def broadcast!(pubsub, topic, message, dispatcher) do
     case broadcast(pubsub, topic, message, dispatcher) do
       :ok -> :ok
       {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
@@ -366,10 +472,24 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
+  Raising version of `broadcast_from/4`.
+  """
+  @spec broadcast_from!(t, pid, topic, message) :: :ok
+  def broadcast_from!(pubsub, from, topic, message) do
+    case broadcast_from(pubsub, from, topic, message) do
+      :ok -> :ok
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
+    end
+  end
+
+  @doc """
   Raising version of `broadcast_from/5`.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
   """
   @spec broadcast_from!(t, pid, topic, message, dispatcher) :: :ok
-  def broadcast_from!(pubsub, from, topic, message, dispatcher \\ nil) do
+  def broadcast_from!(pubsub, from, topic, message, dispatcher) do
     case broadcast_from(pubsub, from, topic, message, dispatcher) do
       :ok -> :ok
       {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
@@ -377,10 +497,24 @@ defmodule Phoenix.PubSub do
   end
 
   @doc """
+  Raising version of `direct_broadcast/4`.
+  """
+  @spec direct_broadcast!(node_name, t, topic, message) :: :ok
+  def direct_broadcast!(node_name, pubsub, topic, message) do
+    case direct_broadcast(node_name, pubsub, topic, message) do
+      :ok -> :ok
+      {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
+    end
+  end
+
+  @doc """
   Raising version of `direct_broadcast/5`.
+
+  Custom dispatchers are deprecated, use the `:sender` option of
+  `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
   """
   @spec direct_broadcast!(node_name, t, topic, message, dispatcher) :: :ok
-  def direct_broadcast!(node_name, pubsub, topic, message, dispatcher \\ nil) do
+  def direct_broadcast!(node_name, pubsub, topic, message, dispatcher) do
     case direct_broadcast(node_name, pubsub, topic, message, dispatcher) do
       :ok -> :ok
       {:error, error} -> raise BroadcastError, "broadcast failed: #{inspect(error)}"
@@ -400,16 +534,18 @@ defmodule Phoenix.PubSub do
 
   @doc false
   def dispatch(entries, :none, message) do
-    for {pid, _} <- entries do
-      send(pid, message)
+    for {pid, metadata} <- entries, reduce: %{} do
+      acc ->
+        dispatch_with_optional_sender(pid, metadata, message, acc)
     end
 
     :ok
   end
 
   def dispatch(entries, from, message) do
-    for {pid, _} <- entries, pid != from do
-      send(pid, message)
+    for {pid, metadata} <- entries, pid != from, reduce: %{} do
+      acc ->
+        dispatch_with_optional_sender(pid, metadata, message, acc)
     end
 
     :ok
@@ -418,5 +554,16 @@ defmodule Phoenix.PubSub do
   defp dispatch(pubsub, from, topic, message, dispatcher) do
     Registry.dispatch(pubsub, topic, {dispatcher, :dispatch, [from, message]})
     :ok
+  end
+
+  defp dispatch_with_optional_sender(pid, [module | meta], message, acc) when is_atom(module) do
+    state = Map.get(acc, module, nil)
+    new_state = module.send(pid, meta, message, state)
+    Map.put(acc, module, new_state)
+  end
+
+  defp dispatch_with_optional_sender(pid, _metadata, message, acc) do
+    send(pid, message)
+    acc
   end
 end

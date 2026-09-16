@@ -25,7 +25,9 @@ defmodule Phoenix.PubSub.Supervisor do
       opts[:registry_size] || opts[:pool_size] ||
         System.schedulers_online() |> Kernel./(4) |> Float.ceil() |> trunc()
 
+    # TODO: remove in 3.0
     dispatcher = Keyword.get(opts, :dispatcher, Phoenix.PubSub)
+
     keys = registry_keys(Keyword.get(opts, :group_by, :pid))
 
     registry = [
