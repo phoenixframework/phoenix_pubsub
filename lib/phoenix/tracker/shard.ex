@@ -105,7 +105,9 @@ defmodule Phoenix.Tracker.Shard do
 
     GenServer.start_link(
       __MODULE__,
-      [tracker, tracker_opts, shard_opts], name: name)
+      [tracker, tracker_opts, shard_opts],
+      name: name
+    )
   end
 
   def init([tracker, tracker_opts, shard_opts]) do
