@@ -5,8 +5,40 @@ This new version of Phoenix.PubSub provides a simpler, more extensible, and more
 ## 2.4.0 (Unreleased)
 
 ### Enhancements
+
   - Add `Phoenix.PubSub.Sender` as a successor for custom dispatchers
-    Note: Subscribing with `:metadata` in the shape of `[atom | term]` now raises, as this shape is reserved for senders
+  - Add `Phoenix.PubSub.unsubscribe_sender/3` to selectively remove sender subscriptions
+
+### Migrating custom dispatchers
+
+Custom dispatchers and the `:metadata` subscription option are deprecated in favor of
+per-subscription senders. Existing dispatchers continue to work, except that subscribing
+with `:metadata` in the shape of `[atom | term]` now raises. That shape is reserved
+for senders.
+
+To migrate:
+
+1. Implement the `Phoenix.PubSub.Sender` behaviour in your delivery module. Its
+   `send/4` callback receives one subscriber pid, its metadata, the message, and an
+   accumulator. Move the delivery logic from `dispatch/3` into this callback. PubSub
+   handles iterating over subscribers and excluding the originating pid for
+   `broadcast_from` calls.
+2. Replace `metadata: metadata` in subscriptions with `sender: {MySender, metadata}`:
+
+   ```elixir
+   Phoenix.PubSub.subscribe(MyApp.PubSub, "topic", sender: {MySender, metadata})
+   ```
+
+3. Remove custom dispatcher arguments from broadcast calls and remove the `:dispatcher`
+   option from your PubSub child specification to use the default `Phoenix.PubSub`
+   dispatcher. Custom dispatchers control delivery themselves and do not automatically
+   invoke senders, so changing subscriptions alone is not sufficient.
+4. Replace `unsubscribe_match/3` calls for migrated subscriptions with
+   `unsubscribe_sender/3`, passing the same sender tuple:
+
+   ```elixir
+   Phoenix.PubSub.unsubscribe_sender(MyApp.PubSub, "topic", {MySender, metadata})
+   ```
 
 ## 2.3.0 (2026-08-25)
 

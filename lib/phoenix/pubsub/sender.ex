@@ -23,12 +23,21 @@ defmodule Phoenix.PubSub.Sender do
 
       iex> Phoenix.PubSub.subscribe(MyApp.PubSub, "topic", sender: {MySender, {:custom, "topic"}})
 
-  The state is an accumulator and be used to cache data in between sends to different
-  subscriptions. For example, if the message needs to be serialized into a custom format,
-  using `state` allows to implement a fastlane approach, where you can serialize the
-  message once and then reuse the serialized message on subsequent calls.
-  The first `send/4` invocation will pass a state of `nil` and subsequent calls
-  will pass the previously returned value.
+  ## State and caching
+
+  The state is an accumulator that can cache data between sends to different
+  subscriptions. For example, a sender can serialize a message once, return the
+  serialized data as state, and reuse it for subsequent subscribers instead of
+  serializing the same message for each delivery.
+
+  Each broadcast starts a separate accumulator for each sender module in each
+  Registry partition. The first `send/4` invocation receives `nil` and subsequent
+  calls for that module within the same partition receive the previously returned
+  value. State is not shared across partitions or retained between broadcasts.
+
+  Subscriptions with different metadata but the same sender module share the
+  accumulator within a partition. If serialization depends on the metadata,
+  key cached data by the relevant metadata, such as the serializer or format.
   """
 
   @callback send(pid :: pid(), meta :: term(), message :: term(), state :: term()) :: term()

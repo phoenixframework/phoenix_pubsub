@@ -56,7 +56,7 @@ defmodule Phoenix.PubSub do
   You may want to use the dispatcher to perform special delivery for
   certain subscriptions. This can be done by passing the :metadata
   option during subscriptions. For instance, Phoenix Channels use a
-  custom `value` to provide "fastlaning", allowing messages broadcast
+  custom `value` to cache encoded messages, allowing messages broadcast
   to thousands or even millions of users to be encoded once and written
   directly to sockets instead of being encoded per channel.
 
@@ -269,6 +269,33 @@ defmodule Phoenix.PubSub do
   @spec unsubscribe_match(t, topic, term) :: :ok
   def unsubscribe_match(pubsub, topic, metadata) when is_atom(pubsub) and is_binary(topic) do
     Registry.unregister_match(pubsub, topic, metadata)
+  end
+
+  @doc """
+  Unsubscribes the caller from the PubSub adapter's topic taking the sender into consideration.
+
+  Accepts a `{module, metadata}` tuple, as passed to the `:sender` option of
+  `subscribe/3`. Removes all of the caller's subscriptions for the topic whose
+  sender module and metadata match, preserving other subscriptions.
+
+  The metadata follows the same pattern-matching rules as `unsubscribe_match/3`.
+  For example, `{MySender, :_}` matches any metadata for `MySender`.
+
+  ## Example
+
+      iex> PubSub.subscribe(:my_pubsub, "users:123", sender: {MySender, :fast})
+      :ok
+      iex> PubSub.subscribe(:my_pubsub, "users:123", sender: {MySender, :slow})
+      :ok
+      iex> PubSub.unsubscribe_sender(:my_pubsub, "users:123", {MySender, :fast})
+      :ok
+      # Only the :fast subscription is removed, :slow remains active
+
+  """
+  @spec unsubscribe_sender(t, topic, {module(), term()}) :: :ok
+  def unsubscribe_sender(pubsub, topic, {module, metadata})
+      when is_atom(pubsub) and is_binary(topic) and is_atom(module) do
+    unsubscribe_match(pubsub, topic, [module | metadata])
   end
 
   @doc """

@@ -117,6 +117,16 @@ defmodule Phoenix.PubSub.UnitTest do
       end
     end
 
+    defmodule OtherSender do
+      @behaviour Phoenix.PubSub.Sender
+
+      @impl true
+      def send(pid, meta, message, state) do
+        Kernel.send(pid, {:other_sent, meta, message})
+        state
+      end
+    end
+
     defp start_pubsub!(opts \\ []) do
       name = :"ps_sender_#{:erlang.unique_integer([:positive])}"
       start_supervised!({PubSub, [name: name] ++ opts})
@@ -243,6 +253,66 @@ defmodule Phoenix.PubSub.UnitTest do
       PubSub.broadcast(name, "topic", :hello)
 
       refute_received {:sent, :meta, :hello, _}
+    end
+
+    test "unsubscribe_sender removes only the caller's matching sender subscriptions" do
+      name = start_pubsub!(registry_size: 1)
+      parent = self()
+
+      spawn_link(fn ->
+        PubSub.subscribe(name, "topic", sender: {TestSender, :fast})
+        send(parent, :subscribed)
+        receive do: (msg -> send(parent, {:other_subscriber, msg}))
+      end)
+
+      assert_receive :subscribed
+
+      PubSub.subscribe(name, "topic", sender: {TestSender, :fast})
+      PubSub.subscribe(name, "topic", sender: {TestSender, :fast})
+      PubSub.subscribe(name, "topic", sender: {TestSender, :slow})
+      PubSub.subscribe(name, "topic", sender: {OtherSender, :fast})
+      PubSub.subscribe(name, "topic", metadata: :fast)
+      PubSub.subscribe(name, "other_topic", sender: {TestSender, :fast})
+
+      assert :ok = PubSub.unsubscribe_sender(name, "topic", {TestSender, :fast})
+      PubSub.local_broadcast(name, "topic", :hello)
+
+      assert_receive {:sent, :slow, :hello, _}
+      assert_receive {:other_sent, :fast, :hello}
+      assert_receive :hello
+      assert_receive {:other_subscriber, {:sent, :fast, :hello, _}}
+      refute_received {:sent, :fast, :hello, _}
+
+      PubSub.local_broadcast(name, "other_topic", :other_hello)
+      assert_receive {:sent, :fast, :other_hello, nil}
+    end
+
+    test "unsubscribe_sender matches metadata patterns" do
+      name = start_pubsub!(registry_size: 1)
+
+      PubSub.subscribe(name, "topic", sender: {TestSender, {:custom, :fast}})
+      PubSub.subscribe(name, "topic", sender: {TestSender, {:custom, :slow}})
+      PubSub.subscribe(name, "topic", sender: {TestSender, :other})
+
+      assert :ok = PubSub.unsubscribe_sender(name, "topic", {TestSender, {:custom, :_}})
+      PubSub.local_broadcast(name, "topic", :hello)
+
+      assert_receive {:sent, :other, :hello, nil}
+      refute_received {:sent, {:custom, _}, :hello, _}
+
+      assert :ok = PubSub.unsubscribe_sender(name, "topic", {TestSender, :_})
+      PubSub.local_broadcast(name, "topic", :after_unsubscribe)
+      refute_received {:sent, _, :after_unsubscribe, _}
+    end
+
+    test "unsubscribe_sender with no match leaves subscriptions active" do
+      name = start_pubsub!()
+      PubSub.subscribe(name, "topic", sender: {TestSender, :meta})
+
+      assert :ok = PubSub.unsubscribe_sender(name, "topic", {TestSender, :missing})
+      PubSub.local_broadcast(name, "topic", :hello)
+
+      assert_receive {:sent, :meta, :hello, nil}
     end
   end
 
