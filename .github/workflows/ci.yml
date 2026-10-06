@@ -25,6 +25,9 @@ jobs:
 
           - elixir: 1.19.4
             otp: 28.1
+
+          - elixir: 1.20.4
+            otp: 29.1  
             lint: lint
 
           # run against latest Elixir to catch warnings early
