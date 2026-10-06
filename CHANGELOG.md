@@ -2,6 +2,11 @@
 
 This new version of Phoenix.PubSub provides a simpler, more extensible, and more performant Phoenix.PubSub API. For users of Phoenix.PubSub, the API is the same, although frameworks and other adapters will have to migrate accordingly (which often means less code).
 
+## 2.4.0 (Unreleased)
+
+### Enhancements
+  - Add `Phoenix.PubSub.Sender` as a successor for custom dispatchers
+
 ## 2.3.0 (2026-08-25)
 
 ### Enhancements

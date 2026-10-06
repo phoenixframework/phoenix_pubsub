@@ -1,7 +1,7 @@
 defmodule Phoenix.PubSub.Mixfile do
   use Mix.Project
 
-  @version "2.3.0"
+  @version "2.4.0"
 
   def project do
     [
