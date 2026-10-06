@@ -71,6 +71,10 @@ jobs:
         env:
           MIX_ENV: test
 
+      - name: Check formatted
+        run: mix format --check-formatted
+        if: ${{ matrix.lint }}
+
       - name: Run tests
         run: |
           epmd -daemon
