@@ -212,7 +212,8 @@ defmodule Phoenix.PubSub do
       provides metadata to be attached to this
       subscription. The metadata can be used by custom
       dispatching mechanisms. See the "Custom dispatching"
-      section in the module documentation
+      section in the module documentation. Metadata in the shape
+      of `[atom | term]` is reserved for senders and raises
 
   """
   @spec subscribe(t, topic, keyword) :: :ok | {:error, term}
@@ -295,7 +296,8 @@ defmodule Phoenix.PubSub do
   `subscribe/3` instead. See `Phoenix.PubSub.Sender`.
   """
   @spec broadcast(t, topic, message, dispatcher) :: :ok | {:error, term}
-  def broadcast(pubsub, topic, message, dispatcher) do
+  def broadcast(pubsub, topic, message, dispatcher)
+      when is_atom(pubsub) and is_binary(topic) and is_atom(dispatcher) do
     {:ok, {adapter, name, default_dispatcher}} = Registry.meta(pubsub, :pubsub)
     dispatcher = dispatcher || default_dispatcher
 

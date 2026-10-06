@@ -6,6 +6,7 @@ This new version of Phoenix.PubSub provides a simpler, more extensible, and more
 
 ### Enhancements
   - Add `Phoenix.PubSub.Sender` as a successor for custom dispatchers
+    Note: Subscribing with `:metadata` in the shape of `[atom | term]` now raises, as this shape is reserved for senders
 
 ## 2.3.0 (2026-08-25)
 
