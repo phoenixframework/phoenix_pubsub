@@ -2,13 +2,13 @@ defmodule Phoenix.Tracker.Clock do
   @moduledoc false
   alias Phoenix.Tracker.State
 
-  @type context :: State.context
-  @type clock :: {State.name, context}
+  @type context :: State.context()
+  @type clock :: {State.name(), context}
 
   @doc """
   Returns a list of replicas from a list of contexts.
   """
-  @spec clockset_replicas([clock]) :: [State.name]
+  @spec clockset_replicas([clock]) :: [State.name()]
   def clockset_replicas(clockset) do
     for {replica, _} <- clockset, do: replica
   end
@@ -18,8 +18,10 @@ defmodule Phoenix.Tracker.Clock do
   """
   @spec append_clock([clock], clock) :: [clock]
   def append_clock(clockset, {_, clock}) when map_size(clock) == 0, do: clockset
+
   def append_clock(clockset, {node, clock}) do
     big_clock = combine_clocks(clockset)
+
     cond do
       dominates?(clock, big_clock) -> [{node, clock}]
       dominates?(big_clock, clock) -> clockset
@@ -32,6 +34,7 @@ defmodule Phoenix.Tracker.Clock do
   """
   @spec dominates?(context, context) :: boolean
   def dominates?(c1, c2) when map_size(c1) < map_size(c2), do: false
+
   def dominates?(c1, c2) do
     Enum.reduce_while(c2, true, fn {replica, clock}, true ->
       if Map.get(c1, replica, 0) >= clock do
@@ -47,6 +50,7 @@ defmodule Phoenix.Tracker.Clock do
   """
   def dominates_or_equal?(c1, c2) when c1 == %{} and c2 == %{}, do: true
   def dominates_or_equal?(c1, _c2) when c1 == %{}, do: false
+
   def dominates_or_equal?(c1, c2) do
     Enum.reduce_while(c1, true, fn {replica, clock}, true ->
       if clock >= Map.get(c2, replica, 0) do
@@ -87,7 +91,7 @@ defmodule Phoenix.Tracker.Clock do
       if dominates?(clock, clock2) do
         {set, true}
       else
-        {[{node2, clock2}| set], insert || !dominates?(clock2, clock)}
+        {[{node2, clock2} | set], insert || !dominates?(clock2, clock)}
       end
     end)
     |> case do

@@ -148,6 +148,7 @@ defmodule Phoenix.Tracker.StateTest do
     alice = new_pid()
     bob = new_pid()
     a = State.join(a, alice, "lobby", :alice)
+
     # the below join is just so that node c has some context from node a
     {c, [{{_, _, :alice}, _, _}], []} =
       State.merge(c, State.extract(a, c.replica, c.context))

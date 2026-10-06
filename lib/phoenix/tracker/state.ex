@@ -283,6 +283,7 @@ defmodule Phoenix.Tracker.State do
     known_keys = Map.keys(remote_context)
     pruned_clouds = Map.take(clouds, known_keys)
     pruned_context = Map.take(state.context, known_keys)
+
     # fn {{topic, pid, key}, meta, {replica, clock}} when replica !== remote_ref ->
     #  {{replica, clock}, {pid, topic, key, meta}}
     # end
@@ -393,6 +394,7 @@ defmodule Phoenix.Tracker.State do
     %State{context: remote_context, clouds: remote_clouds} = remote
     init = {unioned_clouds, delta, [], []}
     local_replica = local.replica
+
     # fn {_, _, {replica, _}} = result when replica != local_replica -> result end
     ms = [
       {
