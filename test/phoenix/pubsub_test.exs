@@ -115,6 +115,9 @@ defmodule Phoenix.PubSub.UnitTest do
         Kernel.send(pid, {:sent, meta, message, state})
         count
       end
+
+      @impl true
+      def finalize(state), do: Kernel.send(self(), {:finalized, __MODULE__, state})
     end
 
     defmodule OtherSender do
@@ -125,6 +128,9 @@ defmodule Phoenix.PubSub.UnitTest do
         Kernel.send(pid, {:other_sent, meta, message})
         state
       end
+
+      @impl true
+      def finalize(state), do: Kernel.send(self(), {:finalized, __MODULE__, state})
     end
 
     defp start_pubsub!(opts \\ []) do
@@ -189,6 +195,22 @@ defmodule Phoenix.PubSub.UnitTest do
 
       # first call gets nil, each subsequent call sees the previous return value
       assert MapSet.new(states) == MapSet.new([nil, 1, 2])
+    end
+
+    test "broadcast finalizes each sender once with its accumulated state" do
+      name = start_pubsub!(registry_size: 1)
+      PubSub.subscribe(name, "topic", sender: {TestSender, :meta})
+      PubSub.subscribe(name, "topic", sender: {TestSender, :meta})
+      PubSub.subscribe(name, "topic", sender: {OtherSender, :other})
+
+      assert :ok = PubSub.broadcast(name, "topic", :hello)
+
+      assert_received {:sent, :meta, :hello, nil}
+      assert_received {:sent, :meta, :hello, 1}
+      assert_received {:other_sent, :other, :hello}
+      assert_received {:finalized, TestSender, 2}
+      assert_received {:finalized, OtherSender, nil}
+      refute_received {:finalized, _, _}
     end
 
     test "state does not carry across registry partitions" do

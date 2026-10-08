@@ -21,4 +21,7 @@ defmodule Phoenix.PubSub.RemoteSender do
     Kernel.send(pid, {:sent, node(), meta, message, state})
     state
   end
+
+  @impl true
+  def finalize(_state), do: :ok
 end

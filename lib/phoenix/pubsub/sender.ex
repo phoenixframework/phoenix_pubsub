@@ -19,6 +19,9 @@ defmodule Phoenix.PubSub.Sender do
           send(pid, {:pubsub_message, topic, message})
           state
         end
+
+        @impl true
+        def finalize(_state), do: :ok
       end
 
       iex> Phoenix.PubSub.subscribe(MyApp.PubSub, "topic", sender: {MySender, {:custom, "topic"}})
@@ -38,7 +41,17 @@ defmodule Phoenix.PubSub.Sender do
   Subscriptions with different metadata but the same sender module share the
   accumulator within a partition. If serialization depends on the metadata,
   key cached data by the relevant metadata, such as the serializer or format.
+
+  After all deliveries in a Registry partition complete, `finalize/1` is called
+  once for each sender module that was invoked, with its final accumulated state.
+  This callback can release resources or flush work accumulated during delivery.
+  Its return value is ignored. Sender modules are finalized in no particular order.
   """
 
   @callback send(pid :: pid(), meta :: term(), message :: term(), state :: term()) :: term()
+
+  @doc """
+  Finalizes a sender's accumulated state after dispatch completes in a Registry partition.
+  """
+  @callback finalize(state :: term()) :: term()
 end
