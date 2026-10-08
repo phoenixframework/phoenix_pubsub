@@ -42,24 +42,6 @@ defmodule Phoenix.PubSub do
 
   See `Phoenix.PubSub.Adapter` to implement a custom adapter.
 
-  ## Custom dispatching
-
-  Phoenix.PubSub allows developers to perform custom dispatching
-  by passing a `dispatcher` module which is responsible for local
-  message deliveries.
-
-  The dispatcher must be available on all nodes running the PubSub
-  system. The `dispatch/3` function of the given module will be
-  invoked with the subscriptions entries, the broadcaster identifier
-  (either a pid or `:none`), and the message to broadcast.
-
-  You may want to use the dispatcher to perform special delivery for
-  certain subscriptions. This can be done by passing the :metadata
-  option during subscriptions. For instance, Phoenix Channels use a
-  custom `value` to cache encoded messages, allowing messages broadcast
-  to thousands or even millions of users to be encoded once and written
-  directly to sockets instead of being encoded per channel.
-
   ## Safe pool size migration (when using `Phoenix.PubSub.PG2` adapter)
 
   When you need to change the pool size in a running cluster,
@@ -205,14 +187,13 @@ defmodule Phoenix.PubSub do
   ## Options
 
     * `:sender` - sets a custom `{module, metadata}` tuple that
-      is called when broadcasting a message. See "Custom senders"
-      section in the module documentation
+      is called when broadcasting a message. See `Phoenix.PubSub.Sender`
+      for more information
 
     * `:metadata` - DEPRECATED. Use `:sender` instead.
       provides metadata to be attached to this
       subscription. The metadata can be used by custom
-      dispatching mechanisms. See the "Custom dispatching"
-      section in the module documentation. Metadata in the shape
+      dispatching mechanisms. Metadata in the shape
       of `[atom | term]` is reserved for senders and raises
 
   """
