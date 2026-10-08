@@ -38,7 +38,22 @@ defmodule Phoenix.PubSub.Sender do
   Subscriptions with different metadata but the same sender module share the
   accumulator within a partition. If serialization depends on the metadata,
   key cached data by the relevant metadata, such as the serializer or format.
+
+  After all deliveries in a Registry partition complete, the optional `finalize/1`
+  callback is called once for each sender module that was invoked and implements
+  it, with its final accumulated state.
+  This callback can release resources or flush work accumulated during delivery.
+  Its return value is ignored. Sender modules are finalized in no particular order.
   """
 
   @callback send(pid :: pid(), meta :: term(), message :: term(), state :: term()) :: term()
+
+  @doc """
+  Finalizes a sender's accumulated state after dispatch completes in a Registry partition.
+
+  This callback is optional. Its return value is ignored.
+  """
+  @callback finalize(state :: term()) :: term()
+
+  @optional_callbacks finalize: 1
 end

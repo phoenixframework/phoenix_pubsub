@@ -527,21 +527,23 @@ defmodule Phoenix.PubSub do
 
   @doc false
   def dispatch(entries, :none, message) do
-    for {pid, metadata} <- entries, reduce: %{} do
-      acc ->
-        dispatch_with_optional_sender(pid, metadata, message, acc)
-    end
+    states =
+      for {pid, metadata} <- entries, reduce: %{} do
+        acc ->
+          dispatch_with_optional_sender(pid, metadata, message, acc)
+      end
 
-    :ok
+    Enum.each(states, &finalize_sender/1)
   end
 
   def dispatch(entries, from, message) do
-    for {pid, metadata} <- entries, pid != from, reduce: %{} do
-      acc ->
-        dispatch_with_optional_sender(pid, metadata, message, acc)
-    end
+    states =
+      for {pid, metadata} <- entries, pid != from, reduce: %{} do
+        acc ->
+          dispatch_with_optional_sender(pid, metadata, message, acc)
+      end
 
-    :ok
+    Enum.each(states, &finalize_sender/1)
   end
 
   defp dispatch(pubsub, from, topic, message, dispatcher) do
@@ -558,5 +560,9 @@ defmodule Phoenix.PubSub do
   defp dispatch_with_optional_sender(pid, _metadata, message, acc) do
     send(pid, message)
     acc
+  end
+
+  defp finalize_sender({module, state}) do
+    if function_exported?(module, :finalize, 1), do: module.finalize(state)
   end
 end
